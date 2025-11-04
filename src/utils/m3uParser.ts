@@ -25,11 +25,24 @@ export const parseM3U = (content: string): Channel[] => {
         ? tvgIdMatch[1]
         : `channel-${Date.now()}-${channelIndex++}`;
 
+      // Parse and clean group title
+      let group = 'Uncategorized';
+      if (groupTitleMatch && groupTitleMatch[1]) {
+        const rawGroup = groupTitleMatch[1].trim();
+        if (rawGroup && rawGroup.toLowerCase() !== 'undefined') {
+          // If group-title has multiple values separated by semicolon, take the first one
+          const firstGroup = rawGroup.split(';')[0].trim();
+          if (firstGroup) {
+            group = firstGroup;
+          }
+        }
+      }
+
       currentChannel = {
         id: uniqueId,
         name: tvgNameMatch && tvgNameMatch[1] ? tvgNameMatch[1] : channelName,
         logo: tvgLogoMatch && tvgLogoMatch[1] ? tvgLogoMatch[1] : undefined,
-        group: groupTitleMatch && groupTitleMatch[1] ? groupTitleMatch[1] : 'Uncategorized',
+        group,
         tvgId: tvgIdMatch && tvgIdMatch[1] ? tvgIdMatch[1] : undefined,
       };
 
@@ -81,7 +94,17 @@ export const groupChannelsByCategory = (channels: Channel[]): Map<string, Channe
   const grouped = new Map<string, Channel[]>();
 
   channels.forEach(channel => {
-    const group = channel.group ?? 'Uncategorized';
+    // Clean and normalize the group name
+    let group = channel.group ?? 'Uncategorized';
+    
+    // Filter out undefined/null/empty values
+    if (!group || group.trim() === '' || group.toLowerCase() === 'undefined') {
+      group = 'Uncategorized';
+    } else {
+      // If it still has semicolons (shouldn't happen after parser fix, but just in case)
+      group = group.split(';')[0].trim();
+    }
+
     if (!grouped.has(group)) {
       grouped.set(group, []);
     }
