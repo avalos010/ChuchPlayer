@@ -13,6 +13,7 @@ import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import FocusableItem from '../components/FocusableItem';
 import { RootStackParamList } from '../types';
 import { getSettings } from '../utils/storage';
+import { showError } from '../utils/toast';
 
 interface PlayerScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Player'>;
@@ -37,6 +38,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       }
     } catch (settingsError) {
       console.error('Error loading settings:', settingsError);
+      showError('Failed to load playback settings.', String(settingsError));
     }
   }, []);
 
@@ -66,8 +68,10 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     if (!status.isLoaded) {
       if (status.error) {
         console.error('Playback error:', status.error);
-        setError('Failed to load stream. Please try again later.');
+        const errorMsg = status.error.message || 'Failed to load stream. Please try again later.';
+        setError(errorMsg);
         setLoading(false);
+        showError('Stream playback error. Please check your connection.', status.error.message);
       }
       return;
     }
@@ -87,6 +91,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       setShowControls(true);
     } catch (playbackError) {
       console.error('Error toggling playback:', playbackError);
+      const errorMsg = playbackError instanceof Error ? playbackError.message : 'Unknown error';
+      showError('Failed to control playback.', errorMsg);
     }
   };
 
@@ -108,6 +114,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         await videoRef.current?.playAsync();
       } catch (errorPlaying) {
         console.error('Error starting playback:', errorPlaying);
+        const errorMsg = errorPlaying instanceof Error ? errorPlaying.message : 'Unknown error';
+        showError('Failed to start playback.', errorMsg);
       }
     }
   };
@@ -138,9 +146,11 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         resizeMode={ResizeMode.CONTAIN}
         shouldPlay={isPlaying}
         onLoad={handleVideoReady}
-        onError={() => {
+        onError={(error) => {
           setLoading(false);
-          setError('Failed to load stream. Please check your connection and try again.');
+          const errorMsg = 'Failed to load stream. Please check your connection and try again.';
+          setError(errorMsg);
+          showError('Video load error. Please check your connection and try again.', String(error));
         }}
         onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
         useNativeControls={false}

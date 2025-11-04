@@ -14,6 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList, Playlist } from '../types';
 import { fetchM3UPlaylist } from '../utils/m3uParser';
 import { deletePlaylist, getPlaylists, savePlaylist } from '../utils/storage';
+import { showError, showSuccess } from '../utils/toast';
 import FocusableItem from '../components/FocusableItem';
 
 interface HomeScreenProps {
@@ -35,6 +36,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       setPlaylists(savedPlaylists);
     } catch (error) {
       console.error('Error loading playlists:', error);
+      showError('Failed to load playlists. Please try again.', String(error));
     } finally {
       setLoading(false);
     }
@@ -52,7 +54,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   const handleAddPlaylist = async () => {
     if (!newPlaylistName.trim() || !newPlaylistUrl.trim()) {
-      Alert.alert('Missing info', 'Please enter both playlist name and URL.');
+      showError('Please enter both playlist name and URL.');
       return;
     }
 
@@ -61,7 +63,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     try {
       const channels = await fetchM3UPlaylist(newPlaylistUrl.trim());
       if (channels.length === 0) {
-        Alert.alert('No channels', 'No channels were found in this playlist.');
+        showError('No channels were found in this playlist.');
         return;
       }
 
@@ -81,10 +83,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       setNewPlaylistName('');
       setNewPlaylistUrl('');
 
-      Alert.alert('Success', `Added ${channels.length} channels from ${playlist.name}.`);
+      showSuccess(`Added ${channels.length} channels from ${playlist.name}.`);
     } catch (error) {
       console.error('Error adding playlist:', error);
-      Alert.alert('Error', 'Failed to load the playlist. Please check the URL and try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      showError('Failed to load the playlist. Please check the URL and try again.', errorMessage);
     } finally {
       setAddingPlaylist(false);
     }
@@ -103,9 +106,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             try {
               await deletePlaylist(playlist.id);
               setPlaylists(prev => prev.filter(item => item.id !== playlist.id));
+              showSuccess(`Deleted ${playlist.name}`);
             } catch (error) {
               console.error('Error deleting playlist:', error);
-              Alert.alert('Error', 'Failed to delete the playlist.');
+              showError('Failed to delete the playlist.', String(error));
             }
           },
         },

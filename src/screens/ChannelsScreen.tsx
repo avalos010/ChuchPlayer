@@ -12,6 +12,7 @@ import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList, Channel, Playlist } from '../types';
 import { getPlaylists } from '../utils/storage';
 import { groupChannelsByCategory } from '../utils/m3uParser';
+import { showError } from '../utils/toast';
 import ChannelListItem from '../components/ChannelListItem';
 import FocusableItem from '../components/FocusableItem';
 
@@ -32,9 +33,13 @@ const ChannelsScreen: React.FC<ChannelsScreenProps> = ({ navigation, route }) =>
     try {
       const playlists = await getPlaylists();
       const found = playlists.find(p => p.id === playlistId) ?? null;
+      if (!found) {
+        showError('Playlist not found. It may have been deleted.');
+      }
       setPlaylist(found);
     } catch (error) {
       console.error('Error loading playlist:', error);
+      showError('Failed to load playlist. Please try again.', String(error));
     } finally {
       setLoading(false);
     }

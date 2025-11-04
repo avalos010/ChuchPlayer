@@ -11,6 +11,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../components/FocusableItem';
 import { getSettings, saveSettings } from '../utils/storage';
 import { RootStackParamList, Settings } from '../types';
+import { showError } from '../utils/toast';
 
 interface SettingsScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Settings'>;
@@ -31,6 +32,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
         setSettings(storedSettings);
       } catch (error) {
         console.error('Error loading settings:', error);
+        showError('Failed to load settings.', String(error));
       } finally {
         setLoading(false);
       }
@@ -40,13 +42,16 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   }, []);
 
   const updateSetting = async <K extends keyof Settings>(key: K, value: Settings[K]) => {
+    const previousSettings = settings;
     try {
       const updated = { ...settings, [key]: value };
       setSettings(updated);
       await saveSettings(updated);
     } catch (error) {
       console.error('Error saving settings:', error);
-      Alert.alert('Error', 'Could not save settings. Please try again.');
+      showError('Could not save settings. Please try again.', String(error));
+      // Revert the state change on error
+      setSettings(previousSettings);
     }
   };
 
