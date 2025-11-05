@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
 import { ResizeMode } from 'expo-av';
@@ -10,13 +9,15 @@ import { RootStackParamList } from '../../types';
 interface EPGOverlayProps {
   onTogglePlayback: () => void;
   onBack: () => void;
+  navigation?: NativeStackNavigationProp<RootStackParamList>;
 }
 
 const EPGOverlay: React.FC<EPGOverlayProps> = ({
   onTogglePlayback,
   onBack,
+  navigation,
 }) => {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  
   const showEPG = usePlayerStore((state) => state.showEPG);
   const setShowEPG = usePlayerStore((state) => state.setShowEPG);
   const channel = usePlayerStore((state) => state.channel);
@@ -157,7 +158,13 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
           <FocusableItem 
             onPress={() => {
               setShowEPG(false);
-              navigation.navigate('Settings');
+              if (navigation) {
+                try {
+                  navigation.navigate('Settings');
+                } catch (error) {
+                  console.log('Navigation not ready:', error);
+                }
+              }
             }} 
             className="flex-1 items-center py-5 px-4 rounded-xl border border-border bg-accent/10 min-w-[110px]"
           >

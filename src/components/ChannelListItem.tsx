@@ -6,9 +6,18 @@ import { Channel } from '../types';
 interface ChannelListItemProps {
   channel: Channel;
   onPress: (channel: Channel) => void;
+  onFocus?: (channelId: string) => void;
+  isFocused?: boolean;
+  hasTVPreferredFocus?: boolean;
 }
 
-const ChannelListItem: React.FC<ChannelListItemProps> = ({ channel, onPress }) => {
+const ChannelListItem: React.FC<ChannelListItemProps> = ({ 
+  channel, 
+  onPress, 
+  onFocus,
+  isFocused = false,
+  hasTVPreferredFocus = false,
+}) => {
   const [imageError, setImageError] = useState(false);
 
   const handlePress = () => {
@@ -16,16 +25,27 @@ const ChannelListItem: React.FC<ChannelListItemProps> = ({ channel, onPress }) =
     onPress(channel);
   };
 
+  const handleFocus = () => {
+    onFocus?.(channel.id);
+  };
+
   return (
     <FocusableItem 
-      onPress={handlePress} 
-      className="bg-card mx-4 my-2 rounded-xl border border-border"
+      onPress={handlePress}
+      onFocus={handleFocus}
+      hasTVPreferredFocus={hasTVPreferredFocus}
+      className="bg-card rounded-xl border border-border"
       style={{
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.3,
         shadowRadius: 4,
         elevation: 4,
+      }}
+      focusedStyle={{
+        backgroundColor: 'rgba(0, 170, 255, 0.15)',
+        borderColor: '#00aaff',
+        borderWidth: 2,
       }}
     >
       <View className="flex-row items-center p-4 gap-4">

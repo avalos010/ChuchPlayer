@@ -128,23 +128,38 @@ export const parseXtreamStreams = (
   categories: XtreamCodesCategory[]
 ): Channel[] => {
   const categoryMap = new Map<string, string>();
-  categories.forEach(cat => {
-    categoryMap.set(cat.category_id, cat.category_name);
-  });
+  
+  // Guard against null/undefined categories
+  if (categories && Array.isArray(categories)) {
+    categories.forEach(cat => {
+      if (cat) {
+        categoryMap.set(cat.category_id, cat.category_name);
+      }
+    });
+  }
 
-  return streams.map((stream, index) => {
-    const categoryId = stream.category_id || stream.category_ids?.[0]?.toString() || 'Uncategorized';
-    const group = categoryMap.get(categoryId) || 'Uncategorized';
+  // Guard against null/undefined streams
+  if (!streams || !Array.isArray(streams)) {
+    return [];
+  }
 
-    return {
-      id: `xtream-${stream.stream_id || stream.num || index}`,
-      name: stream.name || 'Unknown Channel',
-      url: buildXtreamStreamUrl(credentials, stream.stream_id || stream.num),
-      logo: stream.stream_icon || undefined,
-      group: group !== 'Uncategorized' ? group : 'Uncategorized',
-      tvgId: stream.epg_channel_id || stream.custom_sid || undefined,
-    };
-  });
+  return streams
+    .map((stream, index) => {
+      if (!stream) return null;
+      
+      const categoryId = stream.category_id || stream.category_ids?.[0]?.toString() || 'Uncategorized';
+      const group = categoryMap.get(categoryId) || 'Uncategorized';
+
+      return {
+        id: `xtream-${stream.stream_id || stream.num || index}`,
+        name: stream.name || 'Unknown Channel',
+        url: buildXtreamStreamUrl(credentials, stream.stream_id || stream.num),
+        logo: stream.stream_icon || undefined,
+        group: group !== 'Uncategorized' ? group : 'Uncategorized',
+        tvgId: stream.epg_channel_id || stream.custom_sid || undefined,
+      };
+    })
+    .filter((channel): channel is Channel => channel !== null);
 };
 
 /**

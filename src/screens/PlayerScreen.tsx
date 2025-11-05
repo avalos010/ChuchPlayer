@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  AppState,
   BackHandler,
   Dimensions,
   FlatList,
@@ -191,47 +192,71 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     exitPIPStore(pipAnim, pipScale);
   }, [exitPIPStore, pipAnim, pipScale]);
 
-  // EPG data - uses channel info to generate better program data
-  const getCurrentProgram = useCallback((channelId: string): EPGProgram | null => {
+  // EPG data - Generate hourly dummy programs for each channel
+  const getProgramsForChannel = useCallback((channelId: string): EPGProgram[] => {
     const channelData = channels.find(c => c.id === channelId);
-    if (!channelData) return null;
+    if (!channelData) return [];
 
     const now = new Date();
-    // Generate program based on channel name or tvgId
     const channelName = channelData.name || 'Unknown Channel';
-    const tvgId = channelData.tvgId || '';
-    
-    // Try to create a more realistic program title based on channel name
-    let programTitle = 'Live Program';
-    if (tvgId) {
-      // Use channel name as program title if we have tvgId
-      programTitle = `${channelName} - Live`;
-    } else {
-      // Generate program titles based on channel name patterns
+    const programs: EPGProgram[] = [];
+
+    // Generate programs for the past 12 hours and next 36 hours (48 hours total)
+    for (let i = -12; i < 36; i++) {
+      const hourStart = new Date(now);
+      hourStart.setHours(now.getHours() + i, 0, 0, 0);
+      const hourEnd = new Date(hourStart);
+      hourEnd.setHours(hourStart.getHours() + 1);
+
+      // Generate program titles based on channel name patterns and hour
+      let programTitle = '';
+      const hour = hourStart.getHours();
+      
       if (channelName.toLowerCase().includes('news')) {
-        programTitle = 'News Update';
+        const newsTitles = [
+          'Morning News', 'Breaking News', 'Noon Update', 'Evening News',
+          'Nightly Report', 'Late Night Update', 'Early Morning Brief'
+        ];
+        programTitle = newsTitles[hour % newsTitles.length];
       } else if (channelName.toLowerCase().includes('sport')) {
-        programTitle = 'Sports Coverage';
+        const sportTitles = [
+          'Live Match', 'Sports Highlights', 'Game Analysis', 'Live Coverage',
+          'Sports Center', 'Match Replay', 'Sports Talk'
+        ];
+        programTitle = sportTitles[hour % sportTitles.length];
       } else if (channelName.toLowerCase().includes('movie')) {
-        programTitle = 'Movie Presentation';
+        const movieTitles = [
+          'Movie: Action Film', 'Movie: Drama', 'Movie: Comedy', 'Movie: Thriller',
+          'Classic Cinema', 'Movie Night', 'Film Festival'
+        ];
+        programTitle = movieTitles[hour % movieTitles.length];
       } else {
-        programTitle = `${channelName} - Live Stream`;
+        const genericTitles = [
+          'Live Program', 'Featured Show', 'Entertainment Hour', 'Special Program',
+          'Main Event', 'Live Coverage', 'Popular Series'
+        ];
+        programTitle = genericTitles[hour % genericTitles.length];
       }
+
+      programs.push({
+        id: `epg-${channelId}-${i}-${hourStart.getTime()}`,
+        channelId,
+        title: programTitle,
+        description: `${programTitle} on ${channelName}`,
+        start: hourStart,
+        end: hourEnd,
+      });
     }
 
-    // Program started 30 minutes ago and ends in 1.5 hours (typical show length)
-    const start = new Date(now.getTime() - 30 * 60 * 1000);
-    const end = new Date(now.getTime() + 90 * 60 * 1000);
-    
-    return {
-      id: `epg-${channelId}-${Date.now()}`,
-      channelId,
-      title: programTitle,
-      description: `Currently airing on ${channelName}. EPG data will be available when integrated with an EPG service.`,
-      start,
-      end,
-    };
+    return programs;
   }, [channels]);
+
+  // Get current program (for compatibility with existing code)
+  const getCurrentProgram = useCallback((channelId: string): EPGProgram | null => {
+    const programs = getProgramsForChannel(channelId);
+    const now = new Date();
+    return programs.find(p => p.start <= now && p.end > now) || programs[0] || null;
+  }, [getProgramsForChannel]);
 
   // Load playlist that contains the current channel
   useEffect(() => {
@@ -323,7 +348,9 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         setCurrentProgram(program);
       } catch (settingsError) {
         console.error('Error loading settings:', settingsError);
-        showError('Failed to load playback settings.', String(settingsError));
+        setTimeout(() => {
+          showError('Failed to load playback settings.', String(settingsError));
+        }, 100);
       }
     };
     
@@ -361,7 +388,9 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         return;
       }
       const errorMsg = playbackError instanceof Error ? playbackError.message : 'Unknown error';
-      showError('Failed to control playback.', errorMsg);
+      setTimeout(() => {
+        showError('Failed to control playback.', errorMsg);
+      }, 100);
     }
   }, [isPlaying, setIsPlaying, channel, setShowEPG, hasUserInteracted]);
 
@@ -434,15 +463,13 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
             exitPIP();
             e.preventDefault();
           }
-          // Arrow keys navigate in EPG grid
-          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-            if (channel) {
-              const newChannel = navigateToChannel(e.key === 'ArrowDown' ? 'next' : 'prev', channels, channel.id);
-              if (newChannel) {
-                setChannel(newChannel);
-              }
-            }
-            e.preventDefault();
+          // Arrow keys navigate focus in EPG grid (handled by FocusableItem components)
+          // Don't change the playing channel - only change when user presses/selects
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            // Let the EPG grid's FocusableItem components handle navigation
+            // Don't prevent default - let the focus system handle it
+            e.preventDefault(); // Prevent page scroll
+            return;
           }
           return;
         }
@@ -496,27 +523,21 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         // Main player shortcuts (TVimate-style)
         switch (e.key) {
           case 'ArrowLeft':
-            // Left - Show channel list or groups/playlists menu
-            if (showEPG) {
-              // If EPG overlay is showing, close it and show channel list
-              setShowEPG(false);
+            // Left - Always show channel list (Android TV behavior)
             if (channels.length > 0) {
-              setShowChannelList(true);
+              // Close EPG grid if showing
+              if (showEPGGrid) {
+                setShowEPGGrid(false);
+                exitPIP();
               }
-            } else if (showEPGGrid) {
-              // If EPG grid is showing, close it and show channel list
-              setShowEPGGrid(false);
-              exitPIP();
-              if (channels.length > 0) {
-                setShowChannelList(true);
+              // Close EPG overlay if showing
+              if (showEPG) {
+                setShowEPG(false);
               }
-            } else if (showChannelList) {
-              // If channel list is already showing, show groups/playlists menu
-              setShowGroupsPlaylists(true);
-            } else if (showGroupsPlaylists) {
-              // If groups/playlists is showing, close it
-              setShowGroupsPlaylists(false);
-            } else if (channels.length > 0) {
+              // Close groups/playlists if showing
+              if (showGroupsPlaylists) {
+                setShowGroupsPlaylists(false);
+              }
               // Show channel list
               setShowChannelList(true);
             }
@@ -573,26 +594,29 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
 
           case 'Escape':
           case 'Backspace':
-            // Back key behavior:
-            // - If EPG overlay is showing, close it
-            // - If EPG grid is showing, close it
-            // - Otherwise, show EPG grid
-            if (showEPG) {
-              setShowEPG(false);
+            // Back key behavior (Android TV):
+            // - Close overlays in order (channel number pad, EPG grid, groups/playlists, channel list, EPG overlay)
+            // - If nothing is showing, show EPG grid
+            if (showChannelNumberPad) {
+              setShowChannelNumberPad(false);
+              setChannelNumberInput('');
               e.preventDefault();
             } else if (showEPGGrid) {
               setShowEPGGrid(false);
-              // Exit PIP immediately
-              const { width, height } = Dimensions.get('window');
-              pipAnim.setValue({ x: 0, y: 0 });
-              pipScale.setValue(1);
+              exitPIP();
+              e.preventDefault();
+            } else if (showGroupsPlaylists) {
+              setShowGroupsPlaylists(false);
+              e.preventDefault();
+            } else if (showChannelList) {
+              setShowChannelList(false);
+              e.preventDefault();
+            } else if (showEPG) {
+              setShowEPG(false);
               e.preventDefault();
             } else if (channels.length > 0) {
               setShowEPGGrid(true);
-              // Enter PIP immediately - no animation
-              const { width, height } = Dimensions.get('window');
-              pipAnim.setValue({ x: -width * 0.35, y: -height * 0.35 });
-              pipScale.setValue(0.3);
+              enterPIP();
               e.preventDefault();
             }
             break;
@@ -656,6 +680,82 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showEPG, showControls, showChannelList, showGroupsPlaylists, showEPGGrid, showChannelNumberPad, channels.length, channelNumberInput]);
 
+    // Android TV: Handle DPAD navigation buttons
+    useEffect(() => {
+      if (Platform.OS === 'android') {
+        try {
+          // Try to use TVEventHandler if available
+          const ReactNative = require('react-native');
+          if (ReactNative.TVEventHandler) {
+            const tvEventHandler = new ReactNative.TVEventHandler();
+            
+            tvEventHandler.enable(null, (cmp: any, evt: any) => {
+              if (!evt) return false;
+              
+              // DPAD left - Always show channel list (even when overlays are showing)
+              if (evt.eventType === 'left') {
+                if (channels.length > 0) {
+                  // Close EPG grid if showing
+                  if (showEPGGrid) {
+                    setShowEPGGrid(false);
+                    exitPIP();
+                  }
+                  // Close EPG overlay if showing
+                  if (showEPG) {
+                    setShowEPG(false);
+                  }
+                  // Close groups/playlists if showing
+                  if (showGroupsPlaylists) {
+                    setShowGroupsPlaylists(false);
+                  }
+                  // Show channel list
+                  setShowChannelList(true);
+                  return true;
+                }
+              }
+              
+              // Only handle other navigation when no overlays are showing
+              if (showEPG || showEPGGrid || showChannelList || showGroupsPlaylists || error) {
+                return false;
+              }
+              
+              if (evt.eventType === 'up') {
+                // DPAD up - Previous channel
+                if (channel && channels.length > 0) {
+                  const newChannel = navigateToChannel('prev', channels, channel.id);
+                  if (newChannel) {
+                    setChannel(newChannel);
+                    const program = getCurrentProgram(newChannel.id);
+                    setCurrentProgram(program);
+                  }
+                  return true;
+                }
+              } else if (evt.eventType === 'down') {
+                // DPAD down - Next channel
+                if (channel && channels.length > 0) {
+                  const newChannel = navigateToChannel('next', channels, channel.id);
+                  if (newChannel) {
+                    setChannel(newChannel);
+                    const program = getCurrentProgram(newChannel.id);
+                    setCurrentProgram(program);
+                  }
+                  return true;
+                }
+              }
+              return false;
+            });
+            
+            return () => {
+              tvEventHandler.disable();
+            };
+          }
+        } catch (error) {
+          console.log('TVEventHandler not available:', error);
+        }
+      }
+      return undefined;
+    }, [showEPG, showEPGGrid, showChannelList, showGroupsPlaylists, error, channels, channel, navigateToChannel, getCurrentProgram, setChannel, setCurrentProgram, setShowChannelList, setShowEPGGrid, setShowEPG, setShowGroupsPlaylists, exitPIP]);
+
     useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
       // If channel number pad is showing, close it
@@ -667,17 +767,12 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       // If EPG grid is showing, close it and restore full video instantly
       if (showEPGGrid) {
         setShowEPGGrid(false);
-        // Restore full video immediately - no animation
-        pipAnim.setValue({ x: 0, y: 0 });
-        pipScale.setValue(1);
+        exitPIP();
         return true;
       }
-      // If groups/playlists menu is showing, close it and show channel list
+      // If groups/playlists menu is showing, close it
       if (showGroupsPlaylists) {
         setShowGroupsPlaylists(false);
-        if (channels.length > 0) {
-          setShowChannelList(true);
-        }
         return true;
       }
       // If channel list is showing, close it
@@ -690,18 +785,15 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         setShowEPG(false);
         return true;
       }
-      // Show EPG grid with picture-in-picture video (instant, no animation)
+      // Show EPG grid when back is pressed and nothing is showing (Android TV behavior)
       if (channels.length > 0) {
         setShowEPGGrid(true);
-        // Enter PIP immediately - no animation
-        const { width, height } = Dimensions.get('window');
-        pipAnim.setValue({ x: -width * 0.35, y: -height * 0.35 });
-        pipScale.setValue(0.3);
+        enterPIP();
         return true;
       }
       // Otherwise, navigate to Settings if we can't go back
       if (navigation.canGoBack()) {
-        navigation.goBack();
+      navigation.goBack();
       } else {
         navigation.navigate('Settings');
       }
@@ -721,19 +813,42 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           ? status.error 
           : (status.error as any)?.message || 'Unknown playback error';
         setError('Stream playback error. Please check your connection.');
+        setLoading(false); // Clear loading on error
+        setTimeout(() => {
         showError('Stream playback error. Please check your connection.', errorDetails);
+        }, 100);
       }
       return;
     }
 
-    // Update loading and playing states
-    setLoading(status.isBuffering);
+    // Update playing state first
     setIsPlaying(status.isPlaying);
+    
+    // Clear loading immediately when video starts playing
+    // Don't show loading overlay once playback has started, even if buffering
+    if (status.isPlaying) {
+      setLoading(false);
+    } else if (!status.isBuffering) {
+      // Only clear loading if not buffering and not playing
+      setLoading(false);
+    }
+    // If not playing and buffering, keep loading state (but this should be rare after initial load)
+    
+    // Log playback status for debugging
+    if (Platform.OS === 'android') {
+      console.log('Playback status:', {
+        isPlaying: status.isPlaying,
+        isBuffering: status.isBuffering,
+        durationMillis: status.durationMillis,
+        positionMillis: status.positionMillis,
+      });
+    }
 
     if (status.didJustFinish) {
         setIsPlaying(false);
+        setLoading(false);
     }
-  }, [setLoading, setIsPlaying, setError]);
+  }, [setLoading, setIsPlaying, setError, isPlaying]);
 
   // Enhanced screen press handler - shows EPG overlay (channel logo and options)
   const handleScreenPress = useCallback(() => {
@@ -851,7 +966,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     } else {
       // If no channels, navigate to Settings (or go back if possible)
       if (navigation.canGoBack()) {
-        navigation.goBack();
+    navigation.goBack();
       } else {
         navigation.navigate('Settings');
       }
@@ -862,6 +977,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const handleVideoReadyWithPlayback = useCallback(async () => {
     console.log('Video onLoad callback - video is ready for channel:', channel?.name);
     handleVideoReady();
+    // Clear loading immediately when video is ready
     setLoading(false);
     
     // Check if we should auto-play
@@ -877,8 +993,18 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
             return;
           }
           console.log('Auto-playing video from onLoad...');
-          await videoRef.current.playAsync();
-          setIsPlaying(true);
+          try {
+            const playbackStatus = await videoRef.current.playAsync();
+            console.log('PlayAsync result:', playbackStatus);
+            if (playbackStatus.isLoaded) {
+              setIsPlaying(playbackStatus.isPlaying);
+              console.log('Video playback started, isPlaying:', playbackStatus.isPlaying);
+            }
+          } catch (playError) {
+            console.error('PlayAsync error:', playError);
+            // Don't throw, let the error handler below catch it
+            throw playError;
+          }
         } else {
           // Still pause to ensure clean state
           await videoRef.current.pauseAsync();
@@ -887,15 +1013,49 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       }
       } catch (errorPlaying) {
         console.error('Error starting playback:', errorPlaying);
+        
+        // Handle platform-specific expected errors gracefully
+        const errorMessage = errorPlaying instanceof Error ? errorPlaying.message : String(errorPlaying);
+        const errorName = errorPlaying instanceof Error ? errorPlaying.name : '';
+        
         // On web, don't show error for NotAllowedError (autoplay blocked)
-        if (Platform.OS === 'web' && errorPlaying instanceof Error && errorPlaying.name === 'NotAllowedError') {
+        if (Platform.OS === 'web' && errorName === 'NotAllowedError') {
           console.log('Autoplay blocked by browser - user interaction required');
           setIsPlaying(false);
           setLoading(false);
           return;
         }
-        const errorMsg = errorPlaying instanceof Error ? errorPlaying.message : 'Unknown error';
+        
+        // On Android, don't show error for AudioFocusNotAcquiredException (app in background)
+        if (Platform.OS === 'android' && errorMessage.includes('AudioFocusNotAcquiredException')) {
+          console.log('Audio focus not acquired - app may be in background. Will retry when app comes to foreground.');
+          setIsPlaying(false);
+          setLoading(false);
+          
+          // Retry after a short delay in case app is actually foreground
+          setTimeout(() => {
+            if (videoRef.current && AppState.currentState === 'active') {
+              console.log('Retrying playback after audio focus error...');
+              videoRef.current.playAsync()
+                .then(status => {
+                  console.log('Retry successful, status:', status);
+                  if (status.isLoaded) {
+                    setIsPlaying(status.isPlaying);
+                  }
+                })
+                .catch(retryErr => {
+                  console.log('Retry failed:', retryErr);
+                });
+            }
+          }, 1000); // Increased delay to 1 second
+          return;
+        }
+        
+        // Only show error for unexpected errors
+        const errorMsg = errorMessage || 'Unknown error';
+        setTimeout(() => {
         showError('Failed to start playback.', errorMsg);
+        }, 100);
       setLoading(false);
     }
   }, [handleVideoReady, setIsPlaying, setLoading, channel?.name, hasUserInteracted]);
@@ -947,6 +1107,40 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     };
   }, [showEPG, resetEPGAutoHideTimer]);
 
+  // Enter PIP mode when EPG grid is shown - minimize video to top-right corner (TiviMate style)
+  useEffect(() => {
+    if (showEPGGrid && channels.length > 0) {
+      enterPIP();
+    } else if (!showEPGGrid) {
+      exitPIP();
+    }
+  }, [showEPGGrid, channels.length, enterPIP, exitPIP]);
+
+  // Retry playback when app comes to foreground (Android audio focus)
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: string) => {
+      if (Platform.OS === 'android' && nextAppState === 'active') {
+        // App came to foreground - retry playback if we should be playing
+        if (isPlaying && videoRef.current && channel) {
+          getSettings().then(settings => {
+            if (settings.autoPlay) {
+              console.log('App came to foreground - retrying playback...');
+              videoRef.current?.playAsync().catch(err => {
+                console.log('Retry playback failed:', err);
+              });
+            }
+          }).catch(err => {
+            console.log('Error getting settings for retry:', err);
+          });
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isPlaying, channel]);
+
   const handleMultiScreenPress = useCallback(() => {
     setShowMultiScreenControls(true);
   }, []);
@@ -954,7 +1148,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   // If in multi-screen mode, show multi-screen view
   if (isMultiScreenMode && screens.length > 0) {
     const { width, height } = Dimensions.get('window');
-    return (
+  return (
       <View 
         className="flex-1 bg-black w-full h-full absolute inset-0"
         style={Platform.OS === 'web' ? {
@@ -989,33 +1183,10 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         onEPGInfo={() => setShowEPG(true)}
       />
 
+      {/* Always show focusable overlay for Android TV remote control */}
       {!showEPG && !showEPGGrid && !showChannelList && !showGroupsPlaylists && !error && (
-        <TouchableOpacity
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 2,
-            backgroundColor: 'transparent',
-            pointerEvents: 'auto',
-          }}
-          activeOpacity={1}
-          onPress={() => {
-            // Mark user interaction for autoplay on web
-            if (Platform.OS === 'web' && !hasUserInteracted) {
-              setHasUserInteracted(true);
-              // Try to play if autoplay is enabled
-              if (isPlaying && videoRef.current) {
-                videoRef.current.playAsync().catch(err => {
-                  console.log('Play failed:', err);
-                });
-              }
-            }
-            handleScreenPress();
-          }}
-        >
+        <>
+          {/* Main overlay for center button press and left navigation */}
           <FocusableItem
             onPress={() => {
               // Mark user interaction for autoplay on web
@@ -1030,20 +1201,55 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
               }
               handleCenterPress();
             }}
-            onFocus={showControlsOnFocus}
+            onFocus={() => {
+              // On Android TV, don't auto-show EPG overlay on focus
+              // Let the user explicitly press OK/Select to show it
+              if (Platform.OS !== 'android') {
+                showControlsOnFocus();
+              }
+            }}
+            onBlur={() => {
+              // On Android TV, when overlay loses focus (user navigated away), check if we should open channel list
+              if (Platform.OS === 'android') {
+                // This is a fallback - TVEventHandler should handle left navigation
+                console.log('Main overlay lost focus on Android TV');
+              }
+            }}
+            hasTVPreferredFocus={Platform.OS === 'android'}
             className="absolute inset-0 bg-transparent"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 2,
+              backgroundColor: 'transparent',
+            }}
           >
             <View className="absolute inset-0 bg-transparent" />
           </FocusableItem>
-        </TouchableOpacity>
+        </>
       )}
 
-      {/* Video Container - Must be visible */}
+      {/* Video Container - Minimized to top-right when EPG grid is shown */}
       {channel && (
       <Animated.View
         style={{
           flex: 1,
           position: 'relative',
+          zIndex: showEPGGrid ? 30 : 1,
+          elevation: showEPGGrid ? 30 : 1,
+          ...(showEPGGrid && {
+            borderRadius: 8,
+            borderWidth: 2,
+            borderColor: '#00aaff',
+            overflow: 'hidden',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.5,
+            shadowRadius: 8,
+          }),
             transform: [
               { translateX: pipAnim.x },
               { translateY: pipAnim.y },
@@ -1058,25 +1264,56 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           source={{ uri: channel.url }}
             style={{
               flex: 1,
-              width: '-webkit-fill-available',
+              width: Platform.OS === 'web' ? '-webkit-fill-available' : '100%',
               height: '100%',
-              margin: 'auto',
+              margin: Platform.OS === 'web' ? 'auto' : 0,
               backgroundColor: '#000000',
             } as any}
           resizeMode={resizeMode}
-            shouldPlay={Platform.OS === 'web' ? false : isPlaying}
+          shouldPlay={isPlaying}
             onLoad={handleVideoReadyWithPlayback}
           onError={(error) => {
+            console.error('Video onError callback:', error);
             setLoading(false);
             const errorMsg = 'Failed to load stream. Please check your connection and try again.';
             setError(errorMsg);
+            setTimeout(() => {
             showError('Video load error. Please check your connection and try again.', String(error));
+            }, 100);
           }}
             onPlaybackStatusUpdate={handlePlaybackStatusUpdateWithError}
           useNativeControls={false}
           isLooping={false}
+          volume={1.0}
+          isMuted={false}
         />
         </View>
+        {/* Channel name overlay when minimized */}
+        {showEPGGrid && (
+          <View
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+            }}
+            pointerEvents="none"
+          >
+            <Text
+              style={{
+                color: '#fff',
+                fontSize: 12,
+                fontWeight: '600',
+              }}
+              numberOfLines={1}
+            >
+              {channel.name}
+            </Text>
+          </View>
+        )}
       </Animated.View>
       )}
 
@@ -1114,7 +1351,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         onClose={() => setShowMultiScreenControls(false)}
       />
 
-      {/* EPG Overlay */}
+      {/* EPG Overlay - Only render when visible and navigation is ready */}
+      {showEPG && (
         <EPGOverlay
           onTogglePlayback={handleTogglePlayback}
           onBack={() => {
@@ -1124,14 +1362,20 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
               navigation.navigate('Settings');
             }
           }}
+          navigation={navigation}
         />
+      )}
 
-      {/* EPG Grid View */}
+      {/* EPG Grid View - Only render when visible and navigation is ready */}
+      {showEPGGrid && navigation && (
         <EPGGridView
           getCurrentProgram={getCurrentProgram}
+          getProgramsForChannel={getProgramsForChannel}
           onChannelSelect={handleChannelSelect}
-        onExitPIP={exitPIP}
+          onExitPIP={exitPIP}
+          navigation={navigation}
         />
+      )}
 
       {/* Channel List Panel */}
       <ChannelListPanel

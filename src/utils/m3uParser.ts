@@ -93,7 +93,15 @@ export const fetchM3UPlaylist = async (url: string): Promise<Channel[]> => {
 export const groupChannelsByCategory = (channels: Channel[]): Map<string, Channel[]> => {
   const grouped = new Map<string, Channel[]>();
 
+  // Guard against null/undefined channels
+  if (!channels || !Array.isArray(channels)) {
+    return grouped;
+  }
+
   channels.forEach(channel => {
+    // Skip null/undefined channels
+    if (!channel) return;
+    
     // Clean and normalize the group name
     let group = channel.group ?? 'Uncategorized';
     

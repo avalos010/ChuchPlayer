@@ -17,12 +17,13 @@ import { RootStackParamList, Settings, Playlist, PlaylistSourceType } from '../t
 import { showError, showSuccess } from '../utils/toast';
 import { fetchM3UPlaylist } from '../utils/m3uParser';
 import { fetchXtreamPlaylist } from '../utils/xtreamParser';
+import { usePlayerStore } from '../store/usePlayerStore';
 
 interface SettingsScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Settings'>;
 }
 
-const SettingsScreen: React.FC<SettingsScreenProps> = () => {
+const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [settings, setSettings] = useState<Settings>({
     autoPlay: true,
     showEPG: false,
@@ -93,7 +94,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
       await saveSettings(updated);
     } catch (error) {
       console.error('Error saving settings:', error);
-      showError('Could not save settings. Please try again.', String(error));
+      setTimeout(() => {
+        showError('Could not save settings. Please try again.', String(error));
+      }, 100);
       // Revert the state change on error
       setSettings(previousSettings);
     }
@@ -101,18 +104,18 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
 
   const handleAddPlaylist = async () => {
     if (!newPlaylistName.trim()) {
-      showError('Please enter a playlist name.');
+      setTimeout(() => showError('Please enter a playlist name.'), 100);
       return;
     }
 
     if (sourceType === 'm3u') {
       if (!newPlaylistUrl.trim()) {
-        showError('Please enter an M3U playlist URL.');
+        setTimeout(() => showError('Please enter an M3U playlist URL.'), 100);
         return;
       }
     } else {
       if (!xtreamServerUrl.trim() || !xtreamUsername.trim() || !xtreamPassword.trim()) {
-        showError('Please enter all Xtream Codes credentials.');
+        setTimeout(() => showError('Please enter all Xtream Codes credentials.'), 100);
         return;
       }
     }
@@ -139,7 +142,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
       }
 
       if (channels.length === 0) {
-        showError('No channels were found in this playlist.');
+        setTimeout(() => showError('No channels were found in this playlist.'), 100);
         return;
       }
 
@@ -165,14 +168,26 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
       setXtreamPassword('');
       setSourceType('m3u');
 
-      showSuccess(`Added ${channels.length} channels from ${playlist.name}.`);
+      // Update player store with new playlist and channels
+      const setPlaylist = usePlayerStore.getState().setPlaylist;
+      const setChannels = usePlayerStore.getState().setChannels;
+      const setShowEPGGrid = usePlayerStore.getState().setShowEPGGrid;
+      
+      setPlaylist(playlist);
+      setChannels(channels);
+      setShowEPGGrid(true); // Show EPG grid
+      
+      // Navigate to Player screen (EPG grid will be visible)
+      navigation.navigate('Player');
+
+      setTimeout(() => showSuccess(`Added ${channels.length} channels from ${playlist.name}.`), 100);
     } catch (error) {
       console.error('Error adding playlist:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const errorPrefix = sourceType === 'm3u' 
         ? 'Failed to load the playlist. Please check the URL and try again.'
         : 'Failed to load the playlist. Please check your credentials and try again.';
-      showError(errorPrefix, errorMessage);
+      setTimeout(() => showError(errorPrefix, errorMessage), 100);
     } finally {
       setAddingPlaylist(false);
     }
@@ -191,10 +206,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
             try {
               await deletePlaylist(playlist.id);
               setPlaylists(prev => prev.filter(item => item.id !== playlist.id));
-              showSuccess(`Deleted ${playlist.name}`);
+              setTimeout(() => showSuccess(`Deleted ${playlist.name}`), 100);
             } catch (error) {
               console.error('Error deleting playlist:', error);
-              showError('Failed to delete the playlist.', String(error));
+              setTimeout(() => showError('Failed to delete the playlist.', String(error)), 100);
             }
           },
         },

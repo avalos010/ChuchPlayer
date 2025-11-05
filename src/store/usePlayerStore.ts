@@ -198,17 +198,30 @@ export const usePlayerStore = create<PlayerUIState>((set, get) => ({
     }
   },
 
-  // PIP actions
+  // PIP actions - TiviMate style: minimize to top-right corner
   enterPIP: (pipAnim, pipScale) => {
     const { width, height } = Dimensions.get('window');
+    // Calculate position for top-right corner
+    // Transform origin is at center, so we need to calculate from center
+    const scale = 0.25; // 25% of original size
+    const margin = 16;
+    
+    // After scaling, video is 25% of original size centered at origin
+    // To position in top-right: move right by (half screen - half scaled width - margin)
+    // and move up by (half screen - half scaled height - margin)
+    const scaledWidth = width * scale;
+    const scaledHeight = height * scale;
+    const translateX = width / 2 - scaledWidth / 2 - margin;
+    const translateY = -height / 2 + scaledHeight / 2 + margin;
+    
     Animated.parallel([
       Animated.timing(pipAnim, {
-        toValue: { x: -width * 0.35, y: -height * 0.35 },
+        toValue: { x: translateX, y: translateY },
         duration: 300,
         useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.timing(pipScale, {
-        toValue: 0.3,
+        toValue: scale,
         duration: 300,
         useNativeDriver: Platform.OS !== 'web',
       }),
