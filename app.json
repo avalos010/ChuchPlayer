@@ -21,7 +21,9 @@
         "backgroundColor": "#1a1a1a"
       },
       "package": "com.chuchplayer",
-      "permissions": ["INTERNET"],
+      "permissions": [
+        "INTERNET"
+      ],
       "tvBanner": "./assets/icon.png",
       "backgroundColor": "#1a1a1a"
     },
@@ -35,10 +37,17 @@
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "enableProguardInReleaseBuilds": true,
+            "enableR8": true
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8dece8ad-cb14-4dd8-b347-dff2dc63af05"
+      }
+    }
   }
 }

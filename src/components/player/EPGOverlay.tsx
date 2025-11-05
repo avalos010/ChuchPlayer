@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity } from 'react-native';
+import { View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
@@ -32,15 +32,20 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
 
   return (
     <TouchableOpacity 
-      className="absolute inset-0 justify-between pt-8 pb-12 px-8 z-[5] bg-transparent" 
+      className="absolute inset-0 z-[5] bg-transparent" 
       style={{
         elevation: 5,
       }}
       activeOpacity={1} 
       onPress={() => setShowEPG(false)}
     >
-      {/* Top Card - Channel Info - TiviMate Style */}
-      <TouchableOpacity 
+      <ScrollView 
+        className="flex-1 pt-8 pb-12 px-8"
+        contentContainerStyle={{ justifyContent: 'space-between', flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Top Card - Channel Info - TiviMate Style */}
+        <TouchableOpacity 
         className="rounded-2xl border border-border bg-card shadow-lg"
         style={{
           elevation: 12,
@@ -161,6 +166,7 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
           </FocusableItem>
         </View>
       </TouchableOpacity>
+      </ScrollView>
     </TouchableOpacity>
   );
 };

@@ -582,18 +582,17 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
               e.preventDefault();
             } else if (showEPGGrid) {
               setShowEPGGrid(false);
-              exitPIP();
+              // Exit PIP immediately
+              const { width, height } = Dimensions.get('window');
+              pipAnim.setValue({ x: 0, y: 0 });
+              pipScale.setValue(1);
               e.preventDefault();
             } else if (channels.length > 0) {
               setShowEPGGrid(true);
-              // Enter PIP immediately without animation delay
-              if (Platform.OS === 'web') {
+              // Enter PIP immediately - no animation
               const { width, height } = Dimensions.get('window');
-                pipAnim.setValue({ x: -width * 0.35, y: -height * 0.35 });
-                pipScale.setValue(0.3);
-              } else {
-                enterPIP();
-              }
+              pipAnim.setValue({ x: -width * 0.35, y: -height * 0.35 });
+              pipScale.setValue(0.3);
               e.preventDefault();
             }
             break;
@@ -665,22 +664,12 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         setChannelNumberInput('');
         return true;
       }
-      // If EPG grid is showing, close it and restore full video
+      // If EPG grid is showing, close it and restore full video instantly
       if (showEPGGrid) {
         setShowEPGGrid(false);
-        // Restore full video
-        Animated.parallel([
-          Animated.timing(pipAnim, {
-            toValue: { x: 0, y: 0 },
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pipScale, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]).start();
+        // Restore full video immediately - no animation
+        pipAnim.setValue({ x: 0, y: 0 });
+        pipScale.setValue(1);
         return true;
       }
       // If groups/playlists menu is showing, close it and show channel list
@@ -701,21 +690,21 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         setShowEPG(false);
         return true;
       }
-      // Show EPG grid with picture-in-picture video (without animation delay)
+      // Show EPG grid with picture-in-picture video (instant, no animation)
       if (channels.length > 0) {
         setShowEPGGrid(true);
-        // Enter PIP immediately without animation delay
-        if (Platform.OS === 'web') {
+        // Enter PIP immediately - no animation
         const { width, height } = Dimensions.get('window');
-          pipAnim.setValue({ x: -width * 0.35, y: -height * 0.35 });
-          pipScale.setValue(0.3);
-        } else {
-          enterPIP();
-        }
+        pipAnim.setValue({ x: -width * 0.35, y: -height * 0.35 });
+        pipScale.setValue(0.3);
         return true;
       }
-      // Otherwise go back
-      navigation.goBack();
+      // Otherwise, navigate to Settings if we can't go back
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Settings');
+      }
       return true;
     });
 
@@ -860,8 +849,12 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     if (channels.length > 0) {
       setShowChannelList(true);
     } else {
-      // If no channels, go back
-    navigation.goBack();
+      // If no channels, navigate to Settings (or go back if possible)
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        navigation.navigate('Settings');
+      }
     }
   }, [navigation, showChannelList, showGroupsPlaylists, showEPG, showEPGGrid, channels.length, setShowChannelList, setShowGroupsPlaylists, setShowEPG, setShowEPGGrid, exitPIP]);
 
@@ -1124,7 +1117,13 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       {/* EPG Overlay */}
         <EPGOverlay
           onTogglePlayback={handleTogglePlayback}
-          onBack={() => navigation.goBack()}
+          onBack={() => {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate('Settings');
+            }
+          }}
         />
 
       {/* EPG Grid View */}

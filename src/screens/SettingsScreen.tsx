@@ -49,7 +49,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
       setPlaylists(savedPlaylists);
     } catch (error) {
       console.error('Error loading playlists:', error);
-      showError('Failed to load playlists. Please try again.', String(error));
+      // Delay error display to ensure navigation is ready
+      setTimeout(() => {
+        showError('Failed to load playlists. Please try again.', String(error));
+      }, 100);
     } finally {
       setLoadingPlaylists(false);
     }
@@ -62,7 +65,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
         setSettings(storedSettings);
       } catch (error) {
         console.error('Error loading settings:', error);
-        showError('Failed to load settings.', String(error));
+        // Delay error display to ensure navigation is ready
+        setTimeout(() => {
+          showError('Failed to load settings.', String(error));
+        }, 100);
       } finally {
         setLoading(false);
       }
@@ -71,6 +77,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
     loadSettings();
     loadPlaylists();
   }, [loadPlaylists]);
+
+  // Auto-open add playlist modal when there are no playlists
+  useEffect(() => {
+    if (!loadingPlaylists && playlists.length === 0) {
+      setModalVisible(true);
+    }
+  }, [loadingPlaylists, playlists.length]);
 
   const updateSetting = async <K extends keyof Settings>(key: K, value: Settings[K]) => {
     const previousSettings = settings;
