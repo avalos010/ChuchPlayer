@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { Pressable, StyleProp, View, ViewStyle } from 'react-native';
 
 interface FocusableItemProps {
   onPress: () => void;
@@ -8,6 +8,7 @@ interface FocusableItemProps {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   focusedStyle?: StyleProp<ViewStyle>;
+  className?: string;
   disabled?: boolean;
 }
 
@@ -18,6 +19,7 @@ const FocusableItem: React.FC<FocusableItemProps> = ({
   children,
   style,
   focusedStyle,
+  className,
   disabled = false,
 }) => {
   const [isFocused, setIsFocused] = useState(false);
@@ -32,41 +34,34 @@ const FocusableItem: React.FC<FocusableItemProps> = ({
     onBlur?.();
   };
 
+  const baseClasses = 'rounded-lg';
+  const focusedClasses = isFocused 
+    ? 'scale-105 border-[3px] border-accent shadow-lg' 
+    : '';
+  const combinedClasses = `${baseClasses} ${focusedClasses} ${className || ''}`.trim();
+
   return (
     <Pressable
       disabled={disabled}
       onPress={onPress}
       onFocus={handleFocus}
       onBlur={handleBlur}
-      style={({ pressed }) => [
-        styles.base,
+      className={combinedClasses}
+      style={[
         style,
-        isFocused && [styles.focused, focusedStyle],
-        pressed && !isFocused && styles.pressed,
+        isFocused && focusedStyle,
+        { 
+          elevation: isFocused ? 10 : 0,
+          shadowColor: isFocused ? '#00aaff' : 'transparent',
+          shadowOffset: isFocused ? { width: 0, height: 4 } : { width: 0, height: 0 },
+          shadowOpacity: isFocused ? 0.6 : 0,
+          shadowRadius: isFocused ? 8 : 0,
+        },
       ]}
     >
       <View pointerEvents="none">{children}</View>
     </Pressable>
   );
 };
-
-const styles = StyleSheet.create({
-  base: {
-    borderRadius: 8,
-  },
-  focused: {
-    transform: [{ scale: 1.05 }],
-    borderWidth: 3,
-    borderColor: '#00aaff',
-    shadowColor: '#00aaff',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  pressed: {
-    opacity: 0.9,
-  },
-});
 
 export default FocusableItem;

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -82,7 +81,7 @@ const ChannelsScreen: React.FC<ChannelsScreenProps> = ({ navigation, route }) =>
 
   if (loading) {
     return (
-      <View style={styles.centerContainer}>
+      <View className="flex-1 justify-center items-center bg-dark">
         <ActivityIndicator size="large" color="#00aaff" />
       </View>
     );
@@ -90,17 +89,17 @@ const ChannelsScreen: React.FC<ChannelsScreenProps> = ({ navigation, route }) =>
 
   if (!playlist) {
     return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>Playlist not found</Text>
+      <View className="flex-1 justify-center items-center bg-dark">
+        <Text className="text-white text-lg">Playlist not found</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.searchContainer}>
+    <View className="flex-1 bg-dark">
+      <View className="p-4 border-b border-card">
         <TextInput
-          style={styles.searchInput}
+          className="bg-card text-white rounded-lg p-3 text-base"
           placeholder="Search channels..."
           placeholderTextColor="#666"
           value={searchQuery}
@@ -108,26 +107,20 @@ const ChannelsScreen: React.FC<ChannelsScreenProps> = ({ navigation, route }) =>
         />
       </View>
 
-      <View style={styles.categoriesContainer}>
+      <View className="border-b border-card">
         <FlatList
           horizontal
           data={categories}
           keyExtractor={item => item}
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoriesList}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}
           renderItem={({ item }) => (
             <FocusableItem
               onPress={() => setSelectedCategory(item)}
-              style={[
-                styles.categoryButton,
-                selectedCategory === item && styles.categoryButtonActive,
-              ]}
+              className={`px-5 py-2.5 rounded-full ${selectedCategory === item ? 'bg-accent' : 'bg-card'}`}
             >
               <Text
-                style={[
-                  styles.categoryText,
-                  selectedCategory === item && styles.categoryTextActive,
-                ]}
+                className={`text-sm font-semibold ${selectedCategory === item ? 'text-white' : 'text-text-muted'}`}
               >
                 {item}
               </Text>
@@ -137,13 +130,13 @@ const ChannelsScreen: React.FC<ChannelsScreenProps> = ({ navigation, route }) =>
       </View>
 
       {filteredChannels.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No channels found</Text>
+        <View className="flex-1 justify-center items-center">
+          <Text className="text-text-muted text-lg">No channels found</Text>
         </View>
       ) : (
         <>
-          <View style={styles.infoBar}>
-            <Text style={styles.infoText}>
+          <View className="px-4 py-2 bg-[#0a0a0a]">
+            <Text className="text-text-muted text-xs">
               {filteredChannels.length} channel{filteredChannels.length === 1 ? '' : 's'}
             </Text>
           </View>
@@ -153,88 +146,12 @@ const ChannelsScreen: React.FC<ChannelsScreenProps> = ({ navigation, route }) =>
             renderItem={({ item }) => (
               <ChannelListItem channel={item} onPress={handleChannelPress} />
             )}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={{ paddingVertical: 8 }}
           />
         </>
       )}
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-  },
-  errorText: {
-    color: '#fff',
-    fontSize: 18,
-  },
-  searchContainer: {
-    padding: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2a2a2a',
-  },
-  searchInput: {
-    backgroundColor: '#2a2a2a',
-    color: '#fff',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-  },
-  categoriesContainer: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2a2a2a',
-  },
-  categoriesList: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  categoryButton: {
-    backgroundColor: '#2a2a2a',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-  },
-  categoryButtonActive: {
-    backgroundColor: '#00aaff',
-  },
-  categoryText: {
-    color: '#aaa',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  categoryTextActive: {
-    color: '#fff',
-  },
-  infoBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#0a0a0a',
-  },
-  infoText: {
-    color: '#aaa',
-    fontSize: 12,
-  },
-  listContent: {
-    paddingVertical: 8,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyText: {
-    color: '#aaa',
-    fontSize: 18,
-  },
-});
 
 export default ChannelsScreen;

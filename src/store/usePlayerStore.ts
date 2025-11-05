@@ -1,0 +1,250 @@
+import { create } from 'zustand';
+import { Channel, EPGProgram, Playlist } from '../types';
+import { ResizeMode, AVPlaybackStatus, Video } from 'expo-av';
+import { Animated, Dimensions } from 'react-native';
+
+interface PlayerUIState {
+  // UI Visibility States
+  showControls: boolean;
+  showFloatingButtons: boolean;
+  showEPG: boolean;
+  showEPGGrid: boolean;
+  showChannelList: boolean;
+  showChannelNumberPad: boolean;
+  showVolumeIndicator: boolean;
+
+  // Player State
+  channel: Channel | null;
+  currentProgram: EPGProgram | null;
+  isPlaying: boolean;
+  loading: boolean;
+  error: string | null;
+  resizeMode: ResizeMode;
+  volume: number;
+  channels: Channel[];
+  playlist: Playlist | null;
+  channelNumberInput: string;
+
+  // Actions for UI Visibility
+  setShowControls: (show: boolean) => void;
+  setShowFloatingButtons: (show: boolean) => void;
+  setShowEPG: (show: boolean) => void;
+  setShowEPGGrid: (show: boolean) => void;
+  setShowChannelList: (show: boolean) => void;
+  setShowChannelNumberPad: (show: boolean) => void;
+  setShowVolumeIndicator: (show: boolean) => void;
+
+  // Actions for Player State
+  setChannel: (channel: Channel | null) => void;
+  setCurrentProgram: (program: EPGProgram | null) => void;
+  setIsPlaying: (playing: boolean) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+  setResizeMode: (mode: ResizeMode) => void;
+  setVolume: (volume: number) => void;
+  setChannels: (channels: Channel[]) => void;
+  setPlaylist: (playlist: Playlist | null) => void;
+  setChannelNumberInput: (input: string) => void;
+
+  // Video handlers
+  handleVideoReady: () => void;
+  handlePlaybackStatusUpdate: (status: AVPlaybackStatus) => void;
+
+  // Volume actions (accept videoRef as parameter)
+  adjustVolume: (delta: number, videoRef: React.RefObject<Video | null>) => void;
+  toggleMute: (videoRef: React.RefObject<Video | null>) => void;
+
+  // Channel navigation
+  navigateToChannel: (
+    direction: 'prev' | 'next',
+    channels: Channel[],
+    currentChannelId: string
+  ) => Channel | null;
+  handleChannelNumberInput: (
+    digit: string,
+    channels: Channel[],
+    onChannelSelect: (channel: Channel) => void
+  ) => void;
+
+  // PIP actions (accept animated values as parameters)
+  enterPIP: (pipAnim: Animated.ValueXY, pipScale: Animated.Value) => void;
+  exitPIP: (pipAnim: Animated.ValueXY, pipScale: Animated.Value) => void;
+
+  // Helper actions
+  toggleControls: () => void;
+  toggleEPG: () => void;
+  closeAllOverlays: () => void;
+  togglePlayback: () => void;
+  cycleResizeMode: () => void;
+}
+
+export const usePlayerStore = create<PlayerUIState>((set, get) => ({
+  // Initial UI state
+  showControls: true,
+  showFloatingButtons: false,
+  showEPG: false,
+  showEPGGrid: false,
+  showChannelList: false,
+  showChannelNumberPad: false,
+  showVolumeIndicator: false,
+
+  // Initial Player State
+  channel: null,
+  currentProgram: null,
+  isPlaying: false,
+  loading: false,
+  error: null,
+  resizeMode: ResizeMode.CONTAIN,
+  volume: 1.0,
+  channels: [],
+  playlist: null,
+  channelNumberInput: '',
+
+  // UI Visibility Actions
+  setShowControls: (show) => set({ showControls: show }),
+  setShowFloatingButtons: (show) => set({ showFloatingButtons: show }),
+  setShowEPG: (show) => set({ showEPG: show }),
+  setShowEPGGrid: (show) => set({ showEPGGrid: show }),
+  setShowChannelList: (show) => set({ showChannelList: show }),
+  setShowChannelNumberPad: (show) => set({ showChannelNumberPad: show }),
+  setShowVolumeIndicator: (show) => set({ showVolumeIndicator: show }),
+
+  // Player State Actions
+  setChannel: (channel) => set({ channel }),
+  setCurrentProgram: (program) => set({ currentProgram: program }),
+  setIsPlaying: (playing) => set({ isPlaying: playing }),
+  setLoading: (loading) => set({ loading }),
+  setError: (error) => set({ error }),
+  setResizeMode: (mode) => set({ resizeMode: mode }),
+  setVolume: (volume) => set({ volume }),
+  setChannels: (channels) => set({ channels }),
+  setPlaylist: (playlist) => set({ playlist }),
+  setChannelNumberInput: (input) => set({ channelNumberInput: input }),
+
+  // Video handlers
+  handleVideoReady: () => {
+    set({ loading: false, error: null });
+  },
+  handlePlaybackStatusUpdate: (status: AVPlaybackStatus) => {
+    if (!status.isLoaded) {
+      if (status.error) {
+        const errorMsg =
+          typeof status.error === 'string'
+            ? status.error
+            : (status.error as any)?.message || 'Failed to load stream. Please try again later.';
+        set({ error: errorMsg, loading: false });
+      }
+      return;
+    }
+    set({ loading: status.isBuffering, isPlaying: status.isPlaying });
+    if (status.didJustFinish) {
+      set({ isPlaying: false });
+    }
+  },
+
+  // Volume actions
+  adjustVolume: (delta, videoRef) => {
+    const newVolume = Math.max(0, Math.min(1, get().volume + delta));
+    if (videoRef.current) {
+      videoRef.current.setVolumeAsync(newVolume);
+    }
+    set({ volume: newVolume });
+    get().setShowVolumeIndicator(true);
+  },
+  toggleMute: (videoRef) => {
+    const newVolume = get().volume > 0 ? 0 : 1;
+    if (videoRef.current) {
+      videoRef.current.setVolumeAsync(newVolume);
+    }
+    set({ volume: newVolume });
+    get().setShowVolumeIndicator(true);
+  },
+
+  // Channel navigation
+  navigateToChannel: (direction, channels, currentChannelId) => {
+    const currentIndex = channels.findIndex((c) => c.id === currentChannelId);
+    if (currentIndex === -1) return null;
+
+    let newIndex: number;
+    if (direction === 'next') {
+      newIndex = (currentIndex + 1) % channels.length;
+    } else {
+      newIndex = currentIndex - 1;
+      if (newIndex < 0) newIndex = channels.length - 1;
+    }
+
+    return channels[newIndex] || null;
+  },
+  handleChannelNumberInput: (digit, channels, onChannelSelect) => {
+    const currentInput = get().channelNumberInput;
+    const newInput = currentInput + digit;
+    if (newInput.length <= 4) {
+      set({ channelNumberInput: newInput, showChannelNumberPad: true });
+
+      const channelNum = parseInt(newInput, 10);
+      if (channelNum > 0 && channelNum <= channels.length) {
+        const targetChannel = channels[channelNum - 1];
+        if (targetChannel) {
+          setTimeout(() => {
+            onChannelSelect(targetChannel);
+            set({ channelNumberInput: '', showChannelNumberPad: false });
+          }, 800);
+        }
+      }
+    }
+  },
+
+  // PIP actions
+  enterPIP: (pipAnim, pipScale) => {
+    const { width, height } = Dimensions.get('window');
+    Animated.parallel([
+      Animated.timing(pipAnim, {
+        toValue: { x: -width * 0.35, y: -height * 0.35 },
+        duration: 300,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+      Animated.timing(pipScale, {
+        toValue: 0.3,
+        duration: 300,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+    ]).start();
+  },
+  exitPIP: (pipAnim, pipScale) => {
+    Animated.parallel([
+      Animated.timing(pipAnim, {
+        toValue: { x: 0, y: 0 },
+        duration: 300,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+      Animated.timing(pipScale, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+    ]).start();
+  },
+
+  // Helper actions
+  toggleControls: () => set((state) => ({ showControls: !state.showControls })),
+  toggleEPG: () => set((state) => ({ showEPG: !state.showEPG })),
+  closeAllOverlays: () => set({
+    showEPG: false,
+    showEPGGrid: false,
+    showChannelList: false,
+    showChannelNumberPad: false,
+  }),
+  togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),
+  cycleResizeMode: () => {
+    const modes: ResizeMode[] = [
+      ResizeMode.COVER,
+      ResizeMode.CONTAIN,
+      ResizeMode.STRETCH,
+    ];
+    const currentMode = get().resizeMode;
+    const currentIndex = modes.indexOf(currentMode);
+    const nextMode = modes[(currentIndex + 1) % modes.length];
+    set({ resizeMode: nextMode });
+  },
+}));
+

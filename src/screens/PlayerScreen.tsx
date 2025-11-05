@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   BackHandler,
+  FlatList,
   Image,
+  Keyboard,
+  Platform,
   ScrollView,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -13,9 +16,21 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import FocusableItem from '../components/FocusableItem';
-import { RootStackParamList, EPGProgram } from '../types';
-import { getSettings } from '../utils/storage';
+import { RootStackParamList, EPGProgram, Channel, Playlist } from '../types';
+import { getSettings, getPlaylists } from '../utils/storage';
 import { showError } from '../utils/toast';
+import EPGOverlay from '../components/player/EPGOverlay';
+import EPGGridView from '../components/player/EPGGridView';
+import ChannelListPanel from '../components/player/ChannelListPanel';
+import ChannelNumberPad from '../components/player/ChannelNumberPad';
+import VolumeIndicator from '../components/player/VolumeIndicator';
+import VideoControls from '../components/player/VideoControls';
+import FloatingButtons from '../components/player/FloatingButtons';
+import MultiScreenView from '../components/player/MultiScreenView';
+import MultiScreenControls from '../components/player/MultiScreenControls';
+import { usePlayerStore } from '../store/usePlayerStore';
+import { useMultiScreenStore } from '../store/useMultiScreenStore';
+
 
 interface PlayerScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Player'>;
@@ -23,16 +38,97 @@ interface PlayerScreenProps {
 }
 
 const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
-  const { channel } = route.params;
-  const videoRef = useRef<Video>(null);
+  const { channel: initialChannel } = route.params;
+  
+  // Use Zustand store for all state and actions (using individual selectors to avoid infinite loops)
+  const channel = usePlayerStore((state) => state.channel);
+  const channels = usePlayerStore((state) => state.channels);
+  const playlist = usePlayerStore((state) => state.playlist);
+  const isPlaying = usePlayerStore((state) => state.isPlaying);
+  const loading = usePlayerStore((state) => state.loading);
+  const error = usePlayerStore((state) => state.error);
+  const resizeMode = usePlayerStore((state) => state.resizeMode);
+  const volume = usePlayerStore((state) => state.volume);
+  const channelNumberInput = usePlayerStore((state) => state.channelNumberInput);
+  const currentProgram = usePlayerStore((state) => state.currentProgram);
+  const showControls = usePlayerStore((state) => state.showControls);
+  const showFloatingButtons = usePlayerStore((state) => state.showFloatingButtons);
+  const showEPG = usePlayerStore((state) => state.showEPG);
+  const showEPGGrid = usePlayerStore((state) => state.showEPGGrid);
+  const showChannelList = usePlayerStore((state) => state.showChannelList);
+  const showChannelNumberPad = usePlayerStore((state) => state.showChannelNumberPad);
+  const showVolumeIndicator = usePlayerStore((state) => state.showVolumeIndicator);
+  
+  // Setters
+  const setChannel = usePlayerStore((state) => state.setChannel);
+  const setChannels = usePlayerStore((state) => state.setChannels);
+  const setPlaylist = usePlayerStore((state) => state.setPlaylist);
+  const setIsPlaying = usePlayerStore((state) => state.setIsPlaying);
+  const setLoading = usePlayerStore((state) => state.setLoading);
+  const setError = usePlayerStore((state) => state.setError);
+  const setResizeMode = usePlayerStore((state) => state.setResizeMode);
+  const setChannelNumberInput = usePlayerStore((state) => state.setChannelNumberInput);
+  const setCurrentProgram = usePlayerStore((state) => state.setCurrentProgram);
+  const setShowControls = usePlayerStore((state) => state.setShowControls);
+  const setShowFloatingButtons = usePlayerStore((state) => state.setShowFloatingButtons);
+  const setShowEPG = usePlayerStore((state) => state.setShowEPG);
+  const setShowEPGGrid = usePlayerStore((state) => state.setShowEPGGrid);
+  const setShowChannelList = usePlayerStore((state) => state.setShowChannelList);
+  const setShowChannelNumberPad = usePlayerStore((state) => state.setShowChannelNumberPad);
+  const setVolume = usePlayerStore((state) => state.setVolume);
+  const setShowVolumeIndicator = usePlayerStore((state) => state.setShowVolumeIndicator);
+  
+  // Actions
+  const handleVideoReady = usePlayerStore((state) => state.handleVideoReady);
+  const handlePlaybackStatusUpdate = usePlayerStore((state) => state.handlePlaybackStatusUpdate);
+  const adjustVolumeStore = usePlayerStore((state) => state.adjustVolume);
+  const toggleMuteStore = usePlayerStore((state) => state.toggleMute);
+  const navigateToChannel = usePlayerStore((state) => state.navigateToChannel);
+  const handleChannelNumberInput = usePlayerStore((state) => state.handleChannelNumberInput);
+  const enterPIPStore = usePlayerStore((state) => state.enterPIP);
+  const exitPIPStore = usePlayerStore((state) => state.exitPIP);
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showControls, setShowControls] = useState(true);
-  const [controlsTimeout, setControlsTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [showEPG, setShowEPG] = useState(false);
-  const [currentProgram, setCurrentProgram] = useState<EPGProgram | null>(null);
+  // Refs that need to stay in component (React refs)
+  const videoRef = useRef<Video>(null);
+  const pipAnim = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const pipScale = useRef(new Animated.Value(1)).current;
+  const channelListSlideAnim = useRef(new Animated.Value(-400)).current;
+  const channelListRef = useRef<FlatList>(null);
+
+  // Multi-screen state
+  const {
+    isMultiScreenMode,
+    screens,
+    addScreen,
+    getFocusedScreen,
+    setMaxScreens,
+  } = useMultiScreenStore();
+  const [showMultiScreenControls, setShowMultiScreenControls] = useState(false);
+
+  // Initialize store with initial channel (only once on mount)
+  useEffect(() => {
+    if (initialChannel && !channel) {
+      console.log('Setting initial channel:', initialChannel.name, initialChannel.url);
+      setChannel(initialChannel);
+    }
+  }, [initialChannel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Wrappers for actions that need refs
+  const adjustVolume = useCallback((delta: number) => {
+    adjustVolumeStore(delta, videoRef);
+  }, [adjustVolumeStore]);
+
+  const toggleMute = useCallback(() => {
+    toggleMuteStore(videoRef);
+  }, [toggleMuteStore]);
+
+  const enterPIP = useCallback(() => {
+    enterPIPStore(pipAnim, pipScale);
+  }, [enterPIPStore, pipAnim, pipScale]);
+
+  const exitPIP = useCallback(() => {
+    exitPIPStore(pipAnim, pipScale);
+  }, [exitPIPStore, pipAnim, pipScale]);
 
   // Mock EPG data - in production, this would come from an EPG API
   const getCurrentProgram = useCallback((channelId: string): EPGProgram | null => {
@@ -51,93 +147,446 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     };
   }, []);
 
-  const loadSettings = useCallback(async () => {
+  // Load playlist that contains the current channel
+  useEffect(() => {
+    if (!channel) return;
+    
+    const loadPlaylistData = async () => {
     try {
-      const settings = await getSettings();
-      if (settings.autoPlay) {
-        setIsPlaying(true);
+      const playlists = await getPlaylists();
+      const foundPlaylist = playlists.find(p => 
+        p.channels.some(c => c.id === channel.id)
+      );
+      
+      if (foundPlaylist) {
+        setPlaylist(foundPlaylist);
+        setChannels(foundPlaylist.channels);
+          
+          if (isMultiScreenMode && screens.length === 0) {
+            addScreen(channel);
+          }
       }
-      // Always load current program data (EPG availability depends on service)
-      const program = getCurrentProgram(channel.id);
-      setCurrentProgram(program);
-    } catch (settingsError) {
-      console.error('Error loading settings:', settingsError);
-      showError('Failed to load playback settings.', String(settingsError));
+    } catch (error) {
+      console.error('Error loading playlist:', error);
     }
-  }, [channel.id, getCurrentProgram]);
+    };
 
-  useEffect(() => {
-    loadSettings();
-  }, [loadSettings]);
+    loadPlaylistData();
+  }, [channel?.id, isMultiScreenMode, screens.length, addScreen, setPlaylist, setChannels]);
 
+
+  // Animate channel list slide and scroll to current channel
   useEffect(() => {
+    if (showChannelList) {
+      Animated.timing(channelListSlideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+      // Scroll to current channel after animation
+      setTimeout(() => {
+        if (channel) {
+        const currentIndex = channels.findIndex(c => c.id === channel.id);
+        if (currentIndex >= 0 && channelListRef.current) {
+          channelListRef.current.scrollToIndex({
+            index: currentIndex,
+            animated: true,
+            viewPosition: 0.5,
+          });
+          }
+        }
+      }, 350);
+    } else {
+      Animated.timing(channelListSlideAnim, {
+        toValue: -420, // Slide out to left (match panel width)
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [showChannelList, channelListSlideAnim, channels, channel?.id]);
+
+
+  // Reload settings and video when channel changes
+  useEffect(() => {
+    if (!channel?.url) {
+      console.log('No channel URL, skipping video load');
+      return;
+    }
+    
+    console.log('Loading channel:', channel.name, channel.url);
+    let mounted = true;
+    const channelUrl = channel.url;
+    const channelId = channel.id;
+    
+    const loadChannelData = async () => {
+      // Load settings
+      try {
+        const settings = await getSettings();
+        if (settings.autoPlay) {
+          setIsPlaying(true);
+        }
+        setMaxScreens(settings.maxMultiScreens);
+        
+        // Always load current program data
+        const program = getCurrentProgram(channelId);
+        setCurrentProgram(program);
+      } catch (settingsError) {
+        console.error('Error loading settings:', settingsError);
+        showError('Failed to load playback settings.', String(settingsError));
+      }
+      
+      // Reset video when channel changes
+      if (!mounted) return;
+      
+      setLoading(true);
+      setError(null);
+      
+      if (videoRef.current) {
+        // Native or non-HLS: use expo-av
+        try {
+          console.log('Unloading previous video...');
+          await videoRef.current.unloadAsync();
+          if (!mounted) return;
+          
+          console.log('Loading video from URL:', channelUrl);
+          await videoRef.current.loadAsync({ uri: channelUrl }, {}, false);
+          if (!mounted) return;
+          
+          console.log('Video loaded successfully in useEffect');
+          // Don't auto-play here - let onLoad callback handle it
+        } catch (err) {
+          console.error('Error loading new channel:', err);
+          if (mounted) {
+            setError('Failed to load stream. Please check your connection and try again.');
+            setLoading(false);
+          }
+        }
+      } else {
+        console.log('videoRef is null');
+      }
+    };
+    
+    loadChannelData();
+    
+    return () => {
+      mounted = false;
+    };
+    // Only depend on channel URL to avoid loops
+  }, [channel?.url]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // TVimate-style keyboard/remote shortcuts
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const handleKeyPress = (e: KeyboardEvent) => {
+        // Number keys (0-9) - Channel number input
+        if (e.key >= '0' && e.key <= '9') {
+          setShowChannelNumberPad(true);
+          handleChannelNumberInput(e.key, channels, handleChannelSelect);
+          e.preventDefault();
+          return;
+        }
+
+        // EPG Grid view
+        if (showEPGGrid) {
+          if (e.key === 'Escape' || e.key === 'Backspace') {
+            setShowEPGGrid(false);
+            exitPIP();
+            e.preventDefault();
+          }
+          // Arrow keys navigate in EPG grid
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            if (channel) {
+              const newChannel = navigateToChannel(e.key === 'ArrowDown' ? 'next' : 'prev', channels, channel.id);
+              if (newChannel) {
+                setChannel(newChannel);
+              }
+            }
+            e.preventDefault();
+          }
+          return;
+        }
+
+        // Channel List
+        if (showChannelList) {
+          if (e.key === 'Escape' || e.key === 'ArrowRight') {
+            setShowChannelList(false);
+            e.preventDefault();
+          }
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            if (channel) {
+              const newChannel = navigateToChannel(e.key === 'ArrowDown' ? 'next' : 'prev', channels, channel.id);
+              if (newChannel) {
+                setChannel(newChannel);
+              }
+            }
+            e.preventDefault();
+          }
+          return;
+        }
+
+        // Channel Number Pad
+        if (showChannelNumberPad) {
+          if (e.key === 'Escape' || e.key === 'Backspace') {
+            setShowChannelNumberPad(false);
+            setChannelNumberInput('');
+            e.preventDefault();
+          }
+          return;
+        }
+        
+        // EPG Overlay
+        if (showEPG) {
+          if (e.key === 'Escape' || e.key === 'Enter') {
+            setShowEPG(false);
+            e.preventDefault();
+          }
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            if (channel) {
+              const newChannel = navigateToChannel(e.key === 'ArrowDown' ? 'next' : 'prev', channels, channel.id);
+              if (newChannel) {
+                setChannel(newChannel);
+              }
+            }
+            e.preventDefault();
+          }
+          return;
+        }
+
+        // Main player shortcuts (TVimate-style)
+        switch (e.key) {
+          case 'ArrowLeft':
+            // Left - Show channel list
+            if (channels.length > 0) {
+              setShowChannelList(true);
+              e.preventDefault();
+            }
+            break;
+
+          case 'ArrowRight':
+            // Right - Show EPG/info for current channel
+            setShowEPG(true);
+            e.preventDefault();
+            break;
+
+          case 'ArrowUp':
+            // Up - Previous channel or show channel number pad
+            if (e.ctrlKey || e.metaKey) {
+              setShowChannelNumberPad(true);
+            } else {
+                    if (channel) {
+                      const newChannel = navigateToChannel('prev', channels, channel.id);
+                      if (newChannel) {
+                        setChannel(newChannel);
+                      }
+                    }
+            }
+            e.preventDefault();
+            break;
+
+          case 'ArrowDown':
+            // Down - Next channel
+                  if (channel) {
+                    const newChannel = navigateToChannel('next', channels, channel.id);
+                    if (newChannel) {
+                      setChannel(newChannel);
+                    }
+                  }
+            e.preventDefault();
+            break;
+
+          case 'Enter':
+          case ' ':
+            // OK/Space - Toggle play/pause
+            handleTogglePlayback();
+            e.preventDefault();
+            break;
+
+          case 'Escape':
+          case 'Backspace':
+            // Back - Show EPG grid
+            if (channels.length > 0) {
+              setShowEPGGrid(true);
+              enterPIP();
+              e.preventDefault();
+            }
+            break;
+
+          case 'i':
+          case 'I':
+            // Info key - Show channel info
+            setShowEPG(true);
+            e.preventDefault();
+            break;
+
+          case 'PageUp':
+            // Channel up
+                  if (channel) {
+                    const newChannel = navigateToChannel('prev', channels, channel.id);
+                    if (newChannel) {
+                      setChannel(newChannel);
+                    }
+                  }
+            e.preventDefault();
+            break;
+
+          case 'PageDown':
+            // Channel down
+                  if (channel) {
+                    const newChannel = navigateToChannel('next', channels, channel.id);
+                    if (newChannel) {
+                      setChannel(newChannel);
+                    }
+                  }
+            e.preventDefault();
+            break;
+
+          case '+':
+          case '=':
+            // Volume up
+            adjustVolume(0.1);
+            e.preventDefault();
+            break;
+
+          case '-':
+          case '_':
+            // Volume down
+            adjustVolume(-0.1);
+            e.preventDefault();
+            break;
+
+          case 'm':
+          case 'M':
+            // Mute toggle
+            toggleMute();
+            e.preventDefault();
+            break;
+        }
+      };
+
+      window.addEventListener('keydown', handleKeyPress);
+      return () => window.removeEventListener('keydown', handleKeyPress);
+    }
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showEPG, showControls, showChannelList, showEPGGrid, showChannelNumberPad, channels.length, channelNumberInput]);
+
+    useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      // If EPG is showing, close it instead of going back
+      // If channel number pad is showing, close it
+      if (showChannelNumberPad) {
+        setShowChannelNumberPad(false);
+        setChannelNumberInput('');
+        return true;
+      }
+      // If EPG grid is showing, close it and restore full video
+      if (showEPGGrid) {
+        setShowEPGGrid(false);
+        // Restore full video
+        Animated.parallel([
+          Animated.timing(pipAnim, {
+            toValue: { x: 0, y: 0 },
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pipScale, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+        ]).start();
+        return true;
+      }
+      // If channel list is showing, close it
+      if (showChannelList) {
+        setShowChannelList(false);
+        return true;
+      }
+      // If EPG overlay is showing, close it
       if (showEPG) {
         setShowEPG(false);
         return true;
       }
+      // Show EPG grid with picture-in-picture video
+      if (channels.length > 0) {
+        setShowEPGGrid(true);
+        enterPIP();
+        return true;
+      }
+      // Otherwise go back
       navigation.goBack();
       return true;
     });
 
     return () => backHandler.remove();
-  }, [navigation, showEPG]);
+  }, [navigation, showEPG, showChannelList, showEPGGrid, showChannelNumberPad, channels.length, exitPIP, enterPIP, setShowEPGGrid, setShowChannelList, setShowEPG, setShowChannelNumberPad, setChannelNumberInput]);
 
-  useEffect(() => {
-    if (showControls && isPlaying && !showEPG) {
-      const timeout = setTimeout(() => setShowControls(false), 5000);
-      setControlsTimeout(timeout);
-      return () => clearTimeout(timeout);
-    }
-    return undefined;
-  }, [showControls, isPlaying, showEPG]);
 
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
+  // Enhanced playback status handler with error logging
+  const handlePlaybackStatusUpdateWithError = useCallback((status: AVPlaybackStatus) => {
     if (!status.isLoaded) {
       if (status.error) {
         console.error('Playback error:', status.error);
-        const errorMsg = typeof status.error === 'string' 
-          ? status.error 
-          : (status.error as any)?.message || 'Failed to load stream. Please try again later.';
-        setError(errorMsg);
-        setLoading(false);
         const errorDetails = typeof status.error === 'string' 
           ? status.error 
           : (status.error as any)?.message || 'Unknown playback error';
+        setError('Stream playback error. Please check your connection.');
         showError('Stream playback error. Please check your connection.', errorDetails);
       }
       return;
     }
-
+    
+    // Update loading and playing states
     setLoading(status.isBuffering);
-  };
+    setIsPlaying(status.isPlaying);
+    
+    if (status.didJustFinish) {
+      setIsPlaying(false);
+    }
+  }, [setLoading, setIsPlaying, setError]);
 
-  const handleTogglePlayback = async () => {
+  // Enhanced toggle playback with error handling
+  const handleTogglePlayback = useCallback(async () => {
     try {
-      if (isPlaying) {
-        await videoRef.current?.pauseAsync();
-        setIsPlaying(false);
-      } else {
-        await videoRef.current?.playAsync();
-        setIsPlaying(true);
+      if (videoRef.current) {
+        if (isPlaying) {
+          await videoRef.current.pauseAsync();
+          setIsPlaying(false);
+        } else {
+          await videoRef.current.playAsync();
+          setIsPlaying(true);
+        }
+        setShowControls(true);
       }
-      setShowControls(true);
     } catch (playbackError) {
       console.error('Error toggling playback:', playbackError);
       const errorMsg = playbackError instanceof Error ? playbackError.message : 'Unknown error';
       showError('Failed to control playback.', errorMsg);
     }
-  };
+  }, [isPlaying, setIsPlaying, setShowControls]);
 
-  const handleToggleControls = () => {
-    setShowControls(prev => !prev);
-    if (controlsTimeout) {
-      clearTimeout(controlsTimeout);
+  // Enhanced screen press handler
+  const handleScreenPress = useCallback(() => {
+    if (showEPG) {
+      return; // Don't handle screen press when EPG is open
     }
-  };
+    
+    if (!showControls) {
+      // Show controls and floating buttons when screen is tapped
+      setShowControls(true);
+      setShowFloatingButtons(true);
+      setTimeout(() => {
+        setShowControls(false);
+        setShowFloatingButtons(false);
+      }, 5000);
+    } else {
+      // Toggle controls when already visible
+      setShowControls(false);
+      setShowFloatingButtons(true);
+      setTimeout(() => setShowFloatingButtons(false), 5000);
+    }
+  }, [showEPG, showControls, setShowControls, setShowFloatingButtons]);
 
-  const handleCenterPress = () => {
+  const handleCenterPress = useCallback(() => {
     // When EPG is showing, center press closes it
     if (showEPG) {
       setShowEPG(false);
@@ -150,474 +599,251 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     }
     // Otherwise toggle playback
     handleTogglePlayback();
-  };
+  }, [showEPG, showControls, setShowEPG, handleTogglePlayback]);
 
-  const handleCloseEPG = () => {
-    setShowEPG(false);
-  };
+  const handleChannelSelect = useCallback((selectedChannel: Channel) => {
+    setChannel(selectedChannel);
+    setShowChannelList(false);
+    setShowEPG(true); // Show EPG when channel is selected
+    // Load EPG for the new channel
+    const program = getCurrentProgram(selectedChannel.id);
+    setCurrentProgram(program);
+  }, [getCurrentProgram, setChannel, setShowChannelList, setShowEPG, setCurrentProgram]);
 
-  const handleBack = () => {
-    navigation.goBack();
-  };
-
-  const handleVideoReady = async () => {
-    setLoading(false);
-    if (isPlaying) {
-      try {
-        await videoRef.current?.playAsync();
-      } catch (errorPlaying) {
-        console.error('Error starting playback:', errorPlaying);
-        const errorMsg = errorPlaying instanceof Error ? errorPlaying.message : 'Unknown error';
-        showError('Failed to start playback.', errorMsg);
-      }
+  // Helper for channel navigation that also updates EPG
+  const navigateToChannelWithEPG = useCallback((direction: 'prev' | 'next') => {
+    if (!channel) return;
+    const newChannel = navigateToChannel(direction, channels, channel.id);
+    if (newChannel) {
+      setChannel(newChannel);
+      const program = getCurrentProgram(newChannel.id);
+      setCurrentProgram(program);
+      // Briefly show channel info
+      setShowEPG(true);
+      setTimeout(() => setShowEPG(false), 3000);
     }
-  };
+  }, [navigateToChannel, channels, channel, getCurrentProgram, setChannel, setCurrentProgram, setShowEPG]);
 
-  const showControlsOnFocus = () => {
+  const handleBack = useCallback(() => {
+    navigation.goBack();
+  }, [navigation]);
+
+  // Enhanced video ready handler
+  const handleVideoReadyWithPlayback = useCallback(async () => {
+    console.log('Video onLoad callback - video is ready');
+    handleVideoReady();
+    
+    // Check if we should auto-play
+    try {
+      const settings = await getSettings();
+      console.log('Auto-play setting:', settings.autoPlay);
+      if (settings.autoPlay && videoRef.current) {
+        console.log('Auto-playing video from onLoad...');
+        await videoRef.current.playAsync();
+        setIsPlaying(true);
+      }
+    } catch (errorPlaying) {
+      console.error('Error starting playback:', errorPlaying);
+      const errorMsg = errorPlaying instanceof Error ? errorPlaying.message : 'Unknown error';
+      showError('Failed to start playback.', errorMsg);
+    }
+  }, [handleVideoReady, setIsPlaying]);
+
+  const showControlsOnFocus = useCallback(() => {
     if (!showEPG) {
       setShowControls(true);
-      if (controlsTimeout) {
-        clearTimeout(controlsTimeout);
-      }
     }
-  };
+  }, [showEPG, setShowControls]);
 
+  const handleMultiScreenPress = useCallback(() => {
+    setShowMultiScreenControls(true);
+  }, []);
 
+  // If in multi-screen mode, show multi-screen view
+  if (isMultiScreenMode && screens.length > 0) {
+    return (
+      <View className="flex-1 bg-black w-full h-full">
+        <MultiScreenView
+          channels={channels}
+          onChannelSelect={handleChannelSelect}
+        />
+        <MultiScreenControls
+          channels={channels}
+          onChannelSelect={handleChannelSelect}
+          isVisible={showMultiScreenControls}
+          onClose={() => setShowMultiScreenControls(false)}
+        />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      {/* Always visible back button for touch devices */}
-      {!error && (
+    <View className="flex-1 bg-black w-full h-full">
+      {/* Floating Buttons */}
+      <FloatingButtons
+        onBack={handleBack}
+        onEPGInfo={() => setShowEPG(true)}
+      />
+
+      {!showControls && !showEPG && !error && (
         <TouchableOpacity
-          style={styles.floatingBackButton}
-          onPress={handleBack}
-          activeOpacity={0.7}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 120,
+            zIndex: 2,
+            backgroundColor: 'transparent',
+            pointerEvents: 'auto',
+          }}
+          activeOpacity={1}
+          onPress={handleScreenPress}
         >
-          <Text style={styles.floatingBackButtonText}>←</Text>
+          <FocusableItem
+            onPress={handleCenterPress}
+            onFocus={showControlsOnFocus}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 120,
+              backgroundColor: 'transparent',
+            }}
+          >
+            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 120, backgroundColor: 'transparent' }} />
+          </FocusableItem>
         </TouchableOpacity>
       )}
 
-      {!showControls && !showEPG && !error && (
-        <FocusableItem
-          onPress={handleCenterPress}
-          onFocus={showControlsOnFocus}
-          style={styles.invisibleFocusArea}
-        >
-          <View style={styles.invisibleFocusArea} />
-        </FocusableItem>
-      )}
-
-      <Video
-        ref={videoRef}
-        source={{ uri: channel.url }}
-        style={styles.video}
-        resizeMode={ResizeMode.COVER}
-        shouldPlay={isPlaying}
-        onLoad={handleVideoReady}
-        onError={(error) => {
-          setLoading(false);
-          const errorMsg = 'Failed to load stream. Please check your connection and try again.';
-          setError(errorMsg);
-          showError('Video load error. Please check your connection and try again.', String(error));
+      <Animated.View
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: 0,
+          transform: [
+            { translateX: pipAnim.x },
+            { translateY: pipAnim.y },
+            { scale: pipScale },
+          ],
         }}
-        onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-        useNativeControls={false}
-        isLooping={false}
-      />
+      >
+        {channel && (
+          <Video
+            ref={videoRef}
+            source={{ uri: channel.url }}
+            style={{
+              width: '100%',
+              height: '100%',
+              backgroundColor: '#000',
+            }}
+            resizeMode={resizeMode}
+            shouldPlay={isPlaying}
+            onLoad={handleVideoReadyWithPlayback}
+            onError={(error) => {
+              setLoading(false);
+              const errorMsg = 'Failed to load stream. Please check your connection and try again.';
+              setError(errorMsg);
+              showError('Video load error. Please check your connection and try again.', String(error));
+            }}
+            onPlaybackStatusUpdate={handlePlaybackStatusUpdateWithError}
+            useNativeControls={false}
+            isLooping={false}
+          />
+        )}
+      </Animated.View>
 
       {loading && !error && (
-        <View style={styles.overlay}>
+        <View 
+          className="absolute inset-0 justify-center items-center bg-black/70 p-6 gap-4"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            zIndex: 3,
+          }}
+        >
           <ActivityIndicator size="large" color="#00aaff" />
-          <Text style={styles.overlayText}>Loading stream...</Text>
+          <Text className="text-white text-lg text-center">Loading stream...</Text>
         </View>
       )}
 
       {error && (
-        <View style={styles.overlay}>
-          <Text style={styles.overlayText}>{error}</Text>
-          <FocusableItem onPress={handleBack} style={styles.errorButton}>
-            <Text style={styles.errorButtonText}>Go Back</Text>
+        <View 
+          className="absolute inset-0 justify-center items-center bg-black/70 p-6 gap-4"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            zIndex: 3,
+          }}
+        >
+          <Text className="text-white text-lg text-center">{error}</Text>
+          <FocusableItem 
+            onPress={handleBack} 
+            className="bg-accent px-8 py-4 rounded-lg"
+          >
+            <Text className="text-white text-base font-bold">Go Back</Text>
           </FocusableItem>
         </View>
       )}
 
-      {showControls && !showEPG && !error && (
-        <TouchableOpacity style={styles.controlsOverlay} activeOpacity={1} onPress={handleToggleControls}>
-          <View style={styles.topBar}>
-            <FocusableItem onPress={handleBack} style={styles.backButton}>
-              <Text style={styles.backButtonText}>← Back</Text>
-            </FocusableItem>
-            <View style={styles.channelInfo}>
-              <Text style={styles.channelName}>{channel.name}</Text>
-              {channel.group ? <Text style={styles.channelGroup}>{channel.group}</Text> : null}
-            </View>
-          </View>
+      {/* Video Controls */}
+      <VideoControls
+        onTogglePlayback={handleCenterPress}
+        onBack={handleBack}
+        onMultiScreen={handleMultiScreenPress}
+      />
 
-          <View style={styles.centerControls}>
-            <FocusableItem onPress={handleCenterPress} style={styles.playPauseButton}>
-              <Text style={styles.playPauseText}>{isPlaying ? '❚❚' : '▶'}</Text>
-            </FocusableItem>
-          </View>
-
-          <View style={styles.bottomBar}>
-            <Text style={styles.streamInfo}>{loading ? 'Buffering...' : 'Live Stream'}</Text>
-          </View>
-        </TouchableOpacity>
-      )}
+      {/* Multi-Screen Controls Modal */}
+      <MultiScreenControls
+        channels={channels}
+        onChannelSelect={handleChannelSelect}
+        isVisible={showMultiScreenControls}
+        onClose={() => setShowMultiScreenControls(false)}
+      />
 
       {/* EPG Overlay */}
-      {showEPG && !error && (
-        <View style={styles.epgOverlay}>
-          <View style={styles.epgContainer}>
-            {/* Channel Info Section */}
-            <View style={styles.epgHeader}>
-              {channel.logo ? (
-                <Image source={{ uri: channel.logo }} style={styles.epgLogo} resizeMode="contain" />
-              ) : (
-                <View style={[styles.epgLogo, styles.epgLogoPlaceholder]}>
-                  <Text style={styles.epgLogoPlaceholderText}>
-                    {channel.name.substring(0, 2).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-              <View style={styles.epgChannelInfo}>
-                <Text style={styles.epgChannelName}>{channel.name}</Text>
-                {channel.group && (
-                  <Text style={styles.epgChannelGroup}>{channel.group}</Text>
-                )}
-                {currentProgram && (
-                  <View style={styles.epgTimeInfo}>
-                    <Text style={styles.epgTimeText}>Now</Text>
-                    <Text style={styles.epgTimeSeparator}>•</Text>
-                    <Text style={styles.epgTimeText}>
-                      {currentProgram.start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {currentProgram.end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                  </View>
-                )}
-              </View>
-              <FocusableItem onPress={handleCloseEPG} style={styles.epgCloseButton}>
-                <Text style={styles.epgCloseButtonText}>✕</Text>
-              </FocusableItem>
-            </View>
+        <EPGOverlay
+          onTogglePlayback={handleTogglePlayback}
+          onBack={() => navigation.goBack()}
+        />
 
-            <ScrollView style={styles.epgContent} showsVerticalScrollIndicator={false}>
-              {/* Current Program Section */}
-              {currentProgram ? (
-                <View style={styles.epgProgramSection}>
-                  <Text style={styles.epgProgramTitle}>{currentProgram.title}</Text>
-                  {currentProgram.description && (
-                    <Text style={styles.epgProgramDescription}>{currentProgram.description}</Text>
-                  )}
-                </View>
-              ) : (
-                <View style={styles.epgProgramSection}>
-                  <Text style={styles.epgProgramTitle}>No EPG Data Available</Text>
-                  <Text style={styles.epgProgramDescription}>
-                    Electronic Program Guide data is not available for this channel.
-                  </Text>
-                </View>
-              )}
+      {/* EPG Grid View */}
+        <EPGGridView
+          getCurrentProgram={getCurrentProgram}
+          onChannelSelect={handleChannelSelect}
+        onExitPIP={exitPIP}
+        />
 
-              {/* Options Section */}
-              <View style={styles.epgOptionsSection}>
-                <Text style={styles.epgSectionTitle}>Options</Text>
-                
-                <FocusableItem
-                  onPress={() => {
-                    handleTogglePlayback();
-                    setShowEPG(false);
-                  }}
-                  style={styles.epgOptionItem}
-                >
-                  <Text style={styles.epgOptionIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
-                  <Text style={styles.epgOptionText}>{isPlaying ? 'Pause' : 'Play'}</Text>
-                </FocusableItem>
+      {/* Channel List Panel */}
+      <ChannelListPanel
+        onChannelSelect={handleChannelSelect}
+      />
 
-                <FocusableItem
-                  onPress={() => {
-                    navigation.goBack();
-                  }}
-                  style={styles.epgOptionItem}
-                >
-                  <Text style={styles.epgOptionIcon}>←</Text>
-                  <Text style={styles.epgOptionText}>Back to Channels</Text>
-                </FocusableItem>
+      
 
-                <FocusableItem
-                  onPress={() => {
-                    handleCloseEPG();
-                    setShowControls(true);
-                  }}
-                  style={styles.epgOptionItem}
-                >
-                  <Text style={styles.epgOptionIcon}>⚙️</Text>
-                  <Text style={styles.epgOptionText}>Player Settings</Text>
-                </FocusableItem>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      )}
+      {/* Volume Indicator */}
+      <VolumeIndicator />
+
+      {/* Channel Number Pad */}
+      <ChannelNumberPad />
+
+
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-    width: '100%',
-    height: '100%',
-  },
-  invisibleFocusArea: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 120,
-    backgroundColor: 'transparent',
-    zIndex: 2,
-  },
-  video: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    padding: 24,
-    zIndex: 3,
-    gap: 16,
-  },
-  overlayText: {
-    color: '#fff',
-    fontSize: 18,
-    textAlign: 'center',
-  },
-  errorButton: {
-    backgroundColor: '#00aaff',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 8,
-  },
-  errorButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  controlsOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    paddingBottom: 24,
-    zIndex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    gap: 16,
-  },
-  backButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  channelInfo: {
-    flex: 1,
-  },
-  channelName: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  channelGroup: {
-    color: '#ccc',
-    fontSize: 14,
-    marginTop: 4,
-  },
-  centerControls: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playPauseButton: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: 'rgba(0, 170, 255, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playPauseText: {
-    color: '#fff',
-    fontSize: 32,
-    fontWeight: 'bold',
-  },
-  bottomBar: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-  },
-  streamInfo: {
-    color: '#fff',
-    fontSize: 14,
-  },
-  floatingBackButton: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-    elevation: 10, // For Android
-  },
-  floatingBackButtonText: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  epgOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    zIndex: 5,
-    elevation: 5,
-  },
-  epgContainer: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-    margin: 40,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  epgHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#2a2a2a',
-    borderBottomWidth: 1,
-    borderBottomColor: '#3a3a3a',
-    gap: 16,
-  },
-  epgLogo: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    backgroundColor: '#3a3a3a',
-  },
-  epgLogoPlaceholder: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  epgLogoPlaceholderText: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  epgChannelInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  epgChannelName: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  epgChannelGroup: {
-    color: '#aaa',
-    fontSize: 14,
-  },
-  epgTimeInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-    gap: 8,
-  },
-  epgTimeText: {
-    color: '#00aaff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  epgTimeSeparator: {
-    color: '#666',
-    fontSize: 14,
-  },
-  epgCloseButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#3a3a3a',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  epgCloseButtonText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  epgContent: {
-    flex: 1,
-    padding: 20,
-  },
-  epgProgramSection: {
-    marginBottom: 24,
-    paddingBottom: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: '#3a3a3a',
-  },
-  epgProgramTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  epgProgramDescription: {
-    color: '#ccc',
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  epgOptionsSection: {
-    gap: 12,
-  },
-  epgSectionTitle: {
-    color: '#00aaff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-  },
-  epgOptionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2a2a2a',
-    padding: 16,
-    borderRadius: 8,
-    gap: 16,
-  },
-  epgOptionIcon: {
-    fontSize: 24,
-    width: 32,
-    textAlign: 'center',
-  },
-  epgOptionText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-});
 
 export default PlayerScreen;

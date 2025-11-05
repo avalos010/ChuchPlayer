@@ -17,13 +17,22 @@ export interface EPGProgram {
   icon?: string;
 }
 
+export type PlaylistSourceType = 'm3u' | 'xtream';
+
 export interface Playlist {
   id: string;
   name: string;
   url: string;
+  sourceType: PlaylistSourceType;
   channels: Channel[];
   createdAt: Date;
   updatedAt: Date;
+  // For Xtream Codes, store credentials separately (encrypted in the future)
+  xtreamCredentials?: {
+    serverUrl: string;
+    username: string;
+    password: string;
+  };
 }
 
 export interface Settings {
@@ -31,6 +40,8 @@ export interface Settings {
   autoPlay: boolean;
   showEPG: boolean;
   theme: 'dark' | 'light';
+  multiScreenEnabled: boolean;
+  maxMultiScreens: number;
 }
 
 export type RootStackParamList = {

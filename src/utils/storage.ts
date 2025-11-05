@@ -18,6 +18,7 @@ const serializePlaylist = (playlist: Playlist): StoredPlaylist => ({
 
 const deserializePlaylist = (stored: StoredPlaylist): Playlist => ({
   ...stored,
+  sourceType: stored.sourceType || 'm3u', // Default to 'm3u' for backward compatibility
   createdAt: new Date(stored.createdAt),
   updatedAt: new Date(stored.updatedAt),
 });
@@ -76,16 +77,26 @@ export const getSettings = async (): Promise<Settings> => {
         autoPlay: true,
         showEPG: false,
         theme: 'dark',
+        multiScreenEnabled: true,
+        maxMultiScreens: 4,
       };
     }
 
-    return JSON.parse(data) as Settings;
+    const parsed = JSON.parse(data) as Settings;
+    // Ensure backward compatibility
+    return {
+      ...parsed,
+      multiScreenEnabled: parsed.multiScreenEnabled ?? true,
+      maxMultiScreens: parsed.maxMultiScreens ?? 4,
+    };
   } catch (error) {
     console.error('Error getting settings:', error);
     return {
       autoPlay: true,
       showEPG: false,
       theme: 'dark',
+      multiScreenEnabled: true,
+      maxMultiScreens: 4,
     };
   }
 };

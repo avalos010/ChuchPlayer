@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Alert,
   ScrollView,
-  StyleSheet,
   Switch,
   Text,
   View,
@@ -22,6 +21,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
     autoPlay: true,
     showEPG: false,
     theme: 'dark',
+    multiScreenEnabled: true,
+    maxMultiScreens: 4,
   });
   const [loading, setLoading] = useState(true);
 
@@ -56,13 +57,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Playback</Text>
-        <View style={styles.settingItem}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>Auto Play</Text>
-            <Text style={styles.settingDescription}>
+    <ScrollView className="flex-1 bg-dark" contentContainerStyle={{ paddingBottom: 40 }}>
+      <View className="mt-6 px-5">
+        <Text className="text-accent text-lg font-bold mb-4 uppercase">Playback</Text>
+        <View className="flex-row justify-between items-center bg-card p-4 rounded-lg mb-3 gap-4">
+          <View className="flex-1 gap-1">
+            <Text className="text-white text-base font-semibold">Auto Play</Text>
+            <Text className="text-text-muted text-sm">
               Automatically start playing when opening a channel
             </Text>
           </View>
@@ -76,12 +77,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
         </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Display</Text>
-        <View style={styles.settingItem}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>Show EPG</Text>
-            <Text style={styles.settingDescription}>
+      <View className="mt-6 px-5">
+        <Text className="text-accent text-lg font-bold mb-4 uppercase">Display</Text>
+        <View className="flex-row justify-between items-center bg-card p-4 rounded-lg mb-3 gap-4">
+          <View className="flex-1 gap-1">
+            <Text className="text-white text-base font-semibold">Show EPG</Text>
+            <Text className="text-text-muted text-sm">
               Display Electronic Program Guide when available
             </Text>
           </View>
@@ -94,41 +95,25 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
           />
         </View>
 
-        <View style={styles.settingItem}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>Theme</Text>
-            <Text style={styles.settingDescription}>Choose the app theme</Text>
+        <View className="flex-row justify-between items-center bg-card p-4 rounded-lg mb-3 gap-4">
+          <View className="flex-1 gap-1">
+            <Text className="text-white text-base font-semibold">Theme</Text>
+            <Text className="text-text-muted text-sm">Choose the app theme</Text>
           </View>
-          <View style={styles.themeButtons}>
+          <View className="flex-row gap-2">
             <FocusableItem
               onPress={() => updateSetting('theme', 'dark')}
-              style={[
-                styles.themeButton,
-                settings.theme === 'dark' && styles.themeButtonActive,
-              ]}
+              className={`px-5 py-2 rounded-md ${settings.theme === 'dark' ? 'bg-accent' : 'bg-subtle'}`}
             >
-              <Text
-                style={[
-                  styles.themeButtonText,
-                  settings.theme === 'dark' && styles.themeButtonTextActive,
-                ]}
-              >
+              <Text className={`text-sm font-semibold ${settings.theme === 'dark' ? 'text-white' : 'text-text-muted'}`}>
                 Dark
               </Text>
             </FocusableItem>
             <FocusableItem
               onPress={() => updateSetting('theme', 'light')}
-              style={[
-                styles.themeButton,
-                settings.theme === 'light' && styles.themeButtonActive,
-              ]}
+              className={`px-5 py-2 rounded-md ${settings.theme === 'light' ? 'bg-accent' : 'bg-subtle'}`}
             >
-              <Text
-                style={[
-                  styles.themeButtonText,
-                  settings.theme === 'light' && styles.themeButtonTextActive,
-                ]}
-              >
+              <Text className={`text-sm font-semibold ${settings.theme === 'light' ? 'text-white' : 'text-text-muted'}`}>
                 Light
               </Text>
             </FocusableItem>
@@ -136,22 +121,73 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
         </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Help</Text>
+      <View className="mt-6 px-5">
+        <Text className="text-accent text-lg font-bold mb-4 uppercase">Multi-Screen</Text>
+        <View className="flex-row justify-between items-center bg-card p-4 rounded-lg mb-3 gap-4">
+          <View className="flex-1 gap-1">
+            <Text className="text-white text-base font-semibold">Multi-Screen Mode</Text>
+            <Text className="text-text-muted text-sm">
+              Watch multiple channels simultaneously (up to 4 screens)
+            </Text>
+          </View>
+          <Switch
+            value={settings.multiScreenEnabled}
+            onValueChange={value => updateSetting('multiScreenEnabled', value)}
+            trackColor={{ false: '#3a3a3a', true: '#00aaff' }}
+            thumbColor="#fff"
+            disabled={loading}
+          />
+        </View>
+        <View className="bg-card p-4 rounded-lg mb-3 gap-2">
+          <View className="flex-row justify-between items-center">
+            <Text className="text-white text-base font-semibold">Max Screens</Text>
+            <Text className="text-text-muted text-sm">{settings.maxMultiScreens}</Text>
+          </View>
+          <View className="flex-row gap-2 mt-2">
+            {[2, 3, 4].map((num) => (
+              <FocusableItem
+                key={num}
+                onPress={() => updateSetting('maxMultiScreens', num)}
+                className={`px-4 py-2 rounded-md ${
+                  settings.maxMultiScreens === num ? 'bg-accent' : 'bg-subtle'
+                }`}
+              >
+                <Text
+                  className={`text-sm font-semibold ${
+                    settings.maxMultiScreens === num ? 'text-white' : 'text-text-muted'
+                  }`}
+                >
+                  {num}
+                </Text>
+              </FocusableItem>
+            ))}
+          </View>
+        </View>
+      </View>
+
+      <View className="mt-6 px-5">
+        <Text className="text-accent text-lg font-bold mb-4 uppercase">Help</Text>
         <FocusableItem
           onPress={() =>
             Alert.alert(
               'How to Add Playlists',
-              '1. Get an M3U playlist URL from your IPTV provider\n'
+              'M3U Playlists:\n'
+                + '1. Get an M3U playlist URL from your IPTV provider\n'
                 + '2. Go to the home screen\n'
                 + '3. Select "Add Playlist"\n'
-                + '4. Enter a name and paste the URL\n'
-                + '5. Wait for the channels to load'
+                + '4. Choose "M3U" as source type\n'
+                + '5. Enter a name and paste the URL\n'
+                + '6. Wait for the channels to load\n\n'
+                + 'Xtream Codes:\n'
+                + '1. Get your Xtream Codes credentials from your provider\n'
+                + '2. Select "Xtream Codes" as source type\n'
+                + '3. Enter server URL, username, and password\n'
+                + '4. Wait for the channels to load'
             )
           }
-          style={styles.helpButton}
+          className="bg-card p-4 rounded-lg mb-3"
         >
-          <Text style={styles.helpButtonText}>How to Add Playlists</Text>
+          <Text className="text-accent text-base font-semibold">How to Add Playlists</Text>
         </FocusableItem>
 
         <FocusableItem
@@ -168,120 +204,29 @@ const SettingsScreen: React.FC<SettingsScreenProps> = () => {
                 + '• D-Pad Up: Show controls'
             )
           }
-          style={styles.helpButton}
+          className="bg-card p-4 rounded-lg mb-3"
         >
-          <Text style={styles.helpButtonText}>TV Remote Controls</Text>
+          <Text className="text-accent text-base font-semibold">TV Remote Controls</Text>
         </FocusableItem>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>About</Text>
-        <View style={styles.aboutItem}>
-          <Text style={styles.aboutLabel}>Version</Text>
-          <Text style={styles.aboutValue}>1.0.0</Text>
+      <View className="mt-6 px-5">
+        <Text className="text-accent text-lg font-bold mb-4 uppercase">About</Text>
+        <View className="bg-card p-4 rounded-lg mb-3 gap-1">
+          <Text className="text-text-muted text-xs">Version</Text>
+          <Text className="text-white text-base">1.0.0</Text>
         </View>
-        <View style={styles.aboutItem}>
-          <Text style={styles.aboutLabel}>App Name</Text>
-          <Text style={styles.aboutValue}>chuchPlayer</Text>
+        <View className="bg-card p-4 rounded-lg mb-3 gap-1">
+          <Text className="text-text-muted text-xs">App Name</Text>
+          <Text className="text-white text-base">chuchPlayer</Text>
         </View>
-        <View style={styles.aboutItem}>
-          <Text style={styles.aboutLabel}>Description</Text>
-          <Text style={styles.aboutValue}>IPTV Player for Android TV</Text>
+        <View className="bg-card p-4 rounded-lg mb-3 gap-1">
+          <Text className="text-text-muted text-xs">Description</Text>
+          <Text className="text-white text-base">IPTV Player for Android TV</Text>
         </View>
       </View>
     </ScrollView>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-  },
-  content: {
-    paddingBottom: 40,
-  },
-  section: {
-    marginTop: 24,
-    paddingHorizontal: 20,
-  },
-  sectionTitle: {
-    color: '#00aaff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    textTransform: 'uppercase',
-  },
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#2a2a2a',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 12,
-    gap: 16,
-  },
-  settingInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  settingLabel: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  settingDescription: {
-    color: '#aaa',
-    fontSize: 14,
-  },
-  themeButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  themeButton: {
-    backgroundColor: '#3a3a3a',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  themeButtonActive: {
-    backgroundColor: '#00aaff',
-  },
-  themeButtonText: {
-    color: '#aaa',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  themeButtonTextActive: {
-    color: '#fff',
-  },
-  helpButton: {
-    backgroundColor: '#2a2a2a',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 12,
-  },
-  helpButtonText: {
-    color: '#00aaff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  aboutItem: {
-    backgroundColor: '#2a2a2a',
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 12,
-    gap: 4,
-  },
-  aboutLabel: {
-    color: '#aaa',
-    fontSize: 12,
-  },
-  aboutValue: {
-    color: '#fff',
-    fontSize: 16,
-  },
-});
 
 export default SettingsScreen;

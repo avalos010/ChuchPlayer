@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, Image } from 'react-native';
 import FocusableItem from './FocusableItem';
 import { Channel } from '../types';
 
@@ -9,25 +9,35 @@ interface ChannelListItemProps {
 }
 
 const ChannelListItem: React.FC<ChannelListItemProps> = ({ channel, onPress }) => {
+  const [imageError, setImageError] = useState(false);
+
   return (
-    <FocusableItem onPress={() => onPress(channel)} style={styles.container}>
-      <View style={styles.content}>
-        {channel.logo ? (
-          <Image source={{ uri: channel.logo }} style={styles.logo} resizeMode="contain" />
+    <FocusableItem 
+      onPress={() => onPress(channel)} 
+      className="bg-card mx-4 my-2 rounded-lg"
+    >
+      <View className="flex-row items-center p-3 gap-4">
+        {channel.logo && !imageError ? (
+          <Image 
+            source={{ uri: channel.logo }} 
+            className="w-[60px] h-[60px] rounded-lg bg-black" 
+            resizeMode="contain"
+            onError={() => setImageError(true)}
+          />
         ) : (
-          <View style={[styles.logo, styles.placeholderLogo]}>
-            <Text style={styles.placeholderText}>
+          <View className="w-[60px] h-[60px] rounded-lg bg-subtle justify-center items-center">
+            <Text className="text-white text-lg font-bold">
               {channel.name.substring(0, 2).toUpperCase()}
             </Text>
           </View>
         )}
 
-        <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={1}>
+        <View className="flex-1">
+          <Text className="text-text-primary text-lg font-semibold mb-1" numberOfLines={1}>
             {channel.name}
           </Text>
           {channel.group ? (
-            <Text style={styles.group} numberOfLines={1}>
+            <Text className="text-text-muted text-sm" numberOfLines={1}>
               {channel.group}
             </Text>
           ) : null}
@@ -36,48 +46,5 @@ const ChannelListItem: React.FC<ChannelListItemProps> = ({ channel, onPress }) =
     </FocusableItem>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#2a2a2a',
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 8,
-  },
-  content: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    gap: 16,
-  },
-  logo: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    backgroundColor: '#000',
-  },
-  placeholderLogo: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  placeholderText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  info: {
-    flex: 1,
-  },
-  name: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  group: {
-    color: '#aaa',
-    fontSize: 14,
-  },
-});
 
 export default ChannelListItem;

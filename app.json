@@ -26,7 +26,8 @@
       "backgroundColor": "#1a1a1a"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
     },
     "plugins": [
       "./expo-plugins/android-tv.js",
