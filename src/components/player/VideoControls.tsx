@@ -21,7 +21,8 @@ const VideoControls: React.FC<VideoControlsProps> = ({
   const channel = usePlayerStore((state) => state.channel);
   const error = usePlayerStore((state) => state.error);
 
-  if (!showControls || showEPG || error) return null;
+  // VideoControls is replaced by EPGOverlay - never show this component
+  return null;
 
   const channelName = channel?.name;
   const channelGroup = channel?.group;

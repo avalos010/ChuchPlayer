@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Text, FlatList, Animated, TouchableOpacity, Platform } from 'react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, Text, FlatList, TouchableOpacity, Platform } from 'react-native';
 import FocusableItem from '../FocusableItem';
 import ChannelListItem from '../ChannelListItem';
 import { Channel } from '../../types';
@@ -14,123 +14,163 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
 }) => {
   const showChannelList = usePlayerStore((state) => state.showChannelList);
   const setShowChannelList = usePlayerStore((state) => state.setShowChannelList);
+  const setShowGroupsPlaylists = usePlayerStore((state) => state.setShowGroupsPlaylists);
   const channels = usePlayerStore((state) => state.channels);
   const channel = usePlayerStore((state) => state.channel);
   const playlist = usePlayerStore((state) => state.playlist);
 
   const currentChannelId = channel?.id || '';
   
-  const slideAnim = useRef(new Animated.Value(-420)).current;
   const channelListRef = useRef<FlatList>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Mark as loaded when channels are available
   useEffect(() => {
-    if (showChannelList) {
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: Platform.OS !== 'web',
-      }).start();
-      // Scroll to current channel after animation
+    if (showChannelList && channels.length > 0) {
+      setIsLoading(false);
+      // Scroll to current channel
       setTimeout(() => {
         const currentIndex = channels.findIndex((c) => c.id === currentChannelId);
         if (currentIndex >= 0 && channelListRef.current) {
-          channelListRef.current.scrollToIndex({
-            index: currentIndex,
-            animated: true,
-            viewPosition: 0.5,
-          });
+          try {
+            channelListRef.current.scrollToIndex({
+              index: currentIndex,
+              animated: false, // No animation for instant feel
+              viewPosition: 0.5,
+            });
+          } catch (e) {
+            console.log('ScrollToIndex failed, using fallback');
+          }
         }
-      }, 350);
-    } else {
-      Animated.timing(slideAnim, {
-        toValue: -420,
-        duration: 300,
-        useNativeDriver: Platform.OS !== 'web',
-      }).start();
+      }, 50);
+    } else if (showChannelList) {
+      setIsLoading(true);
     }
-  }, [showChannelList, slideAnim, channels, currentChannelId]);
+  }, [showChannelList, currentChannelId, channels]);
+
+  // Don't render anything when hidden to avoid blocking video
+  if (!showChannelList) {
+    return null;
+  }
+
+  // Skeleton loader component
+  const SkeletonItem = () => (
+    <View className="mx-4 my-2 p-4 rounded-xl bg-subtle border border-border">
+      <View className="flex-row items-center gap-3">
+        <View className="w-16 h-16 rounded-lg bg-dark" />
+        <View className="flex-1">
+          <View className="h-5 bg-dark rounded mb-2" style={{ width: '70%' }} />
+          <View className="h-4 bg-dark rounded" style={{ width: '40%' }} />
+        </View>
+      </View>
+    </View>
+  );
 
   return (
     <>
-      {/* Dark overlay */}
-      {showChannelList && (
-        <TouchableOpacity
-          className="absolute inset-0 bg-black/70"
-          style={{ 
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            zIndex: 15,
-            elevation: 15,
-          }}
-          activeOpacity={1}
-          onPress={() => setShowChannelList(false)}
-        />
-      )}
+      {/* Dark overlay - TiviMate Style */}
+      <TouchableOpacity
+        className="absolute inset-0 bg-darker/85 z-[15]"
+        style={{ 
+          elevation: 15,
+          zIndex: 15,
+        }}
+        activeOpacity={1}
+        onPress={() => setShowChannelList(false)}
+      />
 
-      {/* Panel */}
-      <Animated.View
-        className="absolute top-0 left-0 bottom-0 w-[420px] bg-[#0f0f0f] border-r-2 border-accent"
+      {/* Panel - TiviMate Style */}
+      <View
+        className="absolute top-0 left-0 bottom-0 w-[420px] border-r border-border bg-card shadow-xl z-[20]"
         style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          bottom: 0,
-          width: 420,
-          backgroundColor: '#0f0f0f',
-          zIndex: 20,
-          transform: [{ translateX: slideAnim }],
           elevation: 20,
-          shadowColor: '#000',
-          shadowOffset: { width: 4, height: 0 },
-          shadowOpacity: 0.5,
-          shadowRadius: 8,
+          zIndex: 20,
+          backgroundColor: '#161b22',
         }}
       >
-        <View className="flex-row justify-between items-center p-5 bg-dark border-b-2 border-accent">
-          <Text className="text-white text-[22px] font-bold tracking-wide">
-            {playlist?.name || 'Channels'}
-          </Text>
-          <FocusableItem 
-            onPress={() => setShowChannelList(false)} 
-            className="w-10 h-10 rounded-full bg-card justify-center items-center border border-subtle"
-          >
-            <Text className="text-white text-lg font-bold">✕</Text>
-          </FocusableItem>
+        {/* Header - TiviMate Style */}
+        <View className="flex-row justify-between items-center px-6 py-5 border-b border-border bg-dark">
+          <View>
+            <Text className="text-text-primary text-[24px] font-bold tracking-tight">
+              {playlist?.name || 'Channels'}
+            </Text>
+            <Text className="text-text-muted text-sm mt-1">
+              {channels.length} channel{channels.length !== 1 ? 's' : ''}
+            </Text>
+          </View>
+          <View className="flex-row gap-2">
+            <FocusableItem 
+              onPress={() => {
+                setShowChannelList(false);
+                setShowGroupsPlaylists(true);
+              }} 
+              className="w-11 h-11 rounded-full bg-subtle border border-border justify-center items-center"
+            >
+              <Text className="text-text-secondary text-base font-bold">
+                ☰
+              </Text>
+            </FocusableItem>
+            <FocusableItem 
+              onPress={() => setShowChannelList(false)} 
+              className="w-11 h-11 rounded-full bg-subtle border border-border justify-center items-center"
+            >
+              <Text className="text-text-secondary text-lg font-bold">
+                ✕
+              </Text>
+            </FocusableItem>
+          </View>
         </View>
-        <FlatList
-          ref={channelListRef}
-          data={channels}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
-            const isCurrentChannel = item.id === currentChannelId;
-            return (
-              <View 
-                className={isCurrentChannel ? 'bg-accent/20 rounded-lg mb-2 border-2 border-accent' : ''}
-              >
-                <ChannelListItem channel={item} onPress={onChannelSelect} />
+
+        {/* Channel List */}
+        {isLoading || channels.length === 0 ? (
+          <View className="flex-1 p-2">
+            {isLoading ? (
+              // Show skeleton loaders while loading
+              <>
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <SkeletonItem key={i} />
+                ))}
+              </>
+            ) : (
+              <View className="flex-1 justify-center items-center p-5">
+                <Text className="text-text-muted text-base">
+                  No channels available
+                </Text>
               </View>
-            );
-          }}
-          contentContainerStyle={{ padding: 16 }}
-          initialNumToRender={20}
-          removeClippedSubviews={true}
-          onScrollToIndexFailed={(info) => {
-            // Fallback if scroll to index fails
-            setTimeout(() => {
-              if (channelListRef.current) {
-                channelListRef.current.scrollToIndex({
-                  index: info.index,
-                  animated: true,
-                });
-              }
-            }, 100);
-          }}
-        />
-      </Animated.View>
+            )}
+          </View>
+        ) : (
+          <FlatList
+            ref={channelListRef}
+            data={channels}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => {
+              const isCurrentChannel = item.id === currentChannelId;
+              return (
+                <View 
+                  className={isCurrentChannel ? 'mx-2 my-1 rounded-xl border-2 border-accent bg-accent/15' : ''}
+                >
+                  <ChannelListItem channel={item} onPress={onChannelSelect} />
+                </View>
+              );
+            }}
+            contentContainerStyle={{ paddingVertical: 12 }}
+            initialNumToRender={20}
+            removeClippedSubviews={true}
+            onScrollToIndexFailed={(info) => {
+              // Fallback if scroll to index fails
+              setTimeout(() => {
+                if (channelListRef.current) {
+                  channelListRef.current.scrollToIndex({
+                    index: info.index,
+                    animated: false,
+                  });
+                }
+              }, 50);
+            }}
+          />
+        )}
+      </View>
     </>
   );
 };

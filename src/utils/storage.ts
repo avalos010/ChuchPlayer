@@ -4,6 +4,7 @@ import { Playlist, Settings, Channel } from '../types';
 const PLAYLISTS_KEY = '@chuchPlayer:playlists';
 const SETTINGS_KEY = '@chuchPlayer:settings';
 const FAVORITES_KEY = '@chuchPlayer:favorites';
+const LAST_CHANNEL_KEY = '@chuchPlayer:lastChannel';
 
 type StoredPlaylist = Omit<Playlist, 'createdAt' | 'updatedAt'> & {
   createdAt: string;
@@ -143,5 +144,24 @@ export const removeFromFavorites = async (channelId: string): Promise<void> => {
   } catch (error) {
     console.error('Error removing from favorites:', error);
     throw error;
+  }
+};
+
+export const saveLastChannel = async (channel: Channel): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(LAST_CHANNEL_KEY, JSON.stringify(channel));
+  } catch (error) {
+    console.error('Error saving last channel:', error);
+    throw error;
+  }
+};
+
+export const getLastChannel = async (): Promise<Channel | null> => {
+  try {
+    const data = await AsyncStorage.getItem(LAST_CHANNEL_KEY);
+    return data ? (JSON.parse(data) as Channel) : null;
+  } catch (error) {
+    console.error('Error getting last channel:', error);
+    return null;
   }
 };

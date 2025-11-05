@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, Image, TouchableOpacity } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
 import { ResizeMode } from 'expo-av';
 import { usePlayerStore } from '../../store/usePlayerStore';
+import { RootStackParamList } from '../../types';
 
 interface EPGOverlayProps {
   onTogglePlayback: () => void;
@@ -13,6 +16,7 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
   onTogglePlayback,
   onBack,
 }) => {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const showEPG = usePlayerStore((state) => state.showEPG);
   const setShowEPG = usePlayerStore((state) => state.setShowEPG);
   const channel = usePlayerStore((state) => state.channel);
@@ -28,58 +32,50 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
 
   return (
     <TouchableOpacity 
-      className="absolute inset-0 bg-transparent justify-between pt-5 pb-10 px-10" 
+      className="absolute inset-0 justify-between pt-8 pb-12 px-8 z-[5] bg-transparent" 
       style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 5,
         elevation: 5,
       }}
       activeOpacity={1} 
       onPress={() => setShowEPG(false)}
     >
-      {/* Top Card - Channel Info */}
+      {/* Top Card - Channel Info - TiviMate Style */}
       <TouchableOpacity 
-        className="bg-dark/98 rounded-xl mb-4 border-2 border-accent"
+        className="rounded-2xl border border-border bg-card shadow-lg"
         style={{
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.6,
-          shadowRadius: 12,
-          elevation: 8,
+          elevation: 12,
         }}
         activeOpacity={1} 
         onPress={() => {}}
       >
-        <View className="flex-row items-center p-5 gap-4">
+        <View className="flex-row items-center p-6 gap-5">
           {channel.logo && !imageError ? (
             <Image
               source={{ uri: channel.logo }}
-              className="w-[120px] h-[120px] rounded-xl bg-subtle border-2 border-accent"
+              className="w-[140px] h-[140px] rounded-2xl bg-subtle border border-border"
               resizeMode="contain"
               onError={() => setImageError(true)}
             />
           ) : (
-            <View className="w-[120px] h-[120px] rounded-xl bg-subtle border-2 border-accent justify-center items-center">
-              <Text className="text-white text-[32px] font-bold">
+            <View className="w-[140px] h-[140px] rounded-2xl bg-subtle border border-border justify-center items-center">
+              <Text className="text-text-primary text-[40px] font-bold tracking-wide">
                 {channel.name.substring(0, 2).toUpperCase()}
               </Text>
             </View>
           )}
-          <View className="flex-1 gap-1.5">
-            <Text className="text-white text-[28px] font-bold">{channel.name}</Text>
+          <View className="flex-1 gap-2">
+            <Text className="text-text-primary text-[32px] font-bold tracking-tight" numberOfLines={1}>
+              {channel.name}
+            </Text>
             {channel.group && (
-              <Text className="text-text-muted text-base">{channel.group}</Text>
+              <Text className="text-text-muted text-base font-medium">{channel.group}</Text>
             )}
             {currentProgram && (
-              <>
-                <Text className="text-accent text-lg font-semibold mt-1">
+              <View className="mt-3 pt-3 border-t border-border">
+                <Text className="text-accent text-xl font-semibold mb-1" numberOfLines={2}>
                   {currentProgram.title}
                 </Text>
-                <Text className="text-gray-500 text-sm">
+                <Text className="text-text-muted text-sm">
                   {currentProgram.start.toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
@@ -90,46 +86,42 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
                     minute: '2-digit',
                   })}
                 </Text>
-              </>
+              </View>
             )}
           </View>
           <FocusableItem 
             onPress={() => setShowEPG(false)} 
-            className="w-10 h-10 rounded-full bg-subtle justify-center items-center"
+            className="w-12 h-12 rounded-full bg-subtle border border-border justify-center items-center"
           >
-            <Text className="text-white text-xl font-bold">✕</Text>
+            <Text className="text-text-secondary text-xl font-bold">✕</Text>
           </FocusableItem>
         </View>
       </TouchableOpacity>
 
-      {/* Bottom Card - Options */}
+      {/* Bottom Card - Options - TiviMate Style */}
       <TouchableOpacity 
-        className="bg-dark/98 rounded-xl border-2 border-accent"
+        className="rounded-2xl border border-border bg-card shadow-lg"
         style={{
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.6,
-          shadowRadius: 12,
-          elevation: 8,
+          elevation: 12,
         }}
         activeOpacity={1} 
         onPress={() => {}}
       >
-        <View className="flex-row justify-around p-5 gap-4">
+        <View className="flex-row justify-around p-6 gap-3">
           <FocusableItem 
             onPress={onTogglePlayback} 
-            className="flex-1 items-center p-4 rounded-lg bg-accent/10 min-w-[100px]"
+            className={`flex-1 items-center py-5 px-4 rounded-xl border min-w-[110px] ${isPlaying ? 'bg-accent/15 border-accent' : 'bg-accent/10 border-border'}`}
           >
-            <Text className="text-accent text-[32px] mb-2">{isPlaying ? '❚❚' : '▶'}</Text>
-            <Text className="text-white text-base font-semibold">{isPlaying ? 'Pause' : 'Play'}</Text>
+            <Text className="text-accent text-[36px] mb-2">{isPlaying ? '❚❚' : '▶'}</Text>
+            <Text className="text-text-primary text-sm font-semibold">{isPlaying ? 'Pause' : 'Play'}</Text>
           </FocusableItem>
 
           <FocusableItem
             onPress={cycleResizeMode}
-            className="flex-1 items-center p-4 rounded-lg bg-accent/10 min-w-[100px]"
+            className="flex-1 items-center py-5 px-4 rounded-xl border border-border bg-accent/10 min-w-[110px]"
           >
-            <Text className="text-accent text-[32px] mb-2">▦</Text>
-            <Text className="text-white text-base font-semibold">
+            <Text className="text-accent text-[36px] mb-2">▦</Text>
+            <Text className="text-text-primary text-sm font-semibold">
               {resizeMode === ResizeMode.COVER
                 ? 'Cover'
                 : resizeMode === ResizeMode.CONTAIN
@@ -143,18 +135,29 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
               // TODO: Implement captions/subtitles toggle
               console.log('Captions feature coming soon');
             }}
-            className="flex-1 items-center p-4 rounded-lg bg-accent/10 min-w-[100px]"
+            className="flex-1 items-center py-5 px-4 rounded-xl border border-border bg-accent/10 min-w-[110px]"
           >
-            <Text className="text-accent text-[32px] mb-2">CC</Text>
-            <Text className="text-white text-base font-semibold">Captions</Text>
+            <Text className="text-accent text-[36px] mb-2">CC</Text>
+            <Text className="text-text-primary text-sm font-semibold">Captions</Text>
           </FocusableItem>
 
           <FocusableItem 
-            onPress={onBack} 
-            className="flex-1 items-center p-4 rounded-lg bg-accent/10 min-w-[100px]"
+            onPress={() => setShowEPG(false)} 
+            className="flex-1 items-center py-5 px-4 rounded-xl border border-border bg-accent/10 min-w-[110px]"
           >
-            <Text className="text-accent text-[32px] mb-2">←</Text>
-            <Text className="text-white text-base font-semibold">Back</Text>
+            <Text className="text-accent text-[36px] mb-2">←</Text>
+            <Text className="text-text-primary text-sm font-semibold">Back</Text>
+          </FocusableItem>
+
+          <FocusableItem 
+            onPress={() => {
+              setShowEPG(false);
+              navigation.navigate('Settings');
+            }} 
+            className="flex-1 items-center py-5 px-4 rounded-xl border border-border bg-accent/10 min-w-[110px]"
+          >
+            <Text className="text-accent text-[36px] mb-2">⚙️</Text>
+            <Text className="text-text-primary text-sm font-semibold">Settings</Text>
           </FocusableItem>
         </View>
       </TouchableOpacity>

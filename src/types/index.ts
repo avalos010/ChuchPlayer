@@ -45,8 +45,6 @@ export interface Settings {
 }
 
 export type RootStackParamList = {
-  Home: undefined;
-  Channels: { playlistId: string };
-  Player: { channel: Channel };
+  Player: { channel?: Channel };
   Settings: undefined;
 };

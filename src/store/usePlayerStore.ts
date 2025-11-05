@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { Channel, EPGProgram, Playlist } from '../types';
 import { ResizeMode, AVPlaybackStatus, Video } from 'expo-av';
-import { Animated, Dimensions } from 'react-native';
+import { Animated, Dimensions, Platform } from 'react-native';
 
 interface PlayerUIState {
   // UI Visibility States
@@ -10,6 +10,7 @@ interface PlayerUIState {
   showEPG: boolean;
   showEPGGrid: boolean;
   showChannelList: boolean;
+  showGroupsPlaylists: boolean;
   showChannelNumberPad: boolean;
   showVolumeIndicator: boolean;
 
@@ -31,6 +32,7 @@ interface PlayerUIState {
   setShowEPG: (show: boolean) => void;
   setShowEPGGrid: (show: boolean) => void;
   setShowChannelList: (show: boolean) => void;
+  setShowGroupsPlaylists: (show: boolean) => void;
   setShowChannelNumberPad: (show: boolean) => void;
   setShowVolumeIndicator: (show: boolean) => void;
 
@@ -85,6 +87,7 @@ export const usePlayerStore = create<PlayerUIState>((set, get) => ({
   showEPG: false,
   showEPGGrid: false,
   showChannelList: false,
+  showGroupsPlaylists: false,
   showChannelNumberPad: false,
   showVolumeIndicator: false,
 
@@ -106,6 +109,7 @@ export const usePlayerStore = create<PlayerUIState>((set, get) => ({
   setShowEPG: (show) => set({ showEPG: show }),
   setShowEPGGrid: (show) => set({ showEPGGrid: show }),
   setShowChannelList: (show) => set({ showChannelList: show }),
+  setShowGroupsPlaylists: (show) => set({ showGroupsPlaylists: show }),
   setShowChannelNumberPad: (show) => set({ showChannelNumberPad: show }),
   setShowVolumeIndicator: (show) => set({ showVolumeIndicator: show }),
 
@@ -232,6 +236,7 @@ export const usePlayerStore = create<PlayerUIState>((set, get) => ({
     showEPG: false,
     showEPGGrid: false,
     showChannelList: false,
+    showGroupsPlaylists: false,
     showChannelNumberPad: false,
   }),
   togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),

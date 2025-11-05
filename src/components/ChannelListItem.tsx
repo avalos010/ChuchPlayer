@@ -11,22 +11,34 @@ interface ChannelListItemProps {
 const ChannelListItem: React.FC<ChannelListItemProps> = ({ channel, onPress }) => {
   const [imageError, setImageError] = useState(false);
 
+  const handlePress = () => {
+    console.log('ChannelListItem pressed:', channel.name, channel.url);
+    onPress(channel);
+  };
+
   return (
     <FocusableItem 
-      onPress={() => onPress(channel)} 
-      className="bg-card mx-4 my-2 rounded-lg"
+      onPress={handlePress} 
+      className="bg-card mx-4 my-2 rounded-xl border border-border"
+      style={{
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        elevation: 4,
+      }}
     >
-      <View className="flex-row items-center p-3 gap-4">
+      <View className="flex-row items-center p-4 gap-4">
         {channel.logo && !imageError ? (
           <Image 
             source={{ uri: channel.logo }} 
-            className="w-[60px] h-[60px] rounded-lg bg-black" 
+            className="w-[70px] h-[70px] rounded-xl bg-subtle border border-border" 
             resizeMode="contain"
             onError={() => setImageError(true)}
           />
         ) : (
-          <View className="w-[60px] h-[60px] rounded-lg bg-subtle justify-center items-center">
-            <Text className="text-white text-lg font-bold">
+          <View className="w-[70px] h-[70px] rounded-xl bg-subtle border border-border justify-center items-center">
+            <Text className="text-text-primary text-xl font-bold tracking-wide">
               {channel.name.substring(0, 2).toUpperCase()}
             </Text>
           </View>
