@@ -4,6 +4,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
 import { ResizeMode } from 'expo-av';
 import { usePlayerStore } from '../../store/usePlayerStore';
+import { useUIStore } from '../../store/useUIStore';
+import { useEPGStore } from '../../store/useEPGStore';
 import { RootStackParamList } from '../../types';
 
 interface EPGOverlayProps {
@@ -18,14 +20,18 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
   navigation,
 }) => {
   
-  const showEPG = usePlayerStore((state) => state.showEPG);
-  const setShowEPG = usePlayerStore((state) => state.setShowEPG);
   const channel = usePlayerStore((state) => state.channel);
-  const currentProgram = usePlayerStore((state) => state.currentProgram);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const resizeMode = usePlayerStore((state) => state.resizeMode);
   const error = usePlayerStore((state) => state.error);
   const cycleResizeMode = usePlayerStore((state) => state.cycleResizeMode);
+  
+  // UI state
+  const showEPG = useUIStore((state) => state.showEPG);
+  const setShowEPG = useUIStore((state) => state.setShowEPG);
+  
+  // EPG state
+  const currentProgram = useEPGStore((state) => state.currentProgram);
   
   const [imageError, setImageError] = useState(false);
 

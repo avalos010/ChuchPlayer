@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, forwardRef } from 'react';
 import { Pressable, StyleProp, View, ViewStyle } from 'react-native';
 
 interface FocusableItemProps {
@@ -13,7 +13,7 @@ interface FocusableItemProps {
   hasTVPreferredFocus?: boolean;
 }
 
-const FocusableItem: React.FC<FocusableItemProps> = ({
+const FocusableItem = forwardRef<any, FocusableItemProps>(({
   onPress,
   onFocus,
   onBlur,
@@ -23,7 +23,7 @@ const FocusableItem: React.FC<FocusableItemProps> = ({
   className,
   disabled = false,
   hasTVPreferredFocus = false,
-}) => {
+}, ref) => {
   const [isFocused, setIsFocused] = useState(false);
 
   const handleFocus = () => {
@@ -135,24 +135,47 @@ const FocusableItem: React.FC<FocusableItemProps> = ({
   const classNameStyles = getStyleFromClassName(className);
   const focusedClassNameStyles = isFocused ? getStyleFromClassName('scale-105 border-[3px] border-accent shadow-lg') : {};
 
-  // Build style object conditionally to avoid undefined transform
-  const baseStyle: ViewStyle = {
-    elevation: isFocused ? 10 : 0,
-    shadowColor: isFocused ? '#00aaff' : 'transparent',
-    shadowOffset: isFocused ? { width: 0, height: 4 } : { width: 0, height: 0 },
-    shadowOpacity: isFocused ? 0.6 : 0,
-    shadowRadius: isFocused ? 8 : 0,
+  // Check if focusedStyle explicitly hides borders/elevation (indicates invisible focus)
+  // Handle both object and array styles
+  const getFocusedStyleValue = (key: keyof ViewStyle): any => {
+    if (!focusedStyle) return undefined;
+    if (Array.isArray(focusedStyle)) {
+      // Check last item in array (highest priority)
+      const lastStyle = focusedStyle[focusedStyle.length - 1] as ViewStyle;
+      return lastStyle?.[key];
+    }
+    return (focusedStyle as ViewStyle)?.[key];
   };
+  
+  const shouldHideFocusEffects = isFocused && focusedStyle && 
+    getFocusedStyleValue('borderWidth') === 0 && 
+    getFocusedStyleValue('elevation') === 0;
 
-  // Only add transform if focused (transform must be an array, never undefined)
-  if (isFocused) {
+  // Build style object conditionally to avoid undefined transform
+  const baseStyle: ViewStyle = {};
+  
+  // Only apply default focus effects if not explicitly hidden by focusedStyle
+  if (isFocused && !shouldHideFocusEffects) {
+    baseStyle.elevation = 10;
+    baseStyle.shadowColor = '#00aaff';
+    baseStyle.shadowOffset = { width: 0, height: 4 };
+    baseStyle.shadowOpacity = 0.6;
+    baseStyle.shadowRadius = 8;
     baseStyle.transform = [{ scale: 1.05 }];
+  } else if (isFocused && shouldHideFocusEffects) {
+    // Explicitly set to 0/transparent to override any defaults
+    baseStyle.elevation = 0;
+    baseStyle.shadowColor = 'transparent';
+    baseStyle.shadowOffset = { width: 0, height: 0 };
+    baseStyle.shadowOpacity = 0;
+    baseStyle.shadowRadius = 0;
+    baseStyle.transform = [];
   }
 
   // Filter out null/undefined styles from the array
   const styleArray = [
     classNameStyles,
-    focusedClassNameStyles,
+    !shouldHideFocusEffects && focusedClassNameStyles,
     style,
     isFocused && focusedStyle,
     baseStyle,
@@ -160,6 +183,7 @@ const FocusableItem: React.FC<FocusableItemProps> = ({
 
   return (
     <Pressable
+      ref={ref}
       disabled={disabled}
       onPress={onPress}
       onFocus={handleFocus}
@@ -171,7 +195,9 @@ const FocusableItem: React.FC<FocusableItemProps> = ({
       <View pointerEvents="none">{children}</View>
     </Pressable>
   );
-};
+});
+
+FocusableItem.displayName = 'FocusableItem';
 
 export default FocusableItem;
 

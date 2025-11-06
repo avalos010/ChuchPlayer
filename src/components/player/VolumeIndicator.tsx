@@ -1,11 +1,14 @@
 import React, { useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { usePlayerStore } from '../../store/usePlayerStore';
+import { useUIStore } from '../../store/useUIStore';
 
 const VolumeIndicator: React.FC = () => {
-  const showVolumeIndicator = usePlayerStore((state) => state.showVolumeIndicator);
-  const setShowVolumeIndicator = usePlayerStore((state) => state.setShowVolumeIndicator);
   const volume = usePlayerStore((state) => state.volume);
+  
+  // UI state
+  const showVolumeIndicator = useUIStore((state) => state.showVolumeIndicator);
+  const setShowVolumeIndicator = useUIStore((state) => state.setShowVolumeIndicator);
 
   useEffect(() => {
     if (showVolumeIndicator) {

@@ -99,8 +99,8 @@ const ChannelInfoCard: React.FC<ChannelInfoCardProps> = ({
         style={{
           backgroundColor: 'rgba(15, 23, 42, 0.95)',
           borderRadius: 16,
-          borderWidth: 2,
-          borderColor: 'rgba(34, 211, 238, 0.6)',
+          borderWidth: 1,
+          borderColor: 'rgba(34, 211, 238, 0.3)',
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 8 },
           shadowOpacity: 0.5,

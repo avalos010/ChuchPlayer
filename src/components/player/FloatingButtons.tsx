@@ -2,6 +2,7 @@ import React from 'react';
 import { Text } from 'react-native';
 import FocusableItem from '../FocusableItem';
 import { usePlayerStore } from '../../store/usePlayerStore';
+import { useUIStore } from '../../store/useUIStore';
 
 interface FloatingButtonsProps {
   onBack: () => void;
@@ -12,8 +13,8 @@ const FloatingButtons: React.FC<FloatingButtonsProps> = ({
   onBack,
   onEPGInfo,
 }) => {
-  const showFloatingButtons = usePlayerStore((state) => state.showFloatingButtons);
-  const showEPG = usePlayerStore((state) => state.showEPG);
+  const showFloatingButtons = useUIStore((state) => state.showFloatingButtons);
+  const showEPG = useUIStore((state) => state.showEPG);
   const error = usePlayerStore((state) => state.error);
 
   if (!showFloatingButtons || error || showEPG) return null;

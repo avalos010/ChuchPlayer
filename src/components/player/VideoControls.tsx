@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text } from 'react-native';
 import FocusableItem from '../FocusableItem';
 import { usePlayerStore } from '../../store/usePlayerStore';
+import { useUIStore } from '../../store/useUIStore';
 
 interface VideoControlsProps {
   onTogglePlayback: () => void;
@@ -14,8 +15,8 @@ const VideoControls: React.FC<VideoControlsProps> = ({
   onBack,
   onMultiScreen,
 }) => {
-  const showControls = usePlayerStore((state) => state.showControls);
-  const showEPG = usePlayerStore((state) => state.showEPG);
+  const showControls = useUIStore((state) => state.showControls);
+  const showEPG = useUIStore((state) => state.showEPG);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const loading = usePlayerStore((state) => state.loading);
   const channel = usePlayerStore((state) => state.channel);

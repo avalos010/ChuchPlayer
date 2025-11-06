@@ -4,6 +4,7 @@ import FocusableItem from '../FocusableItem';
 import ChannelListItem from '../ChannelListItem';
 import { Channel } from '../../types';
 import { usePlayerStore } from '../../store/usePlayerStore';
+import { useUIStore } from '../../store/useUIStore';
 
 interface ChannelListPanelProps {
   onChannelSelect: (channel: Channel) => void;
@@ -12,9 +13,11 @@ interface ChannelListPanelProps {
 const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
   onChannelSelect,
 }) => {
-  const showChannelList = usePlayerStore((state) => state.showChannelList);
-  const setShowChannelList = usePlayerStore((state) => state.setShowChannelList);
-  const setShowGroupsPlaylists = usePlayerStore((state) => state.setShowGroupsPlaylists);
+  const setShowGroupsPlaylists = useUIStore((state) => state.setShowGroupsPlaylists);
+  
+  // UI state
+  const showChannelList = useUIStore((state) => state.showChannelList);
+  const setShowChannelList = useUIStore((state) => state.setShowChannelList);
   const channels = usePlayerStore((state) => state.channels);
   const channel = usePlayerStore((state) => state.channel);
   const playlist = usePlayerStore((state) => state.playlist);

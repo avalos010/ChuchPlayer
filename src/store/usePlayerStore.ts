@@ -1,22 +1,12 @@
 import { create } from 'zustand';
-import { Channel, EPGProgram, Playlist } from '../types';
+import { Channel, Playlist } from '../types';
 import { ResizeMode, AVPlaybackStatus, Video } from 'expo-av';
 import { Animated, Dimensions, Platform } from 'react-native';
+import { useUIStore } from './useUIStore';
 
-interface PlayerUIState {
-  // UI Visibility States
-  showControls: boolean;
-  showFloatingButtons: boolean;
-  showEPG: boolean;
-  showEPGGrid: boolean;
-  showChannelList: boolean;
-  showGroupsPlaylists: boolean;
-  showChannelNumberPad: boolean;
-  showVolumeIndicator: boolean;
-
-  // Player State
+interface PlayerState {
+  // Core Player State
   channel: Channel | null;
-  currentProgram: EPGProgram | null;
   isPlaying: boolean;
   loading: boolean;
   error: string | null;
@@ -26,19 +16,8 @@ interface PlayerUIState {
   playlist: Playlist | null;
   channelNumberInput: string;
 
-  // Actions for UI Visibility
-  setShowControls: (show: boolean) => void;
-  setShowFloatingButtons: (show: boolean) => void;
-  setShowEPG: (show: boolean) => void;
-  setShowEPGGrid: (show: boolean) => void;
-  setShowChannelList: (show: boolean) => void;
-  setShowGroupsPlaylists: (show: boolean) => void;
-  setShowChannelNumberPad: (show: boolean) => void;
-  setShowVolumeIndicator: (show: boolean) => void;
-
   // Actions for Player State
   setChannel: (channel: Channel | null) => void;
-  setCurrentProgram: (program: EPGProgram | null) => void;
   setIsPlaying: (playing: boolean) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -53,6 +32,7 @@ interface PlayerUIState {
   handlePlaybackStatusUpdate: (status: AVPlaybackStatus) => void;
 
   // Volume actions (accept videoRef as parameter)
+  // Note: UI store handles showing volume indicator
   adjustVolume: (delta: number, videoRef: React.RefObject<Video | null>) => void;
   toggleMute: (videoRef: React.RefObject<Video | null>) => void;
 
@@ -73,27 +53,13 @@ interface PlayerUIState {
   exitPIP: (pipAnim: Animated.ValueXY, pipScale: Animated.Value) => void;
 
   // Helper actions
-  toggleControls: () => void;
-  toggleEPG: () => void;
-  closeAllOverlays: () => void;
   togglePlayback: () => void;
   cycleResizeMode: () => void;
 }
 
-export const usePlayerStore = create<PlayerUIState>((set, get) => ({
-  // Initial UI state
-  showControls: true,
-  showFloatingButtons: false,
-  showEPG: false,
-  showEPGGrid: false,
-  showChannelList: false,
-  showGroupsPlaylists: false,
-  showChannelNumberPad: false,
-  showVolumeIndicator: false,
-
+export const usePlayerStore = create<PlayerState>((set, get) => ({
   // Initial Player State
   channel: null,
-  currentProgram: null,
   isPlaying: false,
   loading: false,
   error: null,
@@ -103,19 +69,8 @@ export const usePlayerStore = create<PlayerUIState>((set, get) => ({
   playlist: null,
   channelNumberInput: '',
 
-  // UI Visibility Actions
-  setShowControls: (show) => set({ showControls: show }),
-  setShowFloatingButtons: (show) => set({ showFloatingButtons: show }),
-  setShowEPG: (show) => set({ showEPG: show }),
-  setShowEPGGrid: (show) => set({ showEPGGrid: show }),
-  setShowChannelList: (show) => set({ showChannelList: show }),
-  setShowGroupsPlaylists: (show) => set({ showGroupsPlaylists: show }),
-  setShowChannelNumberPad: (show) => set({ showChannelNumberPad: show }),
-  setShowVolumeIndicator: (show) => set({ showVolumeIndicator: show }),
-
   // Player State Actions
   setChannel: (channel) => set({ channel }),
-  setCurrentProgram: (program) => set({ currentProgram: program }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
@@ -132,10 +87,23 @@ export const usePlayerStore = create<PlayerUIState>((set, get) => ({
   handlePlaybackStatusUpdate: (status: AVPlaybackStatus) => {
     if (!status.isLoaded) {
       if (status.error) {
-        const errorMsg =
-          typeof status.error === 'string'
-            ? status.error
-            : (status.error as any)?.message || 'Failed to load stream. Please try again later.';
+        let errorMsg = 'Failed to load stream. Please try again later.';
+        
+        // Try to extract a more specific error message
+        if (typeof status.error === 'string') {
+          errorMsg = status.error;
+        } else if ((status.error as any)?.message) {
+          const errorMessage = (status.error as any).message;
+          
+          // Check for ExoPlayer unrecognized format error
+          if (errorMessage.includes('UnrecognizedInputFormatException') || 
+              errorMessage.includes('could read the stream')) {
+            errorMsg = 'Stream format not supported. This channel may not be available.';
+          } else {
+            errorMsg = errorMessage;
+          }
+        }
+        
         set({ error: errorMsg, loading: false });
       }
       return;
@@ -147,13 +115,15 @@ export const usePlayerStore = create<PlayerUIState>((set, get) => ({
   },
 
   // Volume actions
+  // Note: UI store handles showing volume indicator to keep concerns separated
   adjustVolume: (delta, videoRef) => {
     const newVolume = Math.max(0, Math.min(1, get().volume + delta));
     if (videoRef.current) {
       videoRef.current.setVolumeAsync(newVolume);
     }
     set({ volume: newVolume });
-    get().setShowVolumeIndicator(true);
+    // Show volume indicator via UI store
+    useUIStore.getState().setShowVolumeIndicator(true);
   },
   toggleMute: (videoRef) => {
     const newVolume = get().volume > 0 ? 0 : 1;
@@ -161,7 +131,8 @@ export const usePlayerStore = create<PlayerUIState>((set, get) => ({
       videoRef.current.setVolumeAsync(newVolume);
     }
     set({ volume: newVolume });
-    get().setShowVolumeIndicator(true);
+    // Show volume indicator via UI store
+    useUIStore.getState().setShowVolumeIndicator(true);
   },
 
   // Channel navigation
@@ -183,7 +154,9 @@ export const usePlayerStore = create<PlayerUIState>((set, get) => ({
     const currentInput = get().channelNumberInput;
     const newInput = currentInput + digit;
     if (newInput.length <= 4) {
-      set({ channelNumberInput: newInput, showChannelNumberPad: true });
+      set({ channelNumberInput: newInput });
+      // Show channel number pad via UI store
+      useUIStore.getState().setShowChannelNumberPad(true);
 
       const channelNum = parseInt(newInput, 10);
       if (channelNum > 0 && channelNum <= channels.length) {
@@ -191,7 +164,9 @@ export const usePlayerStore = create<PlayerUIState>((set, get) => ({
         if (targetChannel) {
           setTimeout(() => {
             onChannelSelect(targetChannel);
-            set({ channelNumberInput: '', showChannelNumberPad: false });
+            set({ channelNumberInput: '' });
+            // Hide channel number pad via UI store
+            useUIStore.getState().setShowChannelNumberPad(false);
           }, 800);
         }
       }
@@ -243,15 +218,6 @@ export const usePlayerStore = create<PlayerUIState>((set, get) => ({
   },
 
   // Helper actions
-  toggleControls: () => set((state) => ({ showControls: !state.showControls })),
-  toggleEPG: () => set((state) => ({ showEPG: !state.showEPG })),
-  closeAllOverlays: () => set({
-    showEPG: false,
-    showEPGGrid: false,
-    showChannelList: false,
-    showGroupsPlaylists: false,
-    showChannelNumberPad: false,
-  }),
   togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),
   cycleResizeMode: () => {
     const modes: ResizeMode[] = [

@@ -18,6 +18,7 @@ import { showError, showSuccess } from '../utils/toast';
 import { fetchM3UPlaylist } from '../utils/m3uParser';
 import { fetchXtreamPlaylist } from '../utils/xtreamParser';
 import { usePlayerStore } from '../store/usePlayerStore';
+import { useUIStore } from '../store/useUIStore';
 
 interface SettingsScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Settings'>;
@@ -171,7 +172,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
       // Update player store with new playlist and channels
       const setPlaylist = usePlayerStore.getState().setPlaylist;
       const setChannels = usePlayerStore.getState().setChannels;
-      const setShowEPGGrid = usePlayerStore.getState().setShowEPGGrid;
+      const setShowEPGGrid = useUIStore.getState().setShowEPGGrid;
       
       setPlaylist(playlist);
       setChannels(channels);

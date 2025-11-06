@@ -5,6 +5,7 @@ import FocusableItem from '../FocusableItem';
 import { Channel, EPGProgram } from '../../types';
 import { RootStackParamList } from '../../types';
 import { usePlayerStore } from '../../store/usePlayerStore';
+import { useUIStore } from '../../store/useUIStore';
 import { groupChannelsByCategory } from '../../utils/m3uParser';
 
 interface EPGGridViewProps {
@@ -390,8 +391,8 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   onExitPIP,
   navigation,
 }) => {
-  const showEPGGrid = usePlayerStore((state) => state.showEPGGrid);
-  const setShowEPGGrid = usePlayerStore((state) => state.setShowEPGGrid);
+  const showEPGGrid = useUIStore((state) => state.showEPGGrid);
+  const setShowEPGGrid = useUIStore((state) => state.setShowEPGGrid);
   const channels = usePlayerStore((state) => state.channels);
   const channel = usePlayerStore((state) => state.channel);
   const playlist = usePlayerStore((state) => state.playlist);

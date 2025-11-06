@@ -3,6 +3,7 @@ import { View, Text, FlatList, Animated, TouchableOpacity, Platform } from 'reac
 import FocusableItem from '../FocusableItem';
 import { Channel, Playlist } from '../../types';
 import { usePlayerStore } from '../../store/usePlayerStore';
+import { useUIStore } from '../../store/useUIStore';
 import { getPlaylists } from '../../utils/storage';
 import { groupChannelsByCategory } from '../../utils/m3uParser';
 
@@ -15,9 +16,10 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
   onGroupSelect,
   onPlaylistSelect,
 }) => {
-  const showGroupsPlaylists = usePlayerStore((state) => state.showGroupsPlaylists);
-  const setShowGroupsPlaylists = usePlayerStore((state) => state.setShowGroupsPlaylists);
-  const setShowChannelList = usePlayerStore((state) => state.setShowChannelList);
+  // UI state
+  const showGroupsPlaylists = useUIStore((state) => state.showGroupsPlaylists);
+  const setShowGroupsPlaylists = useUIStore((state) => state.setShowGroupsPlaylists);
+  const setShowChannelList = useUIStore((state) => state.setShowChannelList);
   const channels = usePlayerStore((state) => state.channels);
   const playlist = usePlayerStore((state) => state.playlist);
   const setPlaylist = usePlayerStore((state) => state.setPlaylist);

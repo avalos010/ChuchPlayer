@@ -1,12 +1,15 @@
 import React, { useEffect } from 'react';
 import { View, Text } from 'react-native';
 import { usePlayerStore } from '../../store/usePlayerStore';
+import { useUIStore } from '../../store/useUIStore';
 
 const ChannelNumberPad: React.FC = () => {
-  const showChannelNumberPad = usePlayerStore((state) => state.showChannelNumberPad);
-  const setShowChannelNumberPad = usePlayerStore((state) => state.setShowChannelNumberPad);
   const channelNumberInput = usePlayerStore((state) => state.channelNumberInput);
   const setChannelNumberInput = usePlayerStore((state) => state.setChannelNumberInput);
+  
+  // UI state
+  const showChannelNumberPad = useUIStore((state) => state.showChannelNumberPad);
+  const setShowChannelNumberPad = useUIStore((state) => state.setShowChannelNumberPad);
   const channels = usePlayerStore((state) => state.channels);
 
   const channelNum = channelNumberInput ? parseInt(channelNumberInput, 10) : null;
