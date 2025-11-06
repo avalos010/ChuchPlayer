@@ -21,11 +21,11 @@ interface ChannelRowData {
   programs: EPGProgram[];
 }
 
-// TV-friendly row height - taller when focused to show program info
-const ROW_HEIGHT_BASE = Platform.OS === 'android' ? 130 : 110;
-const ROW_HEIGHT_FOCUSED = Platform.OS === 'android' ? 190 : 170;
-const CHANNEL_COLUMN_WIDTH = Platform.OS === 'android' ? 300 : 240;
-const TIME_SLOT_WIDTH = Platform.OS === 'android' ? 150 : 120;
+// Modern TV-friendly row height - taller when focused to show program info
+const ROW_HEIGHT_BASE = Platform.OS === 'android' ? 140 : 120;
+const ROW_HEIGHT_FOCUSED = Platform.OS === 'android' ? 200 : 180;
+const CHANNEL_COLUMN_WIDTH = Platform.OS === 'android' ? 320 : 260;
+const TIME_SLOT_WIDTH = Platform.OS === 'android' ? 160 : 130;
 
 // Memoized channel row component optimized for Android TV
 const ChannelRow = memo<{
@@ -49,10 +49,10 @@ const ChannelRow = memo<{
     return programs.map(program => {
       const programStart = program.start;
       const programEnd = program.end;
-      
-      const startHour = programStart.getHours() + programStart.getMinutes() / 60;
-      const endHour = programEnd.getHours() + programEnd.getMinutes() / 60;
-      const duration = endHour - startHour;
+    
+    const startHour = programStart.getHours() + programStart.getMinutes() / 60;
+    const endHour = programEnd.getHours() + programEnd.getMinutes() / 60;
+    const duration = endHour - startHour;
       
       // Calculate hours from current time (slot 12 is current hour)
       const hoursFromNow = (programStart.getTime() - now.getTime()) / (1000 * 60 * 60);
@@ -92,11 +92,11 @@ const ChannelRow = memo<{
     [channel.name]
   );
   
-  // Enhanced focus styles for TV
+  // Enhanced focus styles for TV with modern design
   const rowHeight = isFocused ? ROW_HEIGHT_FOCUSED : ROW_HEIGHT_BASE;
-  const logoSize = Platform.OS === 'android' ? 70 : 55;
-  const channelNameSize = Platform.OS === 'android' ? 'text-base' : 'text-sm';
-  const programTitleSize = Platform.OS === 'android' ? 'text-lg' : 'text-base';
+  const logoSize = Platform.OS === 'android' ? 80 : 64;
+  const channelNameSize = Platform.OS === 'android' ? 'text-lg' : 'text-base';
+  const programTitleSize = Platform.OS === 'android' ? 'text-xl' : 'text-lg';
   
   // Alternate row background for better visibility
   const rowIndex = useMemo(() => {
@@ -104,66 +104,71 @@ const ChannelRow = memo<{
     return channel.id.charCodeAt(0) % 2;
   }, [channel.id]);
   
-  // For dynamic row background with modern colors
+  // Modern color scheme with better contrast
   const rowBgClass = isFocused 
-    ? 'bg-slate-600' 
+    ? 'bg-slate-700/90' 
     : isCurrent 
-      ? 'bg-slate-700' 
+      ? 'bg-slate-800/80' 
       : rowIndex === 0 
-        ? 'bg-slate-800' 
-        : 'bg-slate-900';
+        ? 'bg-slate-900/60' 
+        : 'bg-slate-950/50';
 
   const borderLeftClass = isFocused 
-    ? 'border-l-4 border-l-teal-400' 
+    ? 'border-l-4 border-l-cyan-400' 
     : isCurrent 
-      ? 'border-l-2 border-l-teal-500' 
+      ? 'border-l-3 border-l-cyan-500/70' 
       : 'border-l-0 border-l-transparent';
-
+  
   return (
     <FocusableItem
       onPress={handlePress}
       onFocus={handleFocus}
-      className={`flex-row border-b border-slate-700 ${rowBgClass} ${borderLeftClass}`}
+      className={`flex-row border-b border-slate-700/50 ${rowBgClass} ${borderLeftClass}`}
       style={{ minHeight: rowHeight }}
       hasTVPreferredFocus={hasTVPreferredFocus}
-      focusedStyle={{
-        backgroundColor: '#475569',
+      focusedStyle={Platform.OS === 'android' ? {
+        backgroundColor: 'rgba(51, 65, 85, 0.95)',
         borderLeftWidth: 4,
-        borderLeftColor: '#4fd1c7',
-        // Override any default transform from FocusableItem
+        borderLeftColor: '#22d3ee',
+        // No transforms on Android TV for better performance
         transform: [],
+      } : {
+        backgroundColor: 'rgba(51, 65, 85, 0.95)',
+        borderLeftWidth: 4,
+        borderLeftColor: '#22d3ee',
+        transform: [{ scale: 1.02 }],
       }}
     >
-      {/* Channel Info Column - Fixed Width, TV-optimized */}
+      {/* Channel Info Column - Modern Design */}
       <View 
-        className={`border-r-2 border-slate-600 ${
-          isFocused ? 'bg-slate-600' : isCurrent ? 'bg-slate-700' : 'bg-slate-800'
+        className={`border-r border-slate-700/60 ${
+          isFocused ? 'bg-slate-700/40' : isCurrent ? 'bg-slate-800/30' : 'bg-slate-900/20'
         }`}
         style={{ width: CHANNEL_COLUMN_WIDTH }}
       >
-        <View className="flex-row items-center p-4 gap-3">
+        <View className="flex-row items-center p-5 gap-4">
           {channel.logo && !imageError ? (
             <Image
               source={{ uri: channel.logo }}
-              className="bg-slate-800 border border-slate-500 rounded-lg"
+              className="bg-slate-900/80 border-2 border-slate-600/50 rounded-xl shadow-lg"
               style={{ width: logoSize, height: logoSize }}
               resizeMode="contain"
               onError={() => setImageError(true)}
             />
           ) : (
             <View 
-              className="bg-slate-800 border border-slate-500 justify-center items-center rounded-lg"
+              className="bg-gradient-to-br from-slate-800 to-slate-900 border-2 border-slate-600/50 justify-center items-center rounded-xl shadow-lg"
               style={{ width: logoSize, height: logoSize }}
             >
-              <Text className="text-gray-100 text-lg font-bold">
+              <Text className="text-cyan-300 text-xl font-extrabold tracking-wide">
                 {channelInitials}
               </Text>
             </View>
           )}
           <View className="flex-1">
             <Text 
-              className={`font-bold mb-1 ${channelNameSize} ${
-                isFocused || isCurrent ? 'text-teal-400' : 'text-gray-200'
+              className={`font-extrabold mb-1.5 ${channelNameSize} leading-tight ${
+                isFocused || isCurrent ? 'text-cyan-300' : 'text-gray-100'
               }`}
               numberOfLines={isFocused ? 3 : 2}
             >
@@ -171,7 +176,7 @@ const ChannelRow = memo<{
             </Text>
             {channel.group && (
               <Text 
-                className="text-gray-400 text-xs"
+                className="text-gray-400 text-sm font-medium"
                 numberOfLines={1}
               >
                 {channel.group}
@@ -183,90 +188,122 @@ const ChannelRow = memo<{
       
       {/* Program Timeline Column */}
       <View className="flex-1 relative" style={{ minWidth: 48 * TIME_SLOT_WIDTH }}>
-        {/* Current Time Indicator Line */}
+        {/* Current Time Indicator Line - Modern Design */}
         {currentTimePosition !== undefined && (
           <View
-            className="absolute top-0 bottom-0 w-0.5 bg-teal-400 z-[20]"
+            className="absolute top-0 bottom-0 w-1 bg-cyan-400 z-[20] shadow-lg"
             style={{ left: currentTimePosition }}
           >
-            <View className="absolute -top-1 -left-1 w-2.5 h-2.5 rounded-full bg-teal-400" />
+            <View className="absolute -top-2 -left-2 w-4 h-4 rounded-full bg-cyan-400 border-2 border-slate-900 shadow-xl" />
           </View>
         )}
         
-        {/* Render all program blocks */}
+        {/* Render program blocks with lazy loading for performance */}
         {programPositions.length > 0 ? (
-          programPositions.map((pos, idx) => {
-            const isCurrentProgram = pos.isCurrent;
-            const program = pos.program;
-            const timeString = `${program.start.toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })} - ${program.end.toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-            })}`;
-            
-            return (
-              <View
-                key={program.id}
-                className={`absolute rounded-md border ${
-                  isCurrentProgram || isFocused 
-                    ? 'bg-slate-600 border-teal-400' 
-                    : 'bg-slate-700 border-slate-500'
-                } ${isFocused && isCurrentProgram ? 'px-4 py-3.5' : 'px-3 py-2.5'}`}
-                style={{
-                  top: 8,
-                  bottom: 8,
-                  left: Math.max(0, pos.leftPosition),
-                  width: pos.programWidth,
-                  minWidth: 140,
-                  zIndex: isCurrentProgram ? 10 : 5,
-                }}
-              >
-                <View className="flex-1 justify-center">
-                  <Text 
-                    className={`font-semibold mb-1.5 ${
-                      isCurrentProgram || isFocused ? 'text-white' : 'text-gray-200'
-                    } ${Platform.OS === 'android' ? 'text-base' : 'text-sm'}`}
-                    numberOfLines={isFocused ? 2 : 1}
-                  >
-                    {program.title}
-                  </Text>
-                  <Text 
-                    className={`text-xs font-medium mt-0.5 ${
-                      isCurrentProgram || isFocused ? 'text-teal-300' : 'text-gray-300'
-                    }`}
-                  >
-                    {timeString}
-                  </Text>
-                  {isFocused && isCurrentProgram && program.description && (
+          // On Android TV, only render visible programs or when focused
+          Platform.OS === 'android' && !isFocused ? (
+            // Simplified view for unfocused rows on Android TV - Modern Design
+            programPositions.slice(0, 3).map((pos, idx) => {
+              const isCurrentProgram = pos.isCurrent;
+              const program = pos.program;
+              
+              return (
+                <View
+                  key={program.id}
+                  className={`absolute rounded-xl border-2 top-3 bottom-3 shadow-md ${
+                    isCurrentProgram 
+                      ? 'bg-slate-700/90 border-cyan-400/80' 
+                      : 'bg-slate-800/70 border-slate-600/50'
+                  } px-4 py-3`}
+                  style={{
+                    left: Math.max(0, pos.leftPosition),
+                    width: pos.programWidth,
+                    minWidth: 160,
+                    zIndex: isCurrentProgram ? 10 : 5,
+                  }}
+                >
+                  <View className="flex-1 justify-center">
                     <Text 
-                      className="text-gray-200 text-xs mt-2 leading-4"
-                      numberOfLines={2}
+                      className={`font-bold ${
+                        isCurrentProgram ? 'text-cyan-50' : 'text-gray-200'
+                      } ${Platform.OS === 'android' ? 'text-base' : 'text-sm'} leading-snug`}
+                      numberOfLines={1}
                     >
-                      {program.description}
+                      {program.title}
                     </Text>
-                  )}
+                  </View>
                 </View>
-              </View>
-            );
-          })
+              );
+            })
+          ) : (
+            // Full detailed view for focused rows or non-Android TV - Modern Design
+            programPositions.map((pos, idx) => {
+              const isCurrentProgram = pos.isCurrent;
+              const program = pos.program;
+              const timeString = `${program.start.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })} - ${program.end.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}`;
+              
+              return (
+                <View
+                  key={program.id}
+                  className={`absolute rounded-xl border-2 top-3 bottom-3 shadow-lg ${
+                    isCurrentProgram || isFocused 
+                      ? 'bg-slate-700/95 border-cyan-400 shadow-cyan-400/20' 
+                      : 'bg-slate-800/80 border-slate-600/60'
+                  } ${isFocused && isCurrentProgram ? 'px-5 py-4' : 'px-4 py-3'}`}
+            style={{
+                    left: Math.max(0, pos.leftPosition),
+                    width: pos.programWidth,
+                    minWidth: 180,
+                    zIndex: isCurrentProgram ? 10 : 5,
+                  }}
+                >
+                  <View className="flex-1 justify-center">
+                    <Text 
+                      className={`font-bold mb-2 leading-tight ${
+                        isCurrentProgram || isFocused ? 'text-cyan-50' : 'text-gray-100'
+                      } ${Platform.OS === 'android' ? 'text-lg' : 'text-base'}`}
+                      numberOfLines={isFocused ? 2 : 1}
+                    >
+                      {program.title}
+                    </Text>
+                    <Text 
+                      className={`text-sm font-semibold mt-1 ${
+                        isCurrentProgram || isFocused ? 'text-cyan-300' : 'text-gray-400'
+                      }`}
+                    >
+                      {timeString}
+                    </Text>
+                    {isFocused && isCurrentProgram && program.description && (
+                      <Text 
+                        className="text-gray-300 text-sm mt-3 leading-relaxed font-medium"
+                        numberOfLines={2}
+                      >
+                        {program.description}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              );
+            })
+          )
         ) : (
           <View 
-            className="absolute left-0 w-60 rounded-md border border-slate-500 bg-slate-700/80 justify-center px-4 py-3" 
-            style={{ 
-              top: 8, 
-              bottom: 8,
-            }}
+            className="absolute left-0 w-72 rounded-xl border-2 border-slate-600/60 bg-slate-800/70 justify-center px-5 py-4 top-3 bottom-3 shadow-md"
           >
             <Text 
-              className="text-gray-200 text-sm font-semibold"
+              className="text-gray-200 text-base font-bold mb-1"
               numberOfLines={1}
             >
               No Data Available
             </Text>
             <Text 
-              className="text-gray-400 text-xs mt-1"
+              className="text-gray-400 text-sm font-medium"
             >
               EPG information not available
             </Text>
@@ -305,39 +342,39 @@ const TimeHeader = memo<{ currentTimePosition?: number }>(({ currentTimePosition
     });
   }, []);
   
-  const headerHeight = Platform.OS === 'android' ? 60 : 48;
-  const timeTextSize = Platform.OS === 'android' ? 'text-base' : 'text-xs';
+  const headerHeight = Platform.OS === 'android' ? 70 : 56;
+  const timeTextSize = Platform.OS === 'android' ? 'text-lg' : 'text-sm';
   
   return (
-    <View className="flex-row border-b-2 border-slate-600 z-10 bg-slate-900" style={{ height: headerHeight }}>
+    <View className="flex-row border-b-2 border-slate-700/60 z-10 bg-slate-950/90 shadow-lg" style={{ height: headerHeight }}>
       <View 
-        className="bg-slate-900 border-r-2 border-slate-600 justify-center px-4"
+        className="bg-slate-950/90 border-r-2 border-slate-700/60 justify-center px-5"
         style={{ width: CHANNEL_COLUMN_WIDTH }}
       >
-        <Text className="text-gray-400 text-sm font-semibold">TIME</Text>
+        <Text className="text-cyan-300 text-base font-extrabold tracking-wider uppercase">TIME</Text>
       </View>
       <View className="flex-1 relative">
-        {/* Current Time Indicator in Header */}
+        {/* Current Time Indicator in Header - Modern Design */}
         {currentTimePosition !== undefined && (
           <View
-            className="absolute top-0 bottom-0 w-0.5 bg-teal-400 z-[20]"
+            className="absolute top-0 bottom-0 w-1 bg-cyan-400 z-[20] shadow-lg"
             style={{ left: currentTimePosition }}
           >
-            <View className="absolute -top-2 -left-2 w-3 h-3 rounded-full bg-teal-400" />
+            <View className="absolute -top-2 -left-2 w-4 h-4 rounded-full bg-cyan-400 border-2 border-slate-950 shadow-xl" />
           </View>
         )}
         <View className="flex-row">
-          {timeSlots.map((slot) => (
-            <View 
-              key={slot.id}
-              className="border-r border-slate-600 items-center justify-center bg-slate-900 py-3 px-2"
+      {timeSlots.map((slot) => (
+        <View 
+          key={slot.id}
+              className="border-r border-slate-700/50 items-center justify-center bg-slate-950/80 py-4 px-3"
               style={{ width: TIME_SLOT_WIDTH }}
-            >
-              <Text className={`${timeTextSize} font-bold ${slot.isCurrent ? 'text-teal-400' : 'text-gray-400'}`}>
-                {slot.hour24.toString().padStart(2, '0')}:00
-              </Text>
-            </View>
-          ))}
+        >
+              <Text className={`${timeTextSize} font-extrabold ${slot.isCurrent ? 'text-cyan-300' : 'text-gray-400'}`}>
+            {slot.hour24.toString().padStart(2, '0')}:00
+          </Text>
+        </View>
+      ))}
         </View>
       </View>
     </View>
@@ -366,8 +403,9 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   const [initialFocusChannelId, setInitialFocusChannelId] = useState<string | null>(null);
   const [focusedGroup, setFocusedGroup] = useState<string | null>(null);
   const [currentTimePosition, setCurrentTimePosition] = useState<number>(0);
+  const [scrollX, setScrollX] = useState<number>(0);
 
-  // Calculate current time position for indicator line (relative to time slots, not absolute)
+  // Calculate current time position for indicator line (less frequent updates for performance)
   useEffect(() => {
     const updateTimePosition = () => {
       const now = new Date();
@@ -379,9 +417,30 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     };
     
     updateTimePosition();
-    const interval = setInterval(updateTimePosition, 60000); // Update every minute
+    // Update every 5 minutes instead of 1 minute for better performance
+    const interval = setInterval(updateTimePosition, 300000);
     return () => clearInterval(interval);
   }, []);
+
+  // Scroll to position current time at the leftmost visible edge when EPG opens
+  useEffect(() => {
+    if (showEPGGrid && horizontalScrollRef.current && currentTimePosition > 0) {
+      // Position current time at the leftmost edge of the visible scrollable area
+      // This allows users to see current/future programs without scrolling right
+      // Users can still scroll left to see past programs if they want
+      const scrollXPos = Math.max(0, currentTimePosition - 20); // Small offset for visual padding
+      setScrollX(scrollXPos);
+      
+      // Use setTimeout to ensure the ScrollView is rendered and measured
+      setTimeout(() => {
+        horizontalScrollRef.current?.scrollTo({
+          x: scrollXPos,
+          animated: false,
+        });
+      }, 150);
+    }
+  }, [showEPGGrid, currentTimePosition]);
+
 
   const handleClose = useCallback(() => {
     setShowEPGGrid(false);
@@ -442,14 +501,14 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
         setFocusedChannelId(focusChannelId);
         setInitialFocusChannelId(focusChannelId);
         const currentIndex = channelData.findIndex(d => d.channel.id === focusChannelId);
-        if (currentIndex >= 0) {
-          setTimeout(() => {
-            flatListRef.current?.scrollToIndex({
-              index: currentIndex,
-              animated: false,
-              viewPosition: 0.3,
-            });
-          }, 100);
+      if (currentIndex >= 0) {
+        setTimeout(() => {
+          flatListRef.current?.scrollToIndex({
+            index: currentIndex,
+            animated: false,
+            viewPosition: 0.3,
+          });
+        }, 100);
         }
       }
     }
@@ -498,8 +557,12 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   // Key extractor
   const keyExtractor = useCallback((item: ChannelRowData) => item.channel.id, []);
 
-  // Don't use getItemLayout with dynamic heights - let FlatList calculate automatically
-  // This ensures proper scrolling when rows expand/contract
+  // getItemLayout for non-Android platforms (Android uses dynamic heights)
+  const getItemLayout = useCallback((data: ArrayLike<ChannelRowData> | null | undefined, index: number) => ({
+    length: ROW_HEIGHT_BASE,
+    offset: ROW_HEIGHT_BASE * index,
+    index,
+  }), []);
 
   const handleScrollToIndexFailed = useCallback((info: {
     index: number;
@@ -518,18 +581,18 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
 
   return (
     <View 
-      className="absolute inset-0 bg-slate-900 z-[25]" 
+      className="absolute inset-0 bg-slate-950 z-[25]" 
       style={{ elevation: 25 }}
     >
-      {/* Header - TV-optimized */}
-      <View className="border-b border-slate-600 bg-gradient-to-r from-slate-800 to-slate-700">
-        <View className="flex-row justify-between items-center px-6 py-6">
+      {/* Header - Modern Design */}
+      <View className="border-b-2 border-slate-700/60 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 shadow-xl">
+        <View className="flex-row justify-between items-center px-8 py-7">
           <View className="flex-1">
-            <Text className="text-white text-3xl font-bold tracking-tight">
+            <Text className="text-cyan-50 text-4xl font-extrabold tracking-tight mb-2">
               Electronic Program Guide
             </Text>
             {playlistName && (
-              <Text className="text-teal-300 text-base mt-2 font-medium">{playlistName}</Text>
+              <Text className="text-cyan-300 text-lg mt-1 font-bold">{playlistName}</Text>
             )}
           </View>
           <View className="flex-row gap-4">
@@ -537,13 +600,15 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
               onPress={handleSettings} 
               className="w-16 h-16 rounded-2xl bg-slate-700/80 border-2 border-slate-600 justify-center items-center shadow-lg"
               style={{
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.3,
-                shadowRadius: 4,
                 elevation: 4,
               }}
-              focusedStyle={{
+              focusedStyle={Platform.OS === 'android' ? {
+                backgroundColor: '#475569',
+                borderColor: '#4fd1c7',
+                borderWidth: 3,
+                // No transform on Android TV for performance
+                transform: [],
+              } : {
                 backgroundColor: '#475569',
                 borderColor: '#4fd1c7',
                 borderWidth: 3,
@@ -559,13 +624,15 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
               onPress={handleClose} 
               className="w-16 h-16 rounded-2xl bg-red-600/80 border-2 border-red-500 justify-center items-center shadow-lg"
               style={{
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.3,
-                shadowRadius: 4,
                 elevation: 4,
               }}
-              focusedStyle={{
+              focusedStyle={Platform.OS === 'android' ? {
+                backgroundColor: '#dc2626',
+                borderColor: '#4fd1c7',
+                borderWidth: 3,
+                // No transform on Android TV for performance
+                transform: [],
+              } : {
                 backgroundColor: '#dc2626',
                 borderColor: '#4fd1c7',
                 borderWidth: 3,
@@ -580,10 +647,10 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
           </View>
         </View>
 
-        {/* Group Filter - Modern TV-optimized */}
+        {/* Group Filter - Modern Design */}
         {groups && Array.isArray(groups) && groups.length > 1 && (
-          <View className="px-6 pb-6 bg-slate-800/50">
-            <Text className="text-gray-300 text-sm font-semibold mb-3 px-1">Categories</Text>
+          <View className="px-8 pb-7 bg-slate-950/40 border-t border-slate-800/50">
+            <Text className="text-cyan-200 text-base font-extrabold mb-4 px-1 tracking-wide uppercase">Categories</Text>
             <ScrollView 
               horizontal 
               showsHorizontalScrollIndicator={false}
@@ -594,28 +661,30 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
                   const isFocused = focusedGroup === group;
                   const isSelected = selectedGroup === group;
                   return (
-                    <FocusableItem
-                      key={group}
-                      onPress={() => setSelectedGroup(group)}
+                  <FocusableItem
+                    key={group}
+                    onPress={() => setSelectedGroup(group)}
                       onFocus={() => setFocusedGroup(group)}
                       onBlur={() => setFocusedGroup(null)}
                       hasTVPreferredFocus={index === 0 && showEPGGrid}
-                      className={`px-8 py-4 rounded-xl border-2 shadow-lg ${
+                      className={`px-10 py-5 rounded-2xl border-2 shadow-xl ${
                         isSelected
-                          ? 'bg-gradient-to-br from-teal-500 to-teal-600 border-teal-400'
-                          : 'bg-slate-700 border-slate-600'
+                          ? 'bg-gradient-to-br from-cyan-500 to-cyan-600 border-cyan-400 shadow-cyan-500/30'
+                          : 'bg-slate-800/80 border-slate-600/60'
                       }`}
                       style={{
-                        minWidth: 120,
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.3,
-                        shadowRadius: 4,
-                        elevation: 4,
+                        minWidth: 140,
+                        elevation: 6,
                       }}
-                      focusedStyle={{
-                        backgroundColor: isSelected ? '#0d9488' : '#475569',
-                        borderColor: '#4fd1c7',
+                      focusedStyle={Platform.OS === 'android' ? {
+                        backgroundColor: isSelected ? '#06b6d4' : 'rgba(51, 65, 85, 0.95)',
+                        borderColor: '#22d3ee',
+                        borderWidth: 3,
+                        // No transform on Android TV for performance
+                        transform: [],
+                      } : {
+                        backgroundColor: isSelected ? '#06b6d4' : 'rgba(51, 65, 85, 0.95)',
+                        borderColor: '#22d3ee',
                         borderWidth: 3,
                         transform: [{ scale: 1.08 }],
                         shadowOpacity: 0.5,
@@ -625,27 +694,27 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
                     >
                       <View className="items-center">
                         <Text
-                          className={`text-base font-bold text-center ${
+                          className={`text-lg font-extrabold text-center tracking-wide ${
                             isSelected || isFocused
                               ? 'text-white'
                               : 'text-gray-200'
                           }`}
                           numberOfLines={2}
-                        >
-                          {group}
-                        </Text>
+                    >
+                      {group}
+                    </Text>
                         {isSelected && (
-                          <View className="w-6 h-0.5 bg-white/60 rounded-full mt-2" />
+                          <View className="w-8 h-1 bg-cyan-200 rounded-full mt-3 shadow-md" />
                         )}
                       </View>
-                    </FocusableItem>
+                  </FocusableItem>
                   );
                 })}
               </View>
             </ScrollView>
           </View>
         )}
-                </View>
+      </View>
 
       {/* EPG Grid with Horizontal Scroll */}
       <ScrollView 
@@ -653,29 +722,36 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
         className="flex-1" 
         horizontal 
         showsHorizontalScrollIndicator={false}
-        contentOffset={{ x: 12 * TIME_SLOT_WIDTH, y: 0 }}
         scrollEventThrottle={16}
+        onScroll={(event) => {
+          setScrollX(event.nativeEvent.contentOffset.x);
+        }}
       >
-        <View style={{ flex: 1 }}>
+        <View className="flex-1">
           {/* Time Header */}
           <TimeHeader currentTimePosition={currentTimePosition} />
           
-          {/* Virtualized Channel List */}
-            <FlatList
-              ref={flatListRef}
-              data={channelData}
-              renderItem={renderItem}
-              keyExtractor={keyExtractor}
-              onScrollToIndexFailed={handleScrollToIndexFailed}
-            initialNumToRender={Platform.OS === 'android' ? 8 : 10}
-            maxToRenderPerBatch={Platform.OS === 'android' ? 8 : 10}
-            updateCellsBatchingPeriod={50}
-            windowSize={Platform.OS === 'android' ? 15 : 21}
-            removeClippedSubviews={Platform.OS !== 'web'}
+          {/* Virtualized Channel List - Optimized for Android TV */}
+          <FlatList
+            ref={flatListRef}
+            data={channelData}
+            renderItem={renderItem}
+            keyExtractor={keyExtractor}
+            onScrollToIndexFailed={handleScrollToIndexFailed}
+            // Android TV Performance Optimizations
+            initialNumToRender={Platform.OS === 'android' ? 3 : 6}
+            maxToRenderPerBatch={Platform.OS === 'android' ? 3 : 5}
+            updateCellsBatchingPeriod={Platform.OS === 'android' ? 100 : 50}
+            windowSize={Platform.OS === 'android' ? 8 : 12}
+            removeClippedSubviews={true}
             showsVerticalScrollIndicator={false}
             style={{ flex: 1 }}
             keyboardShouldPersistTaps="handled"
             nestedScrollEnabled={Platform.OS === 'android'}
+            // Fast initial render
+            getItemLayout={Platform.OS === 'android' ? undefined : getItemLayout}
+            legacyImplementation={Platform.OS === 'android'}
+            disableVirtualization={false}
           />
         </View>
       </ScrollView>

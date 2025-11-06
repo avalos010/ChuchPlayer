@@ -11,9 +11,11 @@ import {
   Platform,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import KeyEvent from 'react-native-keyevent';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
@@ -31,6 +33,7 @@ import VideoControls from '../components/player/VideoControls';
 import FloatingButtons from '../components/player/FloatingButtons';
 import MultiScreenView from '../components/player/MultiScreenView';
 import MultiScreenControls from '../components/player/MultiScreenControls';
+import ChannelInfoCard from '../components/player/ChannelInfoCard';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useMultiScreenStore } from '../store/useMultiScreenStore';
 
@@ -99,6 +102,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const pipScale = useRef(new Animated.Value(1)).current;
   const channelListSlideAnim = useRef(new Animated.Value(-400)).current;
   const channelListRef = useRef<FlatList>(null);
+  const mainViewRef = useRef<View>(null);
 
   // Multi-screen state
   const {
@@ -111,6 +115,9 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const [showMultiScreenControls, setShowMultiScreenControls] = useState(false);
   // Track user interaction for autoplay on web
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
+  // Channel info card visibility
+  const [showChannelInfoCard, setShowChannelInfoCard] = useState(false);
+  const previousChannelIdRef = useRef<string | null>(null);
 
   // Initialize store with initial channel or last played channel (only once on mount)
   useEffect(() => {
@@ -358,6 +365,23 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     // Only depend on channel ID to avoid loops
   }, [channel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Show channel info card when channel changes (but not on initial load)
+  useEffect(() => {
+    if (!channel) return;
+    
+    // Skip showing on initial load
+    if (previousChannelIdRef.current === null) {
+      previousChannelIdRef.current = channel.id;
+      return;
+    }
+    
+    // Only show if channel actually changed
+    if (previousChannelIdRef.current !== channel.id) {
+      previousChannelIdRef.current = channel.id;
+      setShowChannelInfoCard(true);
+    }
+  }, [channel?.id]);
+
   // Enhanced toggle playback with error handling
   const handleTogglePlayback = useCallback(async () => {
     try {
@@ -442,6 +466,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     // Load EPG for the new channel
     const program = getCurrentProgram(selectedChannel.id);
     setCurrentProgram(program);
+    // Show channel info card
+    setShowChannelInfoCard(true);
   }, [getCurrentProgram, setChannel, setShowChannelList, setCurrentProgram, setLoading, setError, setIsPlaying, channel, showEPGGrid, setShowEPGGrid, exitPIP, hasUserInteracted]);
 
   // TVimate-style keyboard/remote shortcuts
@@ -680,81 +706,69 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showEPG, showControls, showChannelList, showGroupsPlaylists, showEPGGrid, showChannelNumberPad, channels.length, channelNumberInput]);
 
-    // Android TV: Handle DPAD navigation buttons
-    useEffect(() => {
-      if (Platform.OS === 'android') {
-        try {
-          // Try to use TVEventHandler if available
-          const ReactNative = require('react-native');
-          if (ReactNative.TVEventHandler) {
-            const tvEventHandler = new ReactNative.TVEventHandler();
-            
-            tvEventHandler.enable(null, (cmp: any, evt: any) => {
-              if (!evt) return false;
-              
-              // DPAD left - Always show channel list (even when overlays are showing)
-              if (evt.eventType === 'left') {
-                if (channels.length > 0) {
-                  // Close EPG grid if showing
-                  if (showEPGGrid) {
-                    setShowEPGGrid(false);
-                    exitPIP();
-                  }
-                  // Close EPG overlay if showing
-                  if (showEPG) {
-                    setShowEPG(false);
-                  }
-                  // Close groups/playlists if showing
-                  if (showGroupsPlaylists) {
-                    setShowGroupsPlaylists(false);
-                  }
-                  // Show channel list
-                  setShowChannelList(true);
-                  return true;
-                }
-              }
-              
-              // Only handle other navigation when no overlays are showing
-              if (showEPG || showEPGGrid || showChannelList || showGroupsPlaylists || error) {
-                return false;
-              }
-              
-              if (evt.eventType === 'up') {
-                // DPAD up - Previous channel
-                if (channel && channels.length > 0) {
-                  const newChannel = navigateToChannel('prev', channels, channel.id);
-                  if (newChannel) {
-                    setChannel(newChannel);
-                    const program = getCurrentProgram(newChannel.id);
-                    setCurrentProgram(program);
-                  }
-                  return true;
-                }
-              } else if (evt.eventType === 'down') {
-                // DPAD down - Next channel
-                if (channel && channels.length > 0) {
-                  const newChannel = navigateToChannel('next', channels, channel.id);
-                  if (newChannel) {
-                    setChannel(newChannel);
-                    const program = getCurrentProgram(newChannel.id);
-                    setCurrentProgram(program);
-                  }
-                  return true;
-                }
-              }
-              return false;
-            });
-            
-            return () => {
-              tvEventHandler.disable();
-            };
-          }
-        } catch (error) {
-          console.log('TVEventHandler not available:', error);
+    // Android TV: Handle DPAD navigation using invisible focusable buttons
+    // Since TVEventHandler is not available, we use FocusableItem components
+    // positioned off-screen to capture D-pad navigation events
+    const handleLeftDpad = useCallback(() => {
+      // Don't handle left D-pad when EPG grid is showing - let it scroll
+      if (showEPGGrid) {
+        return;
+      }
+      
+      console.log('D-pad Left: Opening channel list');
+      if (channels.length > 0) {
+        // Close EPG overlay if showing
+        if (showEPG) {
+          setShowEPG(false);
+        }
+        // Close groups/playlists if showing
+        if (showGroupsPlaylists) {
+          setShowGroupsPlaylists(false);
+        }
+        // Show channel list
+        setShowChannelList(true);
+      }
+    }, [showEPGGrid, showEPG, showGroupsPlaylists, channels.length, setShowChannelList, setShowEPG, setShowGroupsPlaylists]);
+
+    const handleUpDpad = useCallback(() => {
+      // Only handle when no blocking overlays are showing
+      if (showEPGGrid || showEPG || showGroupsPlaylists) {
+        return;
+      }
+      
+      console.log('D-pad Up: Navigating to previous channel');
+      if (channel && channels.length > 0) {
+        const newChannel = navigateToChannel('prev', channels, channel.id);
+        if (newChannel) {
+          console.log('Switching to channel', newChannel.name);
+          setChannel(newChannel);
+          const program = getCurrentProgram(newChannel.id);
+          setCurrentProgram(program);
+          // Show channel info card
+          setShowChannelInfoCard(true);
         }
       }
-      return undefined;
-    }, [showEPG, showEPGGrid, showChannelList, showGroupsPlaylists, error, channels, channel, navigateToChannel, getCurrentProgram, setChannel, setCurrentProgram, setShowChannelList, setShowEPGGrid, setShowEPG, setShowGroupsPlaylists, exitPIP]);
+    }, [showEPGGrid, showEPG, showGroupsPlaylists, channel, channels, navigateToChannel, getCurrentProgram, setChannel, setCurrentProgram]);
+
+    const handleDownDpad = useCallback(() => {
+      // Only handle when no blocking overlays are showing
+      if (showEPGGrid || showEPG || showGroupsPlaylists) {
+        return;
+      }
+      
+      console.log('D-pad Down: Navigating to next channel');
+      if (channel && channels.length > 0) {
+        const newChannel = navigateToChannel('next', channels, channel.id);
+        if (newChannel) {
+          console.log('Switching to channel', newChannel.name);
+          setChannel(newChannel);
+          const program = getCurrentProgram(newChannel.id);
+          setCurrentProgram(program);
+          // Show channel info card
+          setShowChannelInfoCard(true);
+        }
+      }
+    }, [showEPGGrid, showEPG, showGroupsPlaylists, channel, channels, navigateToChannel, getCurrentProgram, setChannel, setCurrentProgram]);
 
     useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -1173,8 +1187,61 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
 
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
+  // Use react-native-keyevent to capture D-pad events on Android TV
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      console.log('Setting up KeyEvent listener for Android TV...');
+      
+      try {
+        // Check if KeyEvent module is available (requires native build)
+        if (typeof KeyEvent === 'undefined' || !KeyEvent) {
+          console.log('⚠️ react-native-keyevent not available - needs native rebuild');
+          console.log('Run: npx expo run:android');
+          return;
+        }
+        
+        // Listen for key events
+        const keyDownListener = (keyEvent: any) => {
+          console.log('🎮 KeyEvent received:', JSON.stringify(keyEvent));
+          
+          // Android TV key codes:
+          // DPAD_LEFT = 21, DPAD_UP = 19, DPAD_RIGHT = 22, DPAD_DOWN = 20, DPAD_CENTER = 23
+          const { keyCode } = keyEvent;
+          
+          console.log(`🎮 Key code: ${keyCode}`);
+          
+          if (keyCode === 21) {
+            // Left D-pad
+            console.log('⬅️ Left D-pad pressed - calling handleLeftDpad');
+            handleLeftDpad();
+          } else if (keyCode === 19) {
+            // Up D-pad
+            console.log('⬆️ Up D-pad pressed - calling handleUpDpad');
+            handleUpDpad();
+          } else if (keyCode === 20) {
+            // Down D-pad
+            console.log('⬇️ Down D-pad pressed - calling handleDownDpad');
+            handleDownDpad();
+          }
+        };
+        
+        KeyEvent.onKeyDownListener(keyDownListener);
+        console.log('✅ react-native-keyevent listener registered successfully');
+        
+        return () => {
+          console.log('Removing KeyEvent listener');
+          KeyEvent.removeKeyDownListener();
+        };
+      } catch (error) {
+        console.log('⚠️ Error setting up KeyEvent:', error);
+        console.log('You need a native rebuild for react-native-keyevent to work');
+      }
+    }
+  }, [handleLeftDpad, handleUpDpad, handleDownDpad]);
+
   return (
     <View 
+      ref={mainViewRef}
       className="flex-1 bg-black relative"
     >
       {/* Floating Buttons */}
@@ -1183,10 +1250,120 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         onEPGInfo={() => setShowEPG(true)}
       />
 
-      {/* Always show focusable overlay for Android TV remote control */}
-      {!showEPG && !showEPGGrid && !showChannelList && !showGroupsPlaylists && !error && (
+      {/* Invisible D-pad navigation zones for Android TV */}
+      {!showEPG && !showEPGGrid && !showChannelList && !showGroupsPlaylists && !error && Platform.OS === 'android' && (
         <>
-          {/* Main overlay for center button press and left navigation */}
+          {/* Central focusable zone - default focus */}
+          <FocusableItem
+            onPress={() => {
+              console.log('Center zone pressed');
+              handleCenterPress();
+            }}
+            hasTVPreferredFocus={true}
+            style={{
+              position: 'absolute',
+              top: '25%',
+              left: '25%',
+              right: '25%',
+              bottom: '25%',
+              zIndex: 2,
+              backgroundColor: 'transparent',
+            }}
+            focusedStyle={{
+              backgroundColor: 'transparent',
+              transform: [],
+            }}
+          >
+            <View style={{ flex: 1, backgroundColor: 'transparent' }} />
+          </FocusableItem>
+
+          {/* Left edge - opens channel list */}
+          <FocusableItem
+            onPress={() => {
+              console.log('Left zone pressed - opening channel list');
+              handleLeftDpad();
+            }}
+            onFocus={() => {
+              console.log('Left zone focused - opening channel list');
+              handleLeftDpad();
+            }}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: 100,
+              bottom: 0,
+              zIndex: 2,
+              backgroundColor: 'transparent',
+            }}
+            focusedStyle={{
+              backgroundColor: 'rgba(0, 170, 255, 0.1)',
+              transform: [],
+            }}
+          >
+            <View style={{ flex: 1, backgroundColor: 'transparent' }} />
+          </FocusableItem>
+
+          {/* Top edge - previous channel */}
+          <FocusableItem
+            onPress={() => {
+              console.log('Top zone pressed - previous channel');
+              handleUpDpad();
+            }}
+            onFocus={() => {
+              console.log('Top zone focused - previous channel');
+              handleUpDpad();
+            }}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 100,
+              right: 100,
+              height: 100,
+              zIndex: 2,
+              backgroundColor: 'transparent',
+            }}
+            focusedStyle={{
+              backgroundColor: 'rgba(0, 170, 255, 0.1)',
+              transform: [],
+            }}
+          >
+            <View style={{ flex: 1, backgroundColor: 'transparent' }} />
+          </FocusableItem>
+
+          {/* Bottom edge - next channel */}
+          <FocusableItem
+            onPress={() => {
+              console.log('Bottom zone pressed - next channel');
+              handleDownDpad();
+            }}
+            onFocus={() => {
+              console.log('Bottom zone focused - next channel');
+              handleDownDpad();
+            }}
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 100,
+              right: 100,
+              height: 100,
+              zIndex: 2,
+              backgroundColor: 'transparent',
+            }}
+            focusedStyle={{
+              backgroundColor: 'rgba(0, 170, 255, 0.1)',
+              transform: [],
+            }}
+          >
+            <View style={{ flex: 1, backgroundColor: 'transparent' }} />
+          </FocusableItem>
+        </>
+      )}
+      
+      {/* Focusable overlay for non-Android platforms */}
+      {!showEPG && !showEPGGrid && !showChannelList && !showGroupsPlaylists && !error && Platform.OS !== 'android' && (
+        <>
+          {/* Main overlay for center button press and keyboard navigation */}
           <FocusableItem
             onPress={() => {
               // Mark user interaction for autoplay on web
@@ -1202,20 +1379,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
               handleCenterPress();
             }}
             onFocus={() => {
-              // On Android TV, don't auto-show EPG overlay on focus
-              // Let the user explicitly press OK/Select to show it
-              if (Platform.OS !== 'android') {
-                showControlsOnFocus();
-              }
+              showControlsOnFocus();
             }}
-            onBlur={() => {
-              // On Android TV, when overlay loses focus (user navigated away), check if we should open channel list
-              if (Platform.OS === 'android') {
-                // This is a fallback - TVEventHandler should handle left navigation
-                console.log('Main overlay lost focus on Android TV');
-              }
-            }}
-            hasTVPreferredFocus={Platform.OS === 'android'}
             className="absolute inset-0 bg-transparent"
             style={{
               position: 'absolute',
@@ -1231,6 +1396,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           </FocusableItem>
         </>
       )}
+
 
       {/* Video Container - Minimized to top-right when EPG grid is shown */}
       {channel && (
@@ -1388,6 +1554,16 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       {/* Volume Indicator */}
       <VolumeIndicator />
 
+      {/* Channel Info Card */}
+      {!showEPGGrid && !showEPG && !showChannelList && !showGroupsPlaylists && (
+        <ChannelInfoCard
+          channel={channel}
+          program={currentProgram}
+          visible={showChannelInfoCard}
+          onHide={() => setShowChannelInfoCard(false)}
+        />
+      )}
+
       {/* Channel Number Pad */}
       <ChannelNumberPad />
 
@@ -1397,3 +1573,4 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
 };
 
 export default PlayerScreen;
+

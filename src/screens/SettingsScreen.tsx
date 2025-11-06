@@ -559,3 +559,4 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 };
 
 export default SettingsScreen;
+

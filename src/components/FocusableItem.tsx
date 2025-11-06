@@ -167,11 +167,6 @@ const FocusableItem: React.FC<FocusableItemProps> = ({
       style={styleArray}
       focusable={true}
       hasTVPreferredFocus={hasTVPreferredFocus}
-      nextFocusLeft={-1} // Allow focus to move left when this is focused
-      nextFocusRight={1} // Allow focus to move right from this
-      tvParallaxProperties={{
-        magnification: 1.05,
-      }}
     >
       <View pointerEvents="none">{children}</View>
     </Pressable>
@@ -179,3 +174,4 @@ const FocusableItem: React.FC<FocusableItemProps> = ({
 };
 
 export default FocusableItem;
+

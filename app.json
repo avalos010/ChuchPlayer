@@ -33,6 +33,7 @@
     },
     "plugins": [
       "./expo-plugins/android-tv.js",
+      "./plugins/withKeyEvent.js",
       [
         "expo-build-properties",
         {
