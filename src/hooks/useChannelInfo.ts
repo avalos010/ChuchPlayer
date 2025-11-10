@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePlayerStore } from '../store/usePlayerStore';
 
-export const useChannelInfo = () => {
+interface UseChannelInfoOptions {
+  showOnInitialLoad?: boolean;
+}
+
+export const useChannelInfo = ({ showOnInitialLoad = false }: UseChannelInfoOptions = {}) => {
   const channel = usePlayerStore((state) => state.channel);
   const [showChannelInfoCard, setShowChannelInfoCard] = useState(false);
   const previousChannelIdRef = useRef<string | null>(null);
@@ -13,15 +17,19 @@ export const useChannelInfo = () => {
     // Skip showing on initial load
     if (previousChannelIdRef.current === null) {
       previousChannelIdRef.current = channel.id;
-      return;
+      if (!showOnInitialLoad) {
+        return;
+      }
     }
 
     // Only show if channel actually changed
     if (previousChannelIdRef.current !== channel.id) {
       previousChannelIdRef.current = channel.id;
       setShowChannelInfoCard(true);
+    } else if (showOnInitialLoad) {
+      setShowChannelInfoCard(true);
     }
-  }, [channel?.id]);
+  }, [channel?.id, showOnInitialLoad]);
 
   return {
     showChannelInfoCard,

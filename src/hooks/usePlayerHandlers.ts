@@ -119,19 +119,35 @@ export const usePlayerHandlers = (
     }
 
     console.log('D-pad Left: Opening channel list');
-    if (channels.length > 0) {
-      // Close EPG overlay if showing
-      if (showEPG) {
-        setShowEPG(false);
-      }
-      // Close groups/playlists if showing
-      if (showGroupsPlaylists) {
-        setShowGroupsPlaylists(false);
-      }
-      // Show channel list
-      setShowChannelList(true);
+    if (channels.length === 0) {
+      return;
     }
-  }, [showEPGGrid, showEPG, showGroupsPlaylists, channels.length, setShowChannelList, setShowEPG, setShowGroupsPlaylists]);
+
+    // If the channel list is already open, toggle into groups/playlists instead
+    if (showChannelList && !showGroupsPlaylists) {
+      setShowGroupsPlaylists(true);
+      return;
+    }
+
+    // Close overlays before showing the list
+    if (showEPG) {
+      setShowEPG(false);
+    }
+    if (showGroupsPlaylists) {
+      setShowGroupsPlaylists(false);
+    }
+
+    setShowChannelList(true);
+  }, [
+    showEPGGrid,
+    showEPG,
+    showGroupsPlaylists,
+    showChannelList,
+    channels.length,
+    setShowChannelList,
+    setShowEPG,
+    setShowGroupsPlaylists,
+  ]);
 
   const handleBack = useCallback(() => {
     // If groups/playlists menu is showing, close it and show channel list

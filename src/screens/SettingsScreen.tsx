@@ -31,6 +31,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
     theme: 'dark',
     multiScreenEnabled: true,
     maxMultiScreens: 4,
+    epgRefreshIntervalMinutes: 60,
+    channelRefreshIntervalMinutes: 15,
   });
   const [loading, setLoading] = useState(true);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
@@ -124,12 +126,15 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
     setAddingPlaylist(true);
 
     try {
-      let channels;
+      let channels: Playlist['channels'] = [];
       let playlistUrl: string;
+      let epgUrls: string[] = [];
       let xtreamCredentials;
 
       if (sourceType === 'm3u') {
-        channels = await fetchM3UPlaylist(newPlaylistUrl.trim());
+        const playlistData = await fetchM3UPlaylist(newPlaylistUrl.trim());
+        channels = playlistData.channels;
+        epgUrls = playlistData.epgUrls;
         playlistUrl = newPlaylistUrl.trim();
       } else {
         const credentials = {
@@ -137,7 +142,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           username: xtreamUsername.trim(),
           password: xtreamPassword.trim(),
         };
-        channels = await fetchXtreamPlaylist(credentials);
+        const playlistData = await fetchXtreamPlaylist(credentials);
+        channels = playlistData.channels;
+        epgUrls = playlistData.epgUrls;
         playlistUrl = `${credentials.serverUrl}/player_api.php`;
         xtreamCredentials = credentials;
       }
@@ -154,6 +161,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         url: playlistUrl,
         sourceType,
         channels,
+        epgUrls,
         createdAt: now,
         updatedAt: now,
         xtreamCredentials,
@@ -179,7 +187,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
       setShowEPGGrid(true); // Show EPG grid
       
       // Navigate to Player screen (EPG grid will be visible)
-      navigation.navigate('Player');
+      navigation.navigate('Player', {});
 
       setTimeout(() => showSuccess(`Added ${channels.length} channels from ${playlist.name}.`), 100);
     } catch (error) {
@@ -367,6 +375,67 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
                   }`}
                 >
                   {num}
+                </Text>
+              </FocusableItem>
+            ))}
+          </View>
+        </View>
+      </View>
+
+      <View className="mt-6 px-5">
+        <Text className="text-accent text-lg font-bold mb-4 uppercase">Data Refresh</Text>
+        <View className="bg-card p-4 rounded-lg mb-3 gap-3">
+          <View className="flex-row justify-between items-center">
+            <Text className="text-white text-base font-semibold">EPG Refresh Interval</Text>
+            <Text className="text-text-muted text-sm">{settings.epgRefreshIntervalMinutes} min</Text>
+          </View>
+          <Text className="text-text-muted text-xs">
+            How often to refresh the Electronic Program Guide in the background
+          </Text>
+          <View className="flex-row gap-2 mt-3 flex-wrap">
+            {[120, 180, 240, 360, 480].map((minutes) => (
+              <FocusableItem
+                key={`epg-${minutes}`}
+                onPress={() => updateSetting('epgRefreshIntervalMinutes', minutes)}
+                className={`px-4 py-2 rounded-md ${
+                  settings.epgRefreshIntervalMinutes === minutes ? 'bg-accent' : 'bg-subtle'
+                }`}
+              >
+                <Text
+                  className={`text-sm font-semibold ${
+                    settings.epgRefreshIntervalMinutes === minutes ? 'text-white' : 'text-text-muted'
+                  }`}
+                >
+                  {`${minutes / 60}h`}
+                </Text>
+              </FocusableItem>
+            ))}
+          </View>
+        </View>
+
+        <View className="bg-card p-4 rounded-lg mb-3 gap-3">
+          <View className="flex-row justify-between items-center">
+            <Text className="text-white text-base font-semibold">Channel Data Refresh</Text>
+            <Text className="text-text-muted text-sm">{settings.channelRefreshIntervalMinutes / 60} h</Text>
+          </View>
+          <Text className="text-text-muted text-xs">
+            How often to refresh channel lists from your playlists
+          </Text>
+          <View className="flex-row gap-2 mt-3 flex-wrap">
+            {[120, 240, 360, 480].map((minutes) => (
+              <FocusableItem
+                key={`channel-${minutes}`}
+                onPress={() => updateSetting('channelRefreshIntervalMinutes', minutes)}
+                className={`px-4 py-2 rounded-md ${
+                  settings.channelRefreshIntervalMinutes === minutes ? 'bg-accent' : 'bg-subtle'
+                }`}
+              >
+                <Text
+                  className={`text-sm font-semibold ${
+                    settings.channelRefreshIntervalMinutes === minutes ? 'text-white' : 'text-text-muted'
+                  }`}
+                >
+                  {`${minutes / 60}h`}
                 </Text>
               </FocusableItem>
             ))}

@@ -1,23 +1,29 @@
-import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, Image, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
 import { ResizeMode } from 'expo-av';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useEPGStore } from '../../store/useEPGStore';
-import { RootStackParamList } from '../../types';
+import { RootStackParamList, EPGProgram } from '../../types';
 
 interface EPGOverlayProps {
   onTogglePlayback: () => void;
   onBack: () => void;
   navigation?: NativeStackNavigationProp<RootStackParamList>;
+  programs?: EPGProgram[];
+  epgLoading?: boolean;
+  epgError?: string | null;
 }
 
 const EPGOverlay: React.FC<EPGOverlayProps> = ({
   onTogglePlayback,
   onBack,
   navigation,
+  programs = [],
+  epgLoading = false,
+  epgError = null,
 }) => {
   
   const channel = usePlayerStore((state) => state.channel);
@@ -34,6 +40,16 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
   const currentProgram = useEPGStore((state) => state.currentProgram);
   
   const [imageError, setImageError] = useState(false);
+
+  const upcomingPrograms = useMemo(() => {
+    if (!programs || programs.length === 0) return [];
+    const now = new Date();
+    return programs
+      .filter(program => program.end > now)
+      .filter(program => !currentProgram || program.id !== currentProgram.id)
+      .sort((a, b) => a.start.getTime() - b.start.getTime())
+      .slice(0, 6);
+  }, [programs, currentProgram]);
 
   if (!showEPG || error || !channel) return null;
 
@@ -97,6 +113,82 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
                     hour: '2-digit',
                     minute: '2-digit',
                   })}
+                </Text>
+              </View>
+            )}
+
+            {epgLoading && (
+              <View className="mt-4 flex-row items-center gap-3">
+                <ActivityIndicator size="small" color="#22d3ee" />
+                <Text className="text-text-muted text-sm font-medium">
+                  Loading program guide…
+                </Text>
+              </View>
+            )}
+
+            {!epgLoading && epgError && (
+              <View
+                className="mt-4 p-4 rounded-xl border"
+                style={{
+                  borderColor: 'rgba(248, 113, 113, 0.45)',
+                  backgroundColor: 'rgba(248, 113, 113, 0.12)',
+                }}
+              >
+                <Text className="text-red-200 text-sm font-semibold">Unable to update program guide</Text>
+                <Text
+                  className="text-red-200 text-xs mt-1"
+                  style={{ opacity: 0.85 }}
+                  numberOfLines={3}
+                >
+                  {epgError}
+                </Text>
+              </View>
+            )}
+
+            {!epgLoading && !epgError && upcomingPrograms.length > 0 && (
+              <View className="mt-4 pt-4 border-t border-border">
+                <Text className="text-text-primary text-base font-semibold uppercase tracking-wide mb-3">
+                  Upcoming Shows
+                </Text>
+                <View className="gap-3">
+                  {upcomingPrograms.map(program => {
+                    const timeWindow = `${program.start.toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })} - ${program.end.toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}`;
+                    return (
+                      <View
+                        key={program.id}
+                        className="flex-row items-start justify-between border border-border rounded-xl px-4 py-3"
+                        style={{ backgroundColor: 'rgba(30, 41, 59, 0.6)' }}
+                      >
+                        <View className="flex-1 pr-3">
+                          <Text className="text-text-primary font-semibold text-base" numberOfLines={2}>
+                            {program.title}
+                          </Text>
+                          {program.description && (
+                            <Text className="text-text-muted text-xs mt-1" numberOfLines={2}>
+                              {program.description}
+                            </Text>
+                          )}
+                        </View>
+                        <Text className="text-accent font-semibold text-sm pl-3 min-w-[84px]" numberOfLines={1}>
+                          {timeWindow}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {!epgLoading && !epgError && upcomingPrograms.length === 0 && (
+              <View className="mt-4 pt-4 border-t border-border">
+                <Text className="text-text-muted text-sm">
+                  Program schedule will appear once your provider shares guide data.
                 </Text>
               </View>
             )}

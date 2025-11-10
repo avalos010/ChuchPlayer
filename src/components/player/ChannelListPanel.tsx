@@ -1,5 +1,6 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Platform } from 'react-native';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import FocusableItem from '../FocusableItem';
 import ChannelListItem from '../ChannelListItem';
 import { Channel } from '../../types';
@@ -13,7 +14,9 @@ interface ChannelListPanelProps {
 const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
   onChannelSelect,
 }) => {
+  const showGroupsPlaylists = useUIStore((state) => state.showGroupsPlaylists);
   const setShowGroupsPlaylists = useUIStore((state) => state.setShowGroupsPlaylists);
+  const selectedGroup = useUIStore((state) => state.selectedGroup);
   
   // UI state
   const showChannelList = useUIStore((state) => state.showChannelList);
@@ -24,62 +27,73 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
 
   const currentChannelId = channel?.id || '';
   
-  const channelListRef = useRef<FlatList>(null);
+  const channelListRef = useRef<FlashList<Channel>>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [focusedChannelId, setFocusedChannelId] = useState<string | null>(null);
-  const [initialFocusChannelId, setInitialFocusChannelId] = useState<string | null>(null);
+  const [preferredFocusChannelId, setPreferredFocusChannelId] = useState<string | null>(null);
 
-  // Mark as loaded when channels are available
-  useEffect(() => {
-    if (showChannelList && channels.length > 0) {
-      setIsLoading(false);
-      // Set initial focus to current channel
-      const focusId = currentChannelId || (channels.length > 0 ? channels[0].id : null);
-      if (focusId) {
-        setFocusedChannelId(focusId);
-        setInitialFocusChannelId(focusId);
-      }
-      // Scroll to current channel
-      setTimeout(() => {
-        const currentIndex = channels.findIndex((c) => c.id === currentChannelId);
-        if (currentIndex >= 0 && channelListRef.current) {
-          try {
-            channelListRef.current.scrollToIndex({
-              index: currentIndex,
-              animated: false, // No animation for instant feel
-              viewPosition: 0.5,
-            });
-          } catch (e) {
-            console.log('ScrollToIndex failed, using fallback');
-          }
-        }
-      }, 50);
-    } else if (showChannelList) {
-      setIsLoading(true);
+  const filteredChannels = useMemo(() => {
+    let base: Channel[];
+    if (selectedGroup && selectedGroup !== 'All Channels') {
+      base = channels.filter((ch) => ch.group === selectedGroup);
+    } else {
+      base = channels;
     }
-  }, [showChannelList, currentChannelId, channels]);
 
-  // Reset focus when channel list closes
+    if (channel && !base.some((ch) => ch.id === channel.id)) {
+      return [channel, ...base];
+    }
+
+    return base;
+  }, [channels, selectedGroup, channel]);
+
   useEffect(() => {
     if (!showChannelList) {
-      setFocusedChannelId(null);
-      setInitialFocusChannelId(null);
+      setIsLoading(true);
+      setPreferredFocusChannelId(null);
+      return;
     }
-  }, [showChannelList]);
+
+    setIsLoading(false);
+    const hasCurrent = filteredChannels.some((ch) => ch.id === currentChannelId);
+    const defaultId = hasCurrent ? currentChannelId : filteredChannels[0]?.id ?? null;
+    setPreferredFocusChannelId((prev) => prev ?? defaultId);
+  }, [showChannelList, filteredChannels, currentChannelId]);
 
   // Handle focus change for navigation
   const handleChannelFocus = useCallback((channelId: string) => {
-    setFocusedChannelId(channelId);
-    // Scroll to focused item if needed
-    const focusedIndex = channels.findIndex(c => c.id === channelId);
-    if (focusedIndex >= 0 && channelListRef.current) {
-      channelListRef.current.scrollToIndex({
-        index: focusedIndex,
-        animated: true,
-        viewPosition: 0.5,
-      });
+    if (preferredFocusChannelId) {
+      setPreferredFocusChannelId(null);
+      return; // Only auto-center on initial focus
     }
-  }, [channels]);
+  }, [preferredFocusChannelId]);
+
+  const initialScrollIndex = useMemo(() => {
+    if (!showChannelList) return undefined;
+    const idx = filteredChannels.findIndex(c => c.id === currentChannelId);
+    return idx >= 0 ? idx : undefined;
+  }, [showChannelList, filteredChannels, currentChannelId]);
+
+  const renderChannelItem = useCallback(
+    ({ item }: { item: Channel }) => {
+      const isCurrentChannel = item.id === currentChannelId;
+      const hasTVPreferredFocus = preferredFocusChannelId === item.id;
+ 
+      return (
+        <View className="mx-2 my-1 rounded-xl">
+          <ChannelListItem
+            channel={item}
+            onPress={onChannelSelect}
+            onFocus={handleChannelFocus}
+            hasTVPreferredFocus={hasTVPreferredFocus}
+            isCurrentChannel={isCurrentChannel}
+          />
+        </View>
+      );
+    },
+    [currentChannelId, preferredFocusChannelId, onChannelSelect, handleChannelFocus]
+  );
+
+  const keyExtractor = useCallback((item: Channel) => item.id, []);
 
   // Don't render anything when hidden to avoid blocking video
   if (!showChannelList) {
@@ -125,10 +139,10 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
         <View className="flex-row justify-between items-center px-6 py-5 border-b border-border bg-dark">
           <View>
             <Text className="text-text-primary text-[24px] font-bold tracking-tight">
-              {playlist?.name || 'Channels'}
+              {selectedGroup && selectedGroup !== 'All Channels' ? selectedGroup : 'All Channels'}
             </Text>
             <Text className="text-text-muted text-sm mt-1">
-              {channels.length} channel{channels.length !== 1 ? 's' : ''}
+              {filteredChannels.length} channel{filteredChannels.length !== 1 ? 's' : ''}
             </Text>
           </View>
           <View className="flex-row gap-2">
@@ -155,7 +169,7 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
         </View>
 
         {/* Channel List */}
-        {isLoading || channels.length === 0 ? (
+        {isLoading || filteredChannels.length === 0 ? (
           <View className="flex-1 p-2">
             {isLoading ? (
               // Show skeleton loaders while loading
@@ -167,55 +181,60 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
             ) : (
               <View className="flex-1 justify-center items-center p-5">
                 <Text className="text-text-muted text-base">
-                  No channels available
+                  {selectedGroup && selectedGroup !== 'All Channels'
+                    ? `No channels under ${selectedGroup}`
+                    : 'No channels available'}
                 </Text>
               </View>
             )}
           </View>
         ) : (
-          <FlatList
-            ref={channelListRef}
-            data={channels}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item, index }) => {
-              const isCurrentChannel = item.id === currentChannelId;
-              const isFocused = item.id === focusedChannelId;
-              const hasTVPreferredFocus = item.id === initialFocusChannelId;
-              return (
-                <View 
-                  className={`mx-2 my-1 rounded-xl ${
-                    isCurrentChannel && !isFocused
-                      ? 'border-2 border-accent bg-accent/15' 
-                      : ''
-                  }`}
-                >
-                  <ChannelListItem 
-                    channel={item} 
-                    onPress={onChannelSelect}
-                    onFocus={handleChannelFocus}
-                    isFocused={isFocused}
-                    hasTVPreferredFocus={hasTVPreferredFocus}
-                  />
-                </View>
-              );
-            }}
-            contentContainerStyle={{ paddingVertical: 12 }}
-            initialNumToRender={20}
-            removeClippedSubviews={true}
-            keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled={Platform.OS === 'android'}
-            onScrollToIndexFailed={(info) => {
-              // Fallback if scroll to index fails
-              setTimeout(() => {
-                if (channelListRef.current) {
-                  channelListRef.current.scrollToIndex({
+          <View style={{ flex: 1 }}>
+            {!showGroupsPlaylists && (
+              <FocusableItem
+                onFocus={() => {
+                  if (showChannelList && !showGroupsPlaylists) {
+                    setShowGroupsPlaylists(true);
+                  }
+                }}
+                onPress={() => {
+                  if (!showGroupsPlaylists) {
+                    setShowGroupsPlaylists(true);
+                  }
+                }}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  left: -20,
+                  width: 20,
+                  backgroundColor: 'transparent',
+                  zIndex: 1,
+                }}
+                focusedStyle={{ backgroundColor: 'transparent' }}
+              >
+                <View className="flex-1" />
+              </FocusableItem>
+            )}
+            <FlashList
+              ref={channelListRef}
+              data={filteredChannels}
+              keyExtractor={keyExtractor}
+              renderItem={renderChannelItem}
+              initialScrollIndex={initialScrollIndex}
+              estimatedItemSize={120}
+              contentContainerStyle={{ paddingVertical: 12 }}
+              keyboardShouldPersistTaps="handled"
+              onScrollToIndexFailed={(info) => {
+                setTimeout(() => {
+                  channelListRef.current?.scrollToIndex({
                     index: info.index,
                     animated: false,
                   });
-                }
-              }, 50);
-            }}
-          />
+                }, 50);
+              }}
+            />
+          </View>
         )}
       </View>
     </>

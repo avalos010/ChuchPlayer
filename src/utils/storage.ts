@@ -20,6 +20,7 @@ const serializePlaylist = (playlist: Playlist): StoredPlaylist => ({
 const deserializePlaylist = (stored: StoredPlaylist): Playlist => ({
   ...stored,
   sourceType: stored.sourceType || 'm3u', // Default to 'm3u' for backward compatibility
+  epgUrls: stored.epgUrls ?? [],
   createdAt: new Date(stored.createdAt),
   updatedAt: new Date(stored.updatedAt),
 });
@@ -80,6 +81,8 @@ export const getSettings = async (): Promise<Settings> => {
         theme: 'dark',
         multiScreenEnabled: true,
         maxMultiScreens: 4,
+        epgRefreshIntervalMinutes: 120,
+        channelRefreshIntervalMinutes: 15,
       };
     }
 
@@ -89,6 +92,8 @@ export const getSettings = async (): Promise<Settings> => {
       ...parsed,
       multiScreenEnabled: parsed.multiScreenEnabled ?? true,
       maxMultiScreens: parsed.maxMultiScreens ?? 4,
+      epgRefreshIntervalMinutes: parsed.epgRefreshIntervalMinutes ?? 120,
+      channelRefreshIntervalMinutes: parsed.channelRefreshIntervalMinutes ?? 15,
     };
   } catch (error) {
     console.error('Error getting settings:', error);
@@ -98,6 +103,8 @@ export const getSettings = async (): Promise<Settings> => {
       theme: 'dark',
       multiScreenEnabled: true,
       maxMultiScreens: 4,
+      epgRefreshIntervalMinutes: 120,
+      channelRefreshIntervalMinutes: 15,
     };
   }
 };

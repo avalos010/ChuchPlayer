@@ -25,6 +25,7 @@ export interface Playlist {
   url: string;
   sourceType: PlaylistSourceType;
   channels: Channel[];
+  epgUrls?: string[];
   createdAt: Date;
   updatedAt: Date;
   // For Xtream Codes, store credentials separately (encrypted in the future)
@@ -42,6 +43,8 @@ export interface Settings {
   theme: 'dark' | 'light';
   multiScreenEnabled: boolean;
   maxMultiScreens: number;
+  epgRefreshIntervalMinutes: number;
+  channelRefreshIntervalMinutes: number;
 }
 
 export type RootStackParamList = {

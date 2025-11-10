@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -72,15 +72,16 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   
   // EPG store state
   const currentProgram = useEPGStore((state) => state.currentProgram);
+  const setCurrentProgram = useEPGStore((state) => state.setCurrentProgram);
 
   // Multi-screen state
   const { isMultiScreenMode, screens } = useMultiScreenStore();
   const [showMultiScreenControls, setShowMultiScreenControls] = useState(false);
 
   // Custom hooks
-  const { getProgramsForChannel, getCurrentProgram } = useEPGManagement();
+  const { getProgramsForChannel, getCurrentProgram, epgLoading, epgError, epgLastUpdated } = useEPGManagement();
   const { pipAnim, pipScale, enterPIP, exitPIP } = usePIPMode();
-  const { showChannelInfoCard, setShowChannelInfoCard } = useChannelInfo();
+  const { showChannelInfoCard, setShowChannelInfoCard } = useChannelInfo({ showOnInitialLoad: true });
   const {
     hasUserInteracted,
     setHasUserInteracted,
@@ -114,6 +115,17 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     initialChannel,
     getCurrentProgram,
   });
+
+  useEffect(() => {
+    if (!channel) return;
+    const program = getCurrentProgram(channel.id);
+    setCurrentProgram(program);
+  }, [channel?.id, getCurrentProgram, setCurrentProgram, epgLastUpdated]);
+
+  const currentChannelPrograms = useMemo(() => {
+    if (!channel) return [];
+    return getProgramsForChannel(channel.id);
+  }, [channel?.id, getProgramsForChannel, epgLastUpdated]);
 
   // EPG auto-hide
   useEPGAutoHide();
@@ -415,8 +427,9 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           style={{
             flex: showEPGGrid ? undefined : 1,
             position: showEPGGrid ? 'absolute' : 'relative',
-            top: showEPGGrid ? 32 : undefined,
-            right: showEPGGrid ? 32 : undefined,
+            top: showEPGGrid ? undefined : undefined,
+            bottom: showEPGGrid ? 48 : undefined,
+            right: showEPGGrid ? 48 : undefined,
             width: showEPGGrid ? pipPreviewWidth : undefined,
             height: showEPGGrid ? pipPreviewHeight : undefined,
             zIndex: showEPGGrid ? 40 : 1,
@@ -557,6 +570,9 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
             }
           }}
           navigation={navigation}
+          programs={currentChannelPrograms}
+          epgLoading={epgLoading}
+          epgError={epgError}
         />
       )}
 
@@ -568,6 +584,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           onChannelSelect={handleChannelSelect}
           onExitPIP={exitPIP}
           navigation={navigation}
+          epgLoading={epgLoading}
+          epgError={epgError}
         />
       )}
 

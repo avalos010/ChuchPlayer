@@ -20,6 +20,8 @@ interface UIState {
   showControls: boolean;
   showFloatingButtons: boolean;
 
+  selectedGroup: string | null;
+
   // Actions
   setShowEPG: (show: boolean) => void;
   setShowEPGGrid: (show: boolean) => void;
@@ -29,6 +31,7 @@ interface UIState {
   setShowVolumeIndicator: (show: boolean) => void;
   setShowControls: (show: boolean) => void;
   setShowFloatingButtons: (show: boolean) => void;
+  setSelectedGroup: (group: string | null) => void;
 
   // Helper actions
   closeAllOverlays: () => void;
@@ -46,6 +49,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   showVolumeIndicator: false,
   showControls: true,
   showFloatingButtons: false,
+  selectedGroup: null,
 
   // Actions
   setShowEPG: (show) => set({ showEPG: show }),
@@ -56,6 +60,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   setShowVolumeIndicator: (show) => set({ showVolumeIndicator: show }),
   setShowControls: (show) => set({ showControls: show }),
   setShowFloatingButtons: (show) => set({ showFloatingButtons: show }),
+  setSelectedGroup: (group) => set({ selectedGroup: group }),
 
   // Helper actions
   closeAllOverlays: () => set({
@@ -64,6 +69,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     showChannelList: false,
     showGroupsPlaylists: false,
     showChannelNumberPad: false,
+    selectedGroup: null,
   }),
   toggleEPG: () => set((state) => ({ showEPG: !state.showEPG })),
   toggleControls: () => set((state) => ({ showControls: !state.showControls })),

@@ -1,28 +1,71 @@
 import { Channel } from '../types';
 
-export const parseM3U = (content: string): Channel[] => {
+export interface ParsedM3UPlaylist {
+  channels: Channel[];
+  epgUrls: string[];
+}
+
+const splitPotentialUrlList = (value: string): string[] => {
+  return value
+    .split(/[\s,|]+/)
+    .map(item => item.trim())
+    .filter(item => item.length > 0)
+    .map(item => {
+      // Some playlists omit protocol but start with //
+      if (item.startsWith('//')) {
+        return `https:${item}`;
+      }
+      return item;
+    });
+};
+
+export const parseM3U = (content: string): ParsedM3UPlaylist => {
   const channels: Channel[] = [];
+  const epgUrlSet = new Set<string>();
   const lines = content.split('\n').map(line => line.trim());
 
   let currentChannel: Partial<Channel> = {};
   let channelIndex = 0;
 
   for (const line of lines) {
-    if (!line || line === '#EXTM3U') {
+    if (!line) {
+      continue;
+    }
+
+    if (line.startsWith('#EXTM3U')) {
+      const urlTvgMatch = line.match(/url-tvg="([^"]*)"/i);
+      const tvgUrlMatch = line.match(/tvg-url="([^"]*)"/i);
+      const epgUrlsRaw: string[] = [];
+
+      if (urlTvgMatch && urlTvgMatch[1]) {
+        epgUrlsRaw.push(...splitPotentialUrlList(urlTvgMatch[1]));
+      }
+
+      if (tvgUrlMatch && tvgUrlMatch[1]) {
+        epgUrlsRaw.push(...splitPotentialUrlList(tvgUrlMatch[1]));
+      }
+
+      epgUrlsRaw.forEach(urlCandidate => {
+        if (urlCandidate) {
+          epgUrlSet.add(urlCandidate);
+        }
+      });
       continue;
     }
 
     if (line.startsWith('#EXTINF:')) {
-      const tvgIdMatch = line.match(/tvg-id="([^"]*)"/);
-      const tvgNameMatch = line.match(/tvg-name="([^"]*)"/);
-      const tvgLogoMatch = line.match(/tvg-logo="([^"]*)"/);
-      const groupTitleMatch = line.match(/group-title="([^"]*)"/);
+      const tvgIdMatch = line.match(/tvg-id="([^"]*)"/i);
+      const tvgNameMatch = line.match(/tvg-name="([^"]*)"/i);
+      const tvgLogoMatch = line.match(/tvg-logo="([^"]*)"/i);
+      const groupTitleMatch = line.match(/group-title="([^"]*)"/i);
 
       const nameMatch = line.match(/,(.+)$/);
       const channelName = nameMatch ? nameMatch[1].trim() : 'Unknown Channel';
 
-      const uniqueId = tvgIdMatch && tvgIdMatch[1]
-        ? tvgIdMatch[1]
+      const tvgId = tvgIdMatch && tvgIdMatch[1] ? tvgIdMatch[1].trim() : '';
+
+      const uniqueId = tvgId
+        ? tvgId
         : `channel-${Date.now()}-${channelIndex++}`;
 
       // Parse and clean group title
@@ -40,10 +83,10 @@ export const parseM3U = (content: string): Channel[] => {
 
       currentChannel = {
         id: uniqueId,
-        name: tvgNameMatch && tvgNameMatch[1] ? tvgNameMatch[1] : channelName,
-        logo: tvgLogoMatch && tvgLogoMatch[1] ? tvgLogoMatch[1] : undefined,
+        name: tvgNameMatch && tvgNameMatch[1] ? tvgNameMatch[1].trim() : channelName,
+        logo: tvgLogoMatch && tvgLogoMatch[1] ? tvgLogoMatch[1].trim() : undefined,
         group,
-        tvgId: tvgIdMatch && tvgIdMatch[1] ? tvgIdMatch[1] : undefined,
+        tvgId: tvgId || undefined,
       };
 
       continue;
@@ -64,10 +107,13 @@ export const parseM3U = (content: string): Channel[] => {
     }
   }
 
-  return channels;
+  return {
+    channels,
+    epgUrls: Array.from(epgUrlSet),
+  };
 };
 
-export const fetchM3UPlaylist = async (url: string): Promise<Channel[]> => {
+export const fetchM3UPlaylist = async (url: string): Promise<ParsedM3UPlaylist> => {
   if (url.startsWith('file://')) {
     throw new Error('Local file support is not yet implemented. Please use a valid URL.');
   }
@@ -82,12 +128,15 @@ export const fetchM3UPlaylist = async (url: string): Promise<Channel[]> => {
     throw new Error('Playlist appears to be empty.');
   }
 
-  const channels = parseM3U(content);
+  const { channels, epgUrls } = parseM3U(content);
   if (channels.length === 0) {
     throw new Error('No valid channels found in the playlist.');
   }
 
-  return channels;
+  return {
+    channels,
+    epgUrls,
+  };
 };
 
 export const groupChannelsByCategory = (channels: Channel[]): Map<string, Channel[]> => {

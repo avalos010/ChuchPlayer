@@ -165,9 +165,21 @@ export const parseXtreamStreams = (
 /**
  * Fetches and parses all channels from Xtream Codes API
  */
+export interface XtreamPlaylistData {
+  channels: Channel[];
+  epgUrls: string[];
+}
+
+const buildXmltvUrl = (credentials: XtreamCodesCredentials): string => {
+  const baseUrl = credentials.serverUrl.replace(/\/$/, '');
+  return `${baseUrl}/xmltv.php?username=${encodeURIComponent(
+    credentials.username
+  )}&password=${encodeURIComponent(credentials.password)}`;
+};
+
 export const fetchXtreamPlaylist = async (
   credentials: XtreamCodesCredentials
-): Promise<Channel[]> => {
+): Promise<XtreamPlaylistData> => {
   // Validate credentials first
   await fetchXtreamUserInfo(credentials);
 
@@ -181,6 +193,12 @@ export const fetchXtreamPlaylist = async (
     throw new Error('No valid channels found in the Xtream Codes account.');
   }
 
-  return parseXtreamStreams(streams, credentials, categories);
+  const channels = parseXtreamStreams(streams, credentials, categories);
+  const epgUrl = buildXmltvUrl(credentials);
+
+  return {
+    channels,
+    epgUrls: [epgUrl],
+  };
 };
 
