@@ -1,5 +1,6 @@
 import React, { useCallback, useState, useMemo, memo, useRef, useEffect } from 'react';
-import { View, Text, Image, ScrollView, FlatList, Platform, ListRenderItemInfo, Dimensions } from 'react-native';
+import { View, Text, Image, ScrollView, Platform, ListRenderItemInfo } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
 import { Channel, EPGProgram } from '../../types';
@@ -398,7 +399,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   const playlist = usePlayerStore((state) => state.playlist);
 
   const [selectedGroup, setSelectedGroup] = useState<string>('All');
-  const flatListRef = React.useRef<FlatList>(null);
+  const flatListRef = React.useRef<FlashList<ChannelRowData>>(null);
   const horizontalScrollRef = React.useRef<ScrollView>(null);
   const [focusedChannelId, setFocusedChannelId] = useState<string | null>(null);
   const [initialFocusChannelId, setInitialFocusChannelId] = useState<string | null>(null);
@@ -557,13 +558,6 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
 
   // Key extractor
   const keyExtractor = useCallback((item: ChannelRowData) => item.channel.id, []);
-
-  // getItemLayout for non-Android platforms (Android uses dynamic heights)
-  const getItemLayout = useCallback((data: ArrayLike<ChannelRowData> | null | undefined, index: number) => ({
-    length: ROW_HEIGHT_BASE,
-    offset: ROW_HEIGHT_BASE * index,
-    index,
-  }), []);
 
   const handleScrollToIndexFailed = useCallback((info: {
     index: number;
@@ -733,27 +727,19 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
           <TimeHeader currentTimePosition={currentTimePosition} />
           
           {/* Virtualized Channel List - Optimized for Android TV */}
-          <FlatList
-            ref={flatListRef}
-            data={channelData}
-            renderItem={renderItem}
-            keyExtractor={keyExtractor}
-            onScrollToIndexFailed={handleScrollToIndexFailed}
-            // Android TV Performance Optimizations
-            initialNumToRender={Platform.OS === 'android' ? 3 : 6}
-            maxToRenderPerBatch={Platform.OS === 'android' ? 3 : 5}
-            updateCellsBatchingPeriod={Platform.OS === 'android' ? 100 : 50}
-            windowSize={Platform.OS === 'android' ? 8 : 12}
-            removeClippedSubviews={true}
-            showsVerticalScrollIndicator={false}
-            style={{ flex: 1 }}
-            keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled={Platform.OS === 'android'}
-            // Fast initial render
-            getItemLayout={Platform.OS === 'android' ? undefined : getItemLayout}
-            legacyImplementation={Platform.OS === 'android'}
-            disableVirtualization={false}
-          />
+          <View style={{ flex: 1 }}>
+            <FlashList
+              ref={flatListRef}
+              data={channelData}
+              renderItem={renderItem}
+              keyExtractor={keyExtractor}
+              onScrollToIndexFailed={handleScrollToIndexFailed}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled={Platform.OS === 'android'}
+              estimatedItemSize={ROW_HEIGHT_BASE}
+            />
+          </View>
         </View>
       </ScrollView>
     </View>

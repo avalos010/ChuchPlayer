@@ -13,6 +13,7 @@ interface UseChannelNavigationProps {
   setHasUserInteracted: (value: boolean) => void;
   hasUserInteracted: boolean;
   centerZoneRef?: React.RefObject<any>;
+  setShowChannelInfoCard?: (visible: boolean) => void;
 }
 
 export const useChannelNavigation = ({
@@ -21,6 +22,7 @@ export const useChannelNavigation = ({
   setHasUserInteracted,
   hasUserInteracted,
   centerZoneRef,
+  setShowChannelInfoCard,
 }: UseChannelNavigationProps) => {
   const channel = usePlayerStore((state) => state.channel);
   const channels = usePlayerStore((state) => state.channels);
@@ -41,10 +43,6 @@ export const useChannelNavigation = ({
   
   // EPG state
   const setCurrentProgram = useEPGStore((state) => state.setCurrentProgram);
-  const setShowChannelInfoCard = useCallback((show: boolean) => {
-    // This will be handled by the component that uses this hook
-  }, []);
-
   const isSwitchingChannelRef = useRef(false);
   const channelSwitchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -61,6 +59,7 @@ export const useChannelNavigation = ({
     if (channel?.id === selectedChannel.id) {
       console.log('Same channel selected, skipping switch');
       setShowChannelList(false);
+      setShowChannelInfoCard?.(true);
       return;
     }
 
@@ -86,6 +85,7 @@ export const useChannelNavigation = ({
     console.log('Setting new channel:', selectedChannel.name);
     setChannel(selectedChannel);
     setShowChannelList(false);
+    setShowChannelInfoCard?.(true);
 
     // Close EPG grid and restore full video when channel is selected
     if (showEPGGrid) {
@@ -109,6 +109,7 @@ export const useChannelNavigation = ({
     setError,
     setIsPlaying,
     setShowEPGGrid,
+    setShowChannelInfoCard,
   ]);
 
   const switchChannel = useCallback(async (
@@ -158,6 +159,7 @@ export const useChannelNavigation = ({
       setChannel(newChannel);
       const program = getCurrentProgram(newChannel.id);
       setCurrentProgram(program);
+      setShowChannelInfoCard?.(true);
 
       // Reset flag immediately after channel is set to allow rapid switching
       // The video will continue loading in the background
@@ -182,7 +184,7 @@ export const useChannelNavigation = ({
       }
       setError('Failed to switch channel. Please try again.');
     }
-  }, [videoRef, getCurrentProgram, setChannel, setCurrentProgram, setLoading, setError, setIsPlaying, centerZoneRef]);
+  }, [videoRef, getCurrentProgram, setChannel, setCurrentProgram, setLoading, setError, setIsPlaying, centerZoneRef, setShowChannelInfoCard]);
 
   const handleUpDpad = useCallback(async (exitPIP?: () => void) => {
     // Get latest state from store to avoid stale closures

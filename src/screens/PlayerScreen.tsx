@@ -99,6 +99,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     setHasUserInteracted,
     hasUserInteracted,
     centerZoneRef,
+    setShowChannelInfoCard,
   });
   const {
     handleScreenPress,
@@ -167,6 +168,10 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     setShowMultiScreenControls(true);
   }, []);
 
+  const { width: windowWidth } = Dimensions.get('window');
+  const pipPreviewWidth = Math.min(windowWidth * 0.34, 560);
+  const pipPreviewHeight = pipPreviewWidth * (9 / 16);
+
   // If in multi-screen mode, show multi-screen view
   if (isMultiScreenMode && screens.length > 0) {
     const { width, height } = Dimensions.get('window');
@@ -208,7 +213,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       />
 
       {/* Invisible D-pad navigation zones for Android TV */}
-      {!showEPG && !showEPGGrid && !showChannelList && !showGroupsPlaylists && !error && Platform.OS === 'android' && (
+      {!showEPG && !showEPGGrid && !showChannelList && !showGroupsPlaylists && Platform.OS === 'android' && (
         <>
           {/* Central focusable zone - default focus */}
           <FocusableItem
@@ -367,7 +372,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       )}
       
       {/* Focusable overlay for non-Android platforms */}
-      {!showEPG && !showEPGGrid && !showChannelList && !showGroupsPlaylists && !error && Platform.OS !== 'android' && (
+      {!showEPG && !showEPGGrid && !showChannelList && !showGroupsPlaylists && Platform.OS !== 'android' && (
         <>
           {/* Main overlay for center button press and keyboard navigation */}
           <FocusableItem
@@ -408,24 +413,24 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       {channel && (
         <Animated.View
           style={{
-            flex: 1,
-            position: 'relative',
-            zIndex: showEPGGrid ? 30 : 1,
-            elevation: showEPGGrid ? 30 : 1,
-            ...(showEPGGrid ? {
-              borderRadius: 8,
-              borderWidth: 2,
-              borderColor: '#00aaff',
-              overflow: 'hidden',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.5,
-              shadowRadius: 8,
-            } : {
-              borderWidth: 0,
-              borderColor: 'transparent',
-            }),
-            transform: [
+            flex: showEPGGrid ? undefined : 1,
+            position: showEPGGrid ? 'absolute' : 'relative',
+            top: showEPGGrid ? 32 : undefined,
+            right: showEPGGrid ? 32 : undefined,
+            width: showEPGGrid ? pipPreviewWidth : undefined,
+            height: showEPGGrid ? pipPreviewHeight : undefined,
+            zIndex: showEPGGrid ? 40 : 1,
+            elevation: showEPGGrid ? 40 : 1,
+            borderRadius: showEPGGrid ? 20 : 0,
+            overflow: 'hidden',
+            borderWidth: showEPGGrid ? 1 : 0,
+            borderColor: showEPGGrid ? 'rgba(148, 163, 184, 0.45)' : 'transparent',
+            backgroundColor: showEPGGrid ? '#0f172a' : 'transparent',
+            shadowColor: showEPGGrid ? '#0ea5e9' : 'transparent',
+            shadowOffset: showEPGGrid ? { width: 0, height: 12 } : { width: 0, height: 0 },
+            shadowOpacity: showEPGGrid ? 0.3 : 0,
+            shadowRadius: showEPGGrid ? 24 : 0,
+            transform: showEPGGrid ? [] : [
               { translateX: pipAnim.x },
               { translateY: pipAnim.y },
               { scale: pipScale },
@@ -435,7 +440,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           importantForAccessibility="no"
         >
           <View 
-            style={{ flex: 1, position: 'relative' }}
+            style={{ flex: 1, position: 'relative', backgroundColor: '#020617' }}
             focusable={false}
             importantForAccessibility="no"
           >
@@ -448,7 +453,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
                 width: Platform.OS === 'web' ? '-webkit-fill-available' : '100%',
                 height: '100%',
                 margin: Platform.OS === 'web' ? 'auto' : 0,
-                backgroundColor: '#000000',
+                backgroundColor: '#020617',
               } as any}
               focusable={false}
               resizeMode={resizeMode}
@@ -470,22 +475,35 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
                 bottom: 0,
                 left: 0,
                 right: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                paddingHorizontal: 8,
-                paddingVertical: 4,
+                backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                paddingHorizontal: 16,
+                paddingVertical: 12,
               }}
               pointerEvents="none"
             >
               <Text
                 style={{
                   color: '#fff',
-                  fontSize: 12,
-                  fontWeight: '600',
+                  fontSize: 16,
+                  fontWeight: '700',
                 }}
                 numberOfLines={1}
               >
                 {channel.name}
               </Text>
+              {currentProgram && (
+                <Text
+                  style={{
+                    color: '#bae6fd',
+                    fontSize: 12,
+                    fontWeight: '600',
+                    marginTop: 4,
+                  }}
+                  numberOfLines={1}
+                >
+                  {currentProgram.title}
+                </Text>
+              )}
             </View>
           )}
         </Animated.View>
@@ -499,14 +517,16 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       )}
 
       {error && (
-        <View className="absolute inset-0 justify-center items-center bg-black/70 p-6 gap-4 z-[3]">
-          <Text className="text-white text-lg text-center">{error}</Text>
-          <FocusableItem 
-            onPress={handleBack} 
-            className="bg-accent px-8 py-4 rounded-lg"
-          >
-            <Text className="text-white text-base font-bold">Go Back</Text>
-          </FocusableItem>
+        <View
+          pointerEvents="none"
+          className="absolute inset-0 justify-center items-center bg-black/70 p-6 gap-4 z-[3]"
+        >
+          <Text className="text-white text-lg text-center font-semibold">
+            {error}
+          </Text>
+          <Text className="text-white/80 text-base text-center">
+            Press up or down on your remote to switch to another channel.
+          </Text>
         </View>
       )}
 

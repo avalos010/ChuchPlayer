@@ -69,3 +69,4 @@ export const useUIStore = create<UIState>((set, get) => ({
   toggleControls: () => set((state) => ({ showControls: !state.showControls })),
 }));
 
+

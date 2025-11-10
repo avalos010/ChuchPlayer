@@ -1,5 +1,13 @@
-import React, { useState, forwardRef } from 'react';
-import { Pressable, StyleProp, View, ViewStyle } from 'react-native';
+import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import {
+  Pressable,
+  StyleProp,
+  View,
+  ViewStyle,
+  UIManager,
+  findNodeHandle,
+  Platform,
+} from 'react-native';
 
 interface FocusableItemProps {
   onPress: () => void;
@@ -25,6 +33,7 @@ const FocusableItem = forwardRef<any, FocusableItemProps>(({
   hasTVPreferredFocus = false,
 }, ref) => {
   const [isFocused, setIsFocused] = useState(false);
+  const pressableRef = useRef<any>(null);
 
   const handleFocus = () => {
     setIsFocused(true);
@@ -181,9 +190,28 @@ const FocusableItem = forwardRef<any, FocusableItemProps>(({
     baseStyle,
   ].filter((s): s is ViewStyle => s != null);
 
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      const node = findNodeHandle(pressableRef.current);
+      if (!node) return;
+
+      if (Platform.isTV && UIManager.getViewManagerConfig) {
+        const viewConfig = UIManager.getViewManagerConfig('RCTView');
+        const commandId = viewConfig?.Commands?.requestTVFocus;
+        if (typeof commandId === 'number' || typeof commandId === 'string') {
+          UIManager.dispatchViewManagerCommand(node, commandId as any, []);
+          return;
+        }
+      }
+
+      pressableRef.current?.focus?.();
+      pressableRef.current?.setNativeProps?.({ hasTVPreferredFocus: true });
+    },
+  }));
+
   return (
     <Pressable
-      ref={ref}
+      ref={pressableRef}
       disabled={disabled}
       onPress={onPress}
       onFocus={handleFocus}
