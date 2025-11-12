@@ -15,7 +15,6 @@ interface MultiScreenState {
   isMultiScreenMode: boolean;
   maxScreens: number;
   layout: 'grid' | 'split'; // grid = 2x2, split = side-by-side
-  setMaxScreens: (max: number) => void;
   
   // Actions
   addScreen: (channel: Channel) => void;

@@ -5,6 +5,7 @@ export interface Channel {
   logo?: string;
   group?: string;
   tvgId?: string;
+  number?: string | number;
 }
 
 export interface EPGProgram {

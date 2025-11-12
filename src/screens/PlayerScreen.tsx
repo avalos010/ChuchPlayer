@@ -31,13 +31,13 @@ import { useEPGStore } from '../store/useEPGStore';
 import { useMultiScreenStore } from '../store/useMultiScreenStore';
 import { useVideoPlayback } from '../hooks/useVideoPlayback';
 import { useChannelNavigation } from '../hooks/useChannelNavigation';
-import { useEPGManagement } from '../hooks/useEPGManagement';
 import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
 import { useChannelInitialization } from '../hooks/useChannelInitialization';
 import { useChannelInfo } from '../hooks/useChannelInfo';
 import { usePIPMode } from '../hooks/usePIPMode';
 import { useEPGAutoHide } from '../hooks/useEPGAutoHide';
 import { usePlayerHandlers } from '../hooks/usePlayerHandlers';
+import { useEPGManagement } from '../hooks/useEPGManagement';
 
 
 interface PlayerScreenProps {
@@ -79,7 +79,14 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const [showMultiScreenControls, setShowMultiScreenControls] = useState(false);
 
   // Custom hooks
-  const { getProgramsForChannel, getCurrentProgram, epgLoading, epgError, epgLastUpdated } = useEPGManagement();
+  const {
+    getProgramsForChannel,
+    getCurrentProgram,
+    epgLoading,
+    epgError,
+    epgLastUpdated,
+    prefetchProgramsForChannels,
+  } = useEPGManagement();
   const { pipAnim, pipScale, enterPIP, exitPIP } = usePIPMode();
   const { showChannelInfoCard, setShowChannelInfoCard } = useChannelInfo({ showOnInitialLoad: true });
   const {
@@ -115,6 +122,19 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     initialChannel,
     getCurrentProgram,
   });
+
+  // Ensure a focus target is available on Android TV when overlays are closed
+  useEffect(() => {
+    if (
+      Platform.OS === 'android' &&
+      !showEPG &&
+      !showEPGGrid &&
+      !showChannelList &&
+      !showGroupsPlaylists
+    ) {
+      centerZoneRef.current?.focus?.();
+    }
+  }, [showEPG, showEPGGrid, showChannelList, showGroupsPlaylists]);
 
   useEffect(() => {
     if (!channel) return;
@@ -581,11 +601,16 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         <EPGGridView
           getCurrentProgram={getCurrentProgram}
           getProgramsForChannel={getProgramsForChannel}
+          prefetchProgramsForChannels={prefetchProgramsForChannels}
           onChannelSelect={handleChannelSelect}
           onExitPIP={exitPIP}
           navigation={navigation}
           epgLoading={epgLoading}
           epgError={epgError}
+          handleManualEpgRefresh={() => {
+            useUIStore.getState().setShowEPGGrid(false);
+            useUIStore.getState().setShowEPGGrid(true);
+          }}
         />
       )}
 

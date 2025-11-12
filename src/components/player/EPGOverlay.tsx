@@ -38,6 +38,22 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
   
   // EPG state
   const currentProgram = useEPGStore((state) => state.currentProgram);
+
+  const formatTime = (date?: Date | null) => {
+    if (!date) return '';
+    const resolvedDate = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(resolvedDate.getTime())) return '';
+    return resolvedDate.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const safeDescription = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
   
   const [imageError, setImageError] = useState(false);
 
@@ -103,17 +119,21 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
                 <Text className="text-accent text-xl font-semibold mb-1" numberOfLines={2}>
                   {currentProgram.title}
                 </Text>
-                <Text className="text-text-muted text-sm">
-                  {currentProgram.start.toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}{' '}
-                  -{' '}
-                  {currentProgram.end.toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
+                {(() => {
+                  const start = formatTime(currentProgram.start);
+                  const end = formatTime(currentProgram.end);
+                  if (!start || !end) return null;
+                  return (
+                    <Text className="text-text-muted text-sm">
+                      {start} - {end}
+                    </Text>
+                  );
+                })()}
+                {safeDescription(currentProgram.description) && (
+                  <Text className="text-text-muted text-xs mt-2" numberOfLines={3}>
+                    {safeDescription(currentProgram.description)}
+                  </Text>
+                )}
               </View>
             )}
 
@@ -152,13 +172,10 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
                 </Text>
                 <View className="gap-3">
                   {upcomingPrograms.map(program => {
-                    const timeWindow = `${program.start.toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })} - ${program.end.toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}`;
+                    const start = formatTime(program.start);
+                    const end = formatTime(program.end);
+                    const timeWindow = start && end ? `${start} - ${end}` : '';
+                    const description = safeDescription(program.description);
                     return (
                       <View
                         key={program.id}
@@ -169,15 +186,17 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
                           <Text className="text-text-primary font-semibold text-base" numberOfLines={2}>
                             {program.title}
                           </Text>
-                          {program.description && (
+                          {description && (
                             <Text className="text-text-muted text-xs mt-1" numberOfLines={2}>
-                              {program.description}
+                              {description}
                             </Text>
                           )}
                         </View>
-                        <Text className="text-accent font-semibold text-sm pl-3 min-w-[84px]" numberOfLines={1}>
-                          {timeWindow}
-                        </Text>
+                        {timeWindow ? (
+                          <Text className="text-accent font-semibold text-sm pl-3 min-w-[84px]" numberOfLines={1}>
+                            {timeWindow}
+                          </Text>
+                        ) : null}
                       </View>
                     );
                   })}

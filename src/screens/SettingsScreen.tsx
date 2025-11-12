@@ -45,6 +45,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [xtreamUsername, setXtreamUsername] = useState('');
   const [xtreamPassword, setXtreamPassword] = useState('');
   const [addingPlaylist, setAddingPlaylist] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const loadPlaylists = useCallback(async () => {
     setLoadingPlaylists(true);
@@ -214,7 +215,30 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           onPress: async () => {
             try {
               await deletePlaylist(playlist.id);
-              setPlaylists(prev => prev.filter(item => item.id !== playlist.id));
+              setPlaylists(prev => {
+                const updated = prev.filter(item => item.id !== playlist.id);
+
+                const playerState = usePlayerStore.getState();
+                if (playerState.playlist?.id === playlist.id) {
+                  if (updated.length > 0) {
+                    const fallback = updated[0];
+                    playerState.setPlaylist(fallback);
+                    playerState.setChannels(fallback.channels);
+                    if (fallback.channels.length > 0) {
+                      playerState.setChannel(fallback.channels[0]);
+                    } else {
+                      playerState.setChannel(null);
+                    }
+                  } else {
+                    playerState.setChannel(null);
+                    playerState.setChannels([]);
+                    playerState.setPlaylist(null);
+                  }
+                }
+
+                return updated;
+              });
+
               setTimeout(() => showSuccess(`Deleted ${playlist.name}`), 100);
             } catch (error) {
               console.error('Error deleting playlist:', error);
@@ -441,6 +465,117 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             ))}
           </View>
         </View>
+        <FocusableItem
+          onPress={async () => {
+            if (manualRefreshing) {
+              return;
+            }
+            try {
+              setManualRefreshing(true);
+              const playerState = usePlayerStore.getState();
+              let playlistsToRefresh = playlists;
+              if (playlistsToRefresh.length === 0) {
+                setTimeout(() => showError('No playlists available.', 'Add a playlist first.'), 100);
+                return;
+              }
+
+              // Ensure we have an active playlist to keep player state consistent
+              if (!playerState.playlist) {
+                const fallback = playlistsToRefresh[0];
+                playerState.setPlaylist(fallback);
+                playerState.setChannels(fallback.channels);
+                playerState.setChannel(fallback.channels[0] ?? null);
+              }
+
+              const updatedPlaylists: Playlist[] = [];
+              const errors: string[] = [];
+              let refreshedAny = false;
+
+              for (const playlist of playlistsToRefresh) {
+                try {
+                  let refreshed: Playlist | null = null;
+                  if (playlist.sourceType === 'm3u') {
+                    const { channels, epgUrls } = await fetchM3UPlaylist(playlist.url);
+                    if (!channels.length) {
+                      throw new Error('Playlist returned no channels.');
+                    }
+                    refreshed = {
+                      ...playlist,
+                      channels,
+                      epgUrls,
+                      updatedAt: new Date(),
+                    };
+                  } else if (playlist.sourceType === 'xtream' && playlist.xtreamCredentials) {
+                    const { channels, epgUrls } = await fetchXtreamPlaylist(playlist.xtreamCredentials);
+                    if (!channels.length) {
+                      throw new Error('Playlist returned no channels.');
+                    }
+                    refreshed = {
+                      ...playlist,
+                      channels,
+                      epgUrls,
+                      updatedAt: new Date(),
+                    };
+                  }
+
+                  if (!refreshed) {
+                    throw new Error('Unsupported playlist type.');
+                  }
+
+                  // Persist and update local state
+                  await savePlaylist(refreshed);
+                  updatedPlaylists.push(refreshed);
+                  refreshedAny = true;
+
+                  // Update player state if this playlist is active
+                  if (playerState.playlist?.id === refreshed.id) {
+                    const currentChannelId = playerState.channel?.id;
+                    playerState.setPlaylist(refreshed);
+                    playerState.setChannels(refreshed.channels);
+
+                    if (refreshed.channels.length > 0) {
+                      const matchingChannel = refreshed.channels.find((channel) => channel.id === currentChannelId);
+                      playerState.setChannel(matchingChannel ?? refreshed.channels[0]);
+                    } else {
+                      playerState.setChannel(null);
+                    }
+                  }
+                } catch (error) {
+                  console.error(`Manual refresh failed for ${playlist.name}:`, error);
+                  errors.push(`${playlist.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                  updatedPlaylists.push(playlist);
+                }
+              }
+
+              setPlaylists(updatedPlaylists);
+
+              if (refreshedAny) {
+                setTimeout(() => showSuccess('Playlists refreshed.'), 100);
+              }
+
+              if (errors.length > 0) {
+                setTimeout(() => showError('Some playlists failed to refresh.', errors.join('\n')), 100);
+              }
+            } catch (error) {
+              console.error('Manual refresh failed:', error);
+              setTimeout(() => showError('Manual refresh failed.', String(error)), 100);
+            } finally {
+              setManualRefreshing(false);
+            }
+          }}
+          className="mt-3 flex-row items-center justify-center gap-3"
+          style={{
+            backgroundColor: manualRefreshing ? '#3a3a3a' : '#00aaff',
+            borderRadius: 12,
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            opacity: manualRefreshing ? 0.8 : 1,
+          }}
+          disabled={manualRefreshing}
+        >
+          {manualRefreshing && <ActivityIndicator size="small" color="#fff" />}
+          <Text className="text-white text-base font-semibold">Refresh Now</Text>
+        </FocusableItem>
       </View>
 
       <View className="mt-6 px-5">

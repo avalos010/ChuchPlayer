@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import AppNavigator from './src/navigation/AppNavigator';
 import './global.css';
+import { useDataRefreshScheduler } from './src/hooks/useDataRefreshScheduler';
 
 // Verify NativeWind installation
 if (__DEV__) {
@@ -18,6 +19,8 @@ if (__DEV__) {
 }
 
 const App = () => {
+  useDataRefreshScheduler();
+
   return (
     <GestureHandlerRootView className="flex-1 bg-dark">
       <SafeAreaProvider>

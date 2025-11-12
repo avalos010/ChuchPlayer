@@ -57,7 +57,7 @@ const VideoControls: React.FC<VideoControlsProps> = ({
         </View>
         {onMultiScreen && (
           <FocusableItem 
-            onPress={onMultiScreen} 
+            onPress={onMultiScreen ?? (() => undefined)} 
             className="bg-accent/80 px-4 py-2.5 rounded-lg"
           >
             <Text className="text-white text-base font-semibold">📺 Multi</Text>

@@ -225,14 +225,6 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
               estimatedItemSize={120}
               contentContainerStyle={{ paddingVertical: 12 }}
               keyboardShouldPersistTaps="handled"
-              onScrollToIndexFailed={(info) => {
-                setTimeout(() => {
-                  channelListRef.current?.scrollToIndex({
-                    index: info.index,
-                    animated: false,
-                  });
-                }, 50);
-              }}
             />
           </View>
         )}

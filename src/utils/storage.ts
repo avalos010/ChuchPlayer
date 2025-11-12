@@ -82,7 +82,7 @@ export const getSettings = async (): Promise<Settings> => {
         multiScreenEnabled: true,
         maxMultiScreens: 4,
         epgRefreshIntervalMinutes: 120,
-        channelRefreshIntervalMinutes: 15,
+        channelRefreshIntervalMinutes: 120,
       };
     }
 
@@ -93,7 +93,7 @@ export const getSettings = async (): Promise<Settings> => {
       multiScreenEnabled: parsed.multiScreenEnabled ?? true,
       maxMultiScreens: parsed.maxMultiScreens ?? 4,
       epgRefreshIntervalMinutes: parsed.epgRefreshIntervalMinutes ?? 120,
-      channelRefreshIntervalMinutes: parsed.channelRefreshIntervalMinutes ?? 15,
+      channelRefreshIntervalMinutes: parsed.channelRefreshIntervalMinutes ?? 120,
     };
   } catch (error) {
     console.error('Error getting settings:', error);
@@ -104,7 +104,7 @@ export const getSettings = async (): Promise<Settings> => {
       multiScreenEnabled: true,
       maxMultiScreens: 4,
       epgRefreshIntervalMinutes: 120,
-      channelRefreshIntervalMinutes: 15,
+      channelRefreshIntervalMinutes: 120,
     };
   }
 };

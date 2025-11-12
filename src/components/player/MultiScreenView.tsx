@@ -2,12 +2,12 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { Channel } from '../../types';
-import { useMultiScreenStore } from '../../store/useMultiScreenStore';
+import { useMultiScreenStore, type MultiScreen } from '../../store/useMultiScreenStore';
 import FocusableItem from '../FocusableItem';
 import { showError } from '../../utils/toast';
 
 interface MultiScreenPlayerProps {
-  screen: ReturnType<typeof useMultiScreenStore>['screens'][0];
+  screen: MultiScreen;
   layout: 'grid' | 'split';
   onFocus: () => void;
   onRemove: () => void;

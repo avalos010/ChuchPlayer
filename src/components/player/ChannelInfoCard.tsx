@@ -71,15 +71,29 @@ const ChannelInfoCard: React.FC<ChannelInfoCardProps> = ({
 
   if (!visible || !channel) return null;
 
-  const timeString = program
-    ? `${program.start.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      })} - ${program.end.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      })}`
-    : '';
+  const startDate =
+    program && program.start ? new Date(program.start) : null;
+  const endDate =
+    program && program.end ? new Date(program.end) : null;
+
+  const isValidDate = (date: Date | null) =>
+    !!date && !Number.isNaN(date.getTime());
+
+  const timeString =
+    isValidDate(startDate) && isValidDate(endDate)
+      ? `${startDate!.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        })} - ${endDate!.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        })}`
+      : '';
+
+  const safeDescription =
+    program && typeof program.description === 'string'
+      ? program.description.trim()
+      : '';
 
   return (
     <Animated.View
@@ -215,7 +229,7 @@ const ChannelInfoCard: React.FC<ChannelInfoCardProps> = ({
                 {timeString}
               </Text>
             )}
-            {program.description && (
+            {safeDescription ? (
               <Text
                 className="text-gray-300 text-sm mt-2 leading-relaxed"
                 style={{
@@ -226,9 +240,9 @@ const ChannelInfoCard: React.FC<ChannelInfoCardProps> = ({
                 }}
                 numberOfLines={2}
               >
-                {program.description}
+                {safeDescription}
               </Text>
-            )}
+            ) : null}
           </View>
         )}
 

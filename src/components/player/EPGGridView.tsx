@@ -12,11 +12,13 @@ import { groupChannelsByCategory } from '../../utils/m3uParser';
 interface EPGGridViewProps {
   getCurrentProgram: (channelId: string) => EPGProgram | null;
   getProgramsForChannel?: (channelId: string) => EPGProgram[];
+  prefetchProgramsForChannels?: (channelIds: string[]) => void;
   onChannelSelect: (channel: Channel) => void;
   onExitPIP?: () => void;
   navigation?: NativeStackNavigationProp<RootStackParamList>;
   epgLoading?: boolean;
   epgError?: string | null;
+  handleManualEpgRefresh?: () => void;
 }
 
 interface ChannelRowData {
@@ -432,6 +434,7 @@ TimeHeader.displayName = 'TimeHeader';
 const EPGGridView: React.FC<EPGGridViewProps> = ({
   getCurrentProgram,
   getProgramsForChannel,
+  prefetchProgramsForChannels,
   onChannelSelect,
   onExitPIP,
   navigation,
@@ -451,6 +454,10 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   const [initialFocusChannelId, setInitialFocusChannelId] = useState<string | null>(null);
   const [focusedGroup, setFocusedGroup] = useState<string | null>(null);
   const [currentTimePosition, setCurrentTimePosition] = useState<number>(0);
+
+  // Lazy loading state for EPG data
+  const [loadedChannelIds, setLoadedChannelIds] = useState<Set<string>>(new Set());
+  const [visibleChannelIds, setVisibleChannelIds] = useState<Set<string>>(new Set());
 
   // Calculate current time position for indicator line (less frequent updates for performance)
   useEffect(() => {
@@ -520,24 +527,80 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     return ['All', ...groupNames];
   }, [channels]);
 
-  // Memoize filtered and prepared channel data
-  const channelData = useMemo<ChannelRowData[]>(() => {
+  // Memoize filtered channels (without loading all EPG data at once)
+  const filteredChannels = useMemo(() => {
     if (!channels || !Array.isArray(channels) || channels.length === 0) {
       return [];
     }
-    
-    const filtered = selectedGroup === 'All' 
-      ? channels 
+
+    const filtered = selectedGroup === 'All'
+      ? channels
       : channels.filter(ch => ch && ch.group === selectedGroup);
-    
-    return filtered
-      .filter(ch => ch != null)
-      .map(ch => ({
-        channel: ch,
-        isCurrent: ch.id === currentChannelId,
-        programs: getProgramsForChannel ? getProgramsForChannel(ch.id) : [],
-      }));
-  }, [channels, selectedGroup, currentChannelId, getProgramsForChannel]);
+
+    return filtered.filter(ch => ch != null);
+  }, [channels, selectedGroup]);
+
+  // Load EPG data for specific channels
+  const loadEpgDataForChannels = useCallback((channelIds: string[]) => {
+    if (!channelIds.length || !prefetchProgramsForChannels) return;
+
+    const channelsToLoad = channelIds.filter(id => !loadedChannelIds.has(id));
+    if (channelsToLoad.length > 0) {
+      prefetchProgramsForChannels(channelsToLoad);
+      setLoadedChannelIds(prev => new Set([...prev, ...channelsToLoad]));
+    }
+  }, [loadedChannelIds, prefetchProgramsForChannels]);
+
+  // Handle viewable items change to load EPG data for visible channels
+  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: any[] }) => {
+    const visibleIds = viewableItems.map(item => item.item.channel.id);
+    const visibleSet = new Set(visibleIds);
+
+    // Load EPG data for currently visible channels
+    loadEpgDataForChannels(visibleIds);
+
+    // Also load EPG data for a few channels before and after visible ones (prefetch)
+    const allChannelIds = filteredChannels.map(ch => ch.id);
+    const prefetchCount = 5; // Load 5 channels before and after visible ones
+
+    visibleIds.forEach(visibleId => {
+      const index = allChannelIds.indexOf(visibleId);
+      if (index !== -1) {
+        const startIndex = Math.max(0, index - prefetchCount);
+        const endIndex = Math.min(allChannelIds.length - 1, index + prefetchCount);
+        const prefetchIds = allChannelIds.slice(startIndex, endIndex + 1);
+        loadEpgDataForChannels(prefetchIds);
+      }
+    });
+
+    setVisibleChannelIds(visibleSet);
+  }, [filteredChannels, loadEpgDataForChannels]);
+
+  // Memoize channel data with lazy-loaded EPG programs
+  const channelData = useMemo<ChannelRowData[]>(() => {
+    return filteredChannels.map(ch => ({
+      channel: ch,
+      isCurrent: ch.id === currentChannelId,
+      programs: loadedChannelIds.has(ch.id) && getProgramsForChannel
+        ? getProgramsForChannel(ch.id)
+        : [], // Empty array for channels that haven't loaded EPG data yet
+    }));
+  }, [filteredChannels, currentChannelId, loadedChannelIds, getProgramsForChannel]);
+
+  // Clear loaded channels when group changes
+  React.useEffect(() => {
+    setLoadedChannelIds(new Set());
+    setVisibleChannelIds(new Set());
+  }, [selectedGroup]);
+
+  // Load initial EPG data when EPG grid opens
+  React.useEffect(() => {
+    if (showEPGGrid && filteredChannels.length > 0) {
+      // Load EPG data for the first visible channels
+      const initialChannelIds = filteredChannels.slice(0, 10).map(ch => ch.id);
+      loadEpgDataForChannels(initialChannelIds);
+    }
+  }, [showEPGGrid, filteredChannels, loadEpgDataForChannels, selectedGroup]);
 
   // Scroll to current channel when opening or changing groups
   React.useEffect(() => {
@@ -802,6 +865,11 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
               keyboardShouldPersistTaps="handled"
               nestedScrollEnabled={Platform.OS === 'android'}
               estimatedItemSize={ROW_HEIGHT_BASE}
+              onViewableItemsChanged={onViewableItemsChanged}
+              viewabilityConfig={{
+                itemVisiblePercentThreshold: 50, // Item is considered visible when 50% is visible
+                minimumViewTime: 300, // Item must be visible for 300ms
+              }}
             />
           </View>
         </View>
