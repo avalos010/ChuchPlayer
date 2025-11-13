@@ -54,9 +54,16 @@ const ChannelListItem = forwardRef<any, ChannelListItemProps>(({
     >
       <View className="flex-row items-center p-4 gap-4">
         {channel.logo && !imageError ? (
-          <Image 
-            source={{ uri: channel.logo }} 
-            className="w-[70px] h-[70px] rounded-xl bg-subtle border border-border" 
+          <Image
+            source={{ uri: channel.logo }}
+            style={{
+              width: 70,
+              height: 70,
+              borderRadius: 12,
+              backgroundColor: '#0f172a',
+              borderWidth: 1,
+              borderColor: 'rgba(148, 163, 184, 0.6)',
+            }}
             resizeMode="contain"
             onError={() => setImageError(true)}
           />

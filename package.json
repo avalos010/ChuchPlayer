@@ -19,7 +19,6 @@
     "expo-av": "~16.0.7",
     "expo-build-properties": "~1.0.9",
     "expo-dev-client": "~6.0.17",
-    "expo-sqlite": "~16.0.9",
     "expo-status-bar": "~3.0.8",
     "nativewind": "^4.2.1",
     "react": "19.1.0",
@@ -32,11 +31,13 @@
     "react-native-screens": "~4.16.0",
     "react-native-toast-message": "^2.3.3",
     "react-native-web": "^0.21.0",
+    "realm": "^20.2.0",
     "saxes": "^6.0.0",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "@types/react-native": "^0.73.0",
     "babel-preset-expo": "^54.0.6",
     "prettier-plugin-tailwindcss": "^0.5.14",
     "tailwindcss": "^3.4.17",

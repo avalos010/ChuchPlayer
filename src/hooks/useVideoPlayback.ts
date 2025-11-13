@@ -82,16 +82,6 @@ export const useVideoPlayback = (videoRef: React.RefObject<Video | null>) => {
       setLoading(false);
     }
 
-    // Log playback status for debugging
-    if (Platform.OS === 'android') {
-      console.log('Playback status:', {
-        isPlaying: status.isPlaying,
-        isBuffering: status.isBuffering,
-        durationMillis: status.durationMillis,
-        positionMillis: status.positionMillis,
-      });
-    }
-
     if (status.didJustFinish) {
       setIsPlaying(false);
       setLoading(false);

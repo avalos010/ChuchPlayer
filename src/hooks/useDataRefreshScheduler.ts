@@ -128,15 +128,7 @@ export const useDataRefreshScheduler = () => {
 
     const schedule = async () => {
       const settings = await getSettings();
-
-      const channelInterval = normalizeIntervalMinutes(
-        settings.channelRefreshIntervalMinutes,
-        MIN_CHANNEL_REFRESH_MINUTES
-      );
-      const epgInterval = normalizeIntervalMinutes(
-        settings.epgRefreshIntervalMinutes,
-        MIN_EPG_REFRESH_MINUTES
-      );
+      const now = Date.now();
 
       clearTimers();
 
@@ -149,13 +141,39 @@ export const useDataRefreshScheduler = () => {
         return;
       }
 
+      const channelIntervalMinutes = normalizeIntervalMinutes(
+        settings.channelRefreshIntervalMinutes,
+        MIN_CHANNEL_REFRESH_MINUTES
+      );
+      const epgIntervalMinutes = normalizeIntervalMinutes(
+        settings.epgRefreshIntervalMinutes,
+        MIN_EPG_REFRESH_MINUTES
+      );
+
+      const channelIntervalMs = minutesToMs(channelIntervalMinutes);
+      const epgIntervalMs = minutesToMs(epgIntervalMinutes);
+
       channelTimer = setInterval(() => {
         void refreshChannels();
-      }, minutesToMs(channelInterval));
+      }, channelIntervalMs);
 
       epgTimer = setInterval(() => {
-        void refreshEpg();
-      }, minutesToMs(epgInterval));
+        const playlist = usePlayerStore.getState().playlist;
+        if (!playlist) {
+          return;
+        }
+
+        const lastUpdated =
+          playlist.updatedAt instanceof Date
+            ? playlist.updatedAt.getTime()
+            : new Date(playlist.updatedAt).getTime();
+
+        if (now - lastUpdated >= epgIntervalMs) {
+          void refreshEpg();
+        } else {
+          console.log('[EPG] Skipping auto refresh; within refresh interval');
+        }
+      }, epgIntervalMs);
     };
 
     schedule();

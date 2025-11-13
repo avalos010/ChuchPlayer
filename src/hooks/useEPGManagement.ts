@@ -16,6 +16,7 @@ type ProgramsByChannel = Record<string, EPGProgram[]>;
 
 const INITIAL_PREFETCH_COUNT = 12;
 const PRUNE_LOWER_BOUND_HOURS = 12;
+const DEFAULT_REFRESH_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 const buildXtreamXmltvUrl = (
   serverUrl: string,
@@ -95,6 +96,9 @@ export const useEPGManagement = () => {
       );
 
       const fetchIds = targetIds.filter((id) => !pendingChannelLoadsRef.current.has(id));
+      if (fetchIds.length > 0) {
+        console.log('[EPG] Loading programs for channels:', fetchIds);
+      }
 
       if (fetchIds.length === 0) {
         return false;
@@ -105,6 +109,7 @@ export const useEPGManagement = () => {
       try {
         console.log(`[EPG] Loading programs for channels: ${fetchIds.join(', ')}`);
         const result = await queryProgramsForChannels(playlist.id, fetchIds);
+        console.log('[EPG] Loaded programs for channels:', Object.keys(result));
         let foundAny = false;
 
         // Debug: log what we found
@@ -214,6 +219,13 @@ export const useEPGManagement = () => {
           setEpgLastUpdated(existingMetadata.lastUpdated);
           setEpgStatus({ loading: false, error: null });
           console.log('[EPG] Using cached programs for playlist', playlistId);
+        // Respect refresh interval: skip re-ingest if data is recent
+        const now = Date.now();
+        if (now - existingMetadata.lastUpdated < DEFAULT_REFRESH_INTERVAL_MS) {
+          console.log('[EPG] Cached data is still fresh, skipping ingestion');
+          return;
+        }
+        console.log('[EPG] Cached data expired, continuing with ingestion');
           return;
         }
 
@@ -263,8 +275,15 @@ export const useEPGManagement = () => {
         const initialChannelIds = channels
           .slice(0, INITIAL_PREFETCH_COUNT)
           .map((channel) => channel.id);
+        console.log('[EPG] Forcing initial channel load with cached metadata:', initialChannelIds);
 
         await loadProgramsForChannels(initialChannelIds, { force: true });
+        const postIngestChannelIds = channels
+          .slice(0, INITIAL_PREFETCH_COUNT)
+          .map((channel) => channel.id);
+        console.log('[EPG] Forcing initial channel load after ingest:', postIngestChannelIds);
+
+        await loadProgramsForChannels(postIngestChannelIds, { force: true });
 
         if (cancelled) {
           return;

@@ -1,3 +1,4 @@
+import { InteractionManager } from 'react-native';
 import { Channel } from '../types';
 import { parseXmltvStream, XmltvProgram } from './streamingXmlParser';
 import {
@@ -9,9 +10,9 @@ import {
 
 const HOURS_BEFORE = 12;
 const HOURS_AFTER = 36;
-const INSERT_THRESHOLD = 40; // Much smaller batches to keep UI responsive
-const MAX_QUEUE_SIZE = 120; // Hard limit to prevent large spikes
-const MIN_TIME_BETWEEN_FLUSHES = 1000; // Minimum 1 second between flushes
+const INSERT_THRESHOLD = 400; // Larger than SQLite days but still safe
+const MAX_QUEUE_SIZE = 100; // Flush before memory spikes
+const MIN_TIME_BETWEEN_FLUSHES = 750; // Keep frequent flush cadence
 
 // Memory monitoring helper
 const logMemoryUsage = (queue: InsertableProgram[], context: string) => {
@@ -202,10 +203,49 @@ export const ingestXmltvToDatabase = async ({
   const channelIndex = buildChannelIndex(channels);
   console.log(`[EPG] Built channel index with ${channelIndex.size} entries`);
 
+  const yieldToEventLoop = (): Promise<void> =>
+    new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+  const runOnNextTick = <T>(fn: () => Promise<T> | T): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      setTimeout(() => {
+        Promise.resolve()
+          .then(() => fn())
+          .then(resolve)
+          .catch(reject);
+      }, 0);
+    });
+
+  const runAfterInteractions = (): Promise<void> =>
+    new Promise((resolve) => {
+      if (InteractionManager && typeof InteractionManager.runAfterInteractions === 'function') {
+        InteractionManager.runAfterInteractions(() => resolve());
+        return;
+      }
+      resolve();
+    });
+
   const queue: InsertableProgram[] = [];
   let inserted = 0;
 
-  const flushQueue = async (force = false) => {
+  const flushSingleBatch = async (): Promise<void> => {
+    if (queue.length === 0) {
+      return;
+    }
+
+    const batchSize = Math.min(queue.length, INSERT_THRESHOLD);
+    const batch = queue.splice(0, batchSize);
+    logMemoryUsage(queue, `Before flush (batch size: ${batch.length})`);
+    console.log(`[EPG] flushing ${batch.length} programs to database`);
+    const added = await runOnNextTick(() => insertProgramsExclusive(playlistId, batch));
+    inserted += added;
+    logMemoryUsage(queue, 'After flush');
+    await yieldToEventLoop();
+  };
+
+  const performFlush = async (force = false): Promise<void> => {
     if (queue.length === 0) {
       return;
     }
@@ -214,12 +254,43 @@ export const ingestXmltvToDatabase = async ({
       return;
     }
 
-    const batch = queue.splice(0, queue.length);
-    logMemoryUsage(queue, `Before flush (batch size: ${batch.length})`);
-    console.log(`[EPG] flushing ${batch.length} programs to database`);
-    const added = await insertProgramsExclusive(playlistId, batch);
-    inserted += added;
-    logMemoryUsage(queue, 'After flush');
+    if (force) {
+      while (queue.length > 0) {
+        await flushSingleBatch();
+      }
+      return;
+    }
+
+    await flushSingleBatch();
+  };
+
+  let flushChain: Promise<void> = Promise.resolve();
+
+  const scheduleFlush = (force = false): Promise<void> => {
+    flushChain = flushChain
+      .then(async () => {
+        if (queue.length === 0) {
+          return;
+        }
+
+        if (force) {
+          await performFlush(true);
+          return;
+        }
+
+        await runAfterInteractions();
+        await performFlush(false);
+
+        if (queue.length > 0) {
+          setTimeout(() => {
+            void scheduleFlush(false);
+          }, 0);
+        }
+      })
+      .catch((error) => {
+        console.warn('[EPG] Flush failed:', error);
+      });
+    return flushChain;
   };
 
   let totalProgramsFromXml = 0;
@@ -238,6 +309,9 @@ export const ingestXmltvToDatabase = async ({
       if (result.insertable) {
         queue.push(result.insertable);
         programsMatchedToChannels++;
+        if (queue.length >= INSERT_THRESHOLD) {
+          void scheduleFlush(false);
+        }
       } else {
         switch (result.reason) {
           case 'no-channel': {
@@ -269,18 +343,21 @@ export const ingestXmltvToDatabase = async ({
       // Flush if we have programs and enough time has passed since last flush
       if (queue.length > 0 && (now - lastFlushTime) >= MIN_TIME_BETWEEN_FLUSHES) {
         console.log(`[EPG] chunk processed, flushing ${queue.length} programs`);
-        await flushQueue(true);
+        await scheduleFlush(true);
         lastFlushTime = Date.now();
       } else if (queue.length >= MAX_QUEUE_SIZE) {
         // Emergency flush if queue is critically full, regardless of timing
         console.warn(`[EPG] emergency flush: queue size ${queue.length} >= ${MAX_QUEUE_SIZE}`);
-        await flushQueue(true);
+        await scheduleFlush(true);
         lastFlushTime = Date.now();
       }
+
+      // Ensure a flush happens even if thresholds weren't met
+      await scheduleFlush(false);
     },
   });
 
-  await flushQueue(true);
+  await scheduleFlush(true);
 
   console.log(`[EPG] Ingestion summary:
     - Total programs in XML: ${totalProgramsFromXml}
@@ -295,26 +372,24 @@ export const ingestXmltvToDatabase = async ({
   }
 
   try {
-    const db = await ensureEpgDatabase();
-    const stats = await db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM epg_programs WHERE playlistId = ?',
-      [playlistId]
-    );
+    const realm = await ensureEpgDatabase();
+    const totalForPlaylist = realm
+      .objects('Program')
+      .filtered('playlistId == $0', playlistId).length;
+
     console.log(
       '[EPG] inserted',
       inserted,
       'programs for playlist',
       playlistId,
       '- total rows for playlist =',
-      stats?.count ?? 0
+      totalForPlaylist
     );
 
-    // Debug: check database contents
     console.log('[EPG] Checking database contents after ingestion...');
     await debugDatabaseContents(playlistId);
-
   } catch (logError) {
-    console.warn('[EPG] Failed to read epg_programs count:', logError);
+    console.warn('[EPG] Failed to read Program count from Realm:', logError);
   }
 
   return inserted;

@@ -13,7 +13,8 @@
       "backgroundColor": "#1a1a1a"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.chuchplayer"
     },
     "android": {
       "adaptiveIcon": {
@@ -40,11 +41,11 @@
           "android": {
             "usesCleartextTraffic": true,
             "enableProguardInReleaseBuilds": true,
-            "enableR8": true
+            "enableR8": true,
+            "enableMinifyInReleaseBuilds": true
           }
         }
-      ],
-      "expo-sqlite"
+      ]
     ],
     "extra": {
       "eas": {

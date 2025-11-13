@@ -140,26 +140,26 @@ export const parseXmltvStream = async (
     const reader = response.body.getReader();
 
     try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
           // Finalize the decoder for any remaining bytes
           const finalChunk = decoder.decode();
           if (finalChunk) {
             parser.write(finalChunk);
             totalProcessed += finalChunk.length;
           }
-          parser.close();
-          break;
-        }
+        parser.close();
+        break;
+      }
 
         // Decode chunk without streaming to avoid memory accumulation
         const decoded = decoder.decode(value, { stream: false });
-        parser.write(decoded);
+      parser.write(decoded);
         totalProcessed += decoded.length;
 
-        // Process chunk callback less frequently to reduce memory pressure
-        if (options?.onChunkProcessed && totalProcessed % 100000 < decoded.length) {
+        // Process chunk callback more frequently to keep queues small
+        if (options?.onChunkProcessed && totalProcessed % 20000 < decoded.length) {
           console.log(`[EPG] processed ${totalProcessed} bytes, triggering flush`);
           await options.onChunkProcessed();
         }

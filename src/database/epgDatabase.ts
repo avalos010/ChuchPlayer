@@ -1,11 +1,5 @@
-import * as SQLite from 'expo-sqlite';
+import Realm from 'realm';
 import { EPGProgram } from '../types';
-
-const DB_NAME = 'epg.db';
-const INSERT_BATCH_SIZE = 15; // Smaller batches for smoother insertions
-const LOCK_RETRY_ATTEMPTS = 5;
-const LOCK_RETRY_BASE_DELAY_MS = 75;
-const OPERATION_TIMEOUT_MS = 30000; // 30 seconds timeout for operations
 
 export type InsertableProgram = {
   playlistId: string;
@@ -17,211 +11,147 @@ export type InsertableProgram = {
   epgChannelId?: string;
 };
 
-type ProgramRow = {
-  id: number;
-  playlistId: string;
-  channelId: string;
-  title: string;
-  description?: string | null;
-  start: number;
-  end: number;
-  epgChannelId?: string | null;
-};
-
-type MetadataRow = {
+export type MetadataRow = {
   playlistId: string;
   lastUpdated: number;
   sourceSignature?: string | null;
 };
 
-let operationQueue: Promise<unknown> = Promise.resolve();
-let queueErrorCount = 0;
-const MAX_QUEUE_ERRORS = 3;
+type ProgramObject = Realm.Object & {
+  id: string;
+  playlistId: string;
+  channelId: string;
+  title: string;
+  description?: string | null;
+  start: Date;
+  end: Date;
+  epgChannelId?: string | null;
+  createdAt: Date;
+};
 
-const enqueueDatabaseOperation = <T>(operation: () => Promise<T>): Promise<T> => {
-  const wrappedOperation = async (): Promise<T> => {
-    try {
-      const result = await withTimeout(operation(), OPERATION_TIMEOUT_MS);
-      queueErrorCount = 0; // Reset error count on success
-      return result;
-    } catch (error) {
-      queueErrorCount++;
-      console.error('[EPG][DB] Operation failed:', error);
+type MetadataObject = Realm.Object & {
+  playlistId: string;
+  lastUpdated: Date;
+  sourceSignature?: string | null;
+};
 
-      // If we have too many consecutive errors, reset the queue
-      if (queueErrorCount >= MAX_QUEUE_ERRORS) {
-        console.warn('[EPG][DB] Too many consecutive errors, resetting operation queue');
-        operationQueue = Promise.resolve();
-        queueErrorCount = 0;
+const ProgramSchema: Realm.ObjectSchema = {
+  name: 'Program',
+  primaryKey: 'id',
+  properties: {
+    id: 'string',
+    playlistId: 'string',
+    channelId: 'string',
+    title: 'string',
+    description: 'string?',
+    start: 'date',
+    end: 'date',
+    epgChannelId: 'string?',
+    createdAt: 'date',
+  },
+};
+
+const MetadataSchema: Realm.ObjectSchema = {
+  name: 'Metadata',
+  primaryKey: 'playlistId',
+  properties: {
+    playlistId: 'string',
+    lastUpdated: 'date',
+    sourceSignature: 'string?',
+  },
+};
+
+let realmPromise: Promise<Realm> | null = null;
+let operationChain: Promise<void> = Promise.resolve();
+
+const getRealmInstance = async (): Promise<Realm> => {
+  if (!realmPromise) {
+    realmPromise = Realm.open({
+      schema: [ProgramSchema, MetadataSchema],
+      schemaVersion: 1,
+    });
+  }
+  return realmPromise;
+};
+
+const enqueueRealmOperation = <T>(
+  operation: (realm: Realm) => Promise<T> | T
+): Promise<T> => {
+  const nextOperation = operationChain.then(async () => {
+    const realm = await getRealmInstance();
+    return operation(realm);
+  });
+
+  operationChain = nextOperation
+    .then(() => undefined)
+    .catch(() => undefined);
+
+  return nextOperation;
+};
+
+const mapProgramObject = (program: ProgramObject): EPGProgram => ({
+  id: program.id,
+  channelId: program.channelId,
+  title: program.title,
+  description: program.description ?? undefined,
+  start: new Date(program.start),
+  end: new Date(program.end),
+});
+
+const buildProgramPrimaryKey = (program: InsertableProgram): string =>
+  `${program.playlistId}|${program.channelId}|${program.start}|${program.end}|${program.title ?? ''}`;
+
+export const ensureEpgDatabase = async (): Promise<Realm> => getRealmInstance();
+
+export const clearProgramsForPlaylist = async (playlistId: string): Promise<void> =>
+  enqueueRealmOperation(async (realm) => {
+    realm.write(() => {
+      const programs = realm
+        .objects<ProgramObject>('Program')
+        .filtered('playlistId == $0', playlistId);
+      realm.delete(programs);
+
+      const metadata = realm.objectForPrimaryKey<MetadataObject>('Metadata', playlistId);
+      if (metadata) {
+        realm.delete(metadata);
       }
-
-      throw error;
-    }
-  };
-
-  const queued = operationQueue.then(wrappedOperation, wrappedOperation);
-  operationQueue = queued.then(
-    () => undefined,
-    () => undefined
-  );
-  return queued;
-};
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
-    ),
-  ]);
-};
-
-const isDatabaseLockedError = (error: unknown): boolean => {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  const message = error.message?.toLowerCase?.() ?? '';
-  return message.includes('database is locked') || message.includes('busy');
-};
-
-const runWithLockRetry = async <T>(operation: () => Promise<T>): Promise<T> => {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < LOCK_RETRY_ATTEMPTS; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      if (!isDatabaseLockedError(error) || attempt === LOCK_RETRY_ATTEMPTS - 1) {
-        throw error;
-      }
-      const delayMs = LOCK_RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
-      console.warn('[EPG][DB] database locked, retrying', {
-        attempt: attempt + 1,
-        delayMs,
-      });
-      await delay(delayMs);
-    }
-  }
-
-  throw lastError;
-};
-
-let databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
-let initialized = false;
-let lastHealthCheck = 0;
-const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
-
-const getDatabase = async (): Promise<SQLite.SQLiteDatabase> => {
-  if (!databasePromise) {
-    databasePromise = SQLite.openDatabaseAsync(DB_NAME);
-  }
-  return databasePromise;
-};
-
-const checkDatabaseHealth = async (): Promise<boolean> => {
-  const now = Date.now();
-  if (now - lastHealthCheck < HEALTH_CHECK_INTERVAL) {
-    return true; // Skip health check if done recently
-  }
-
-  try {
-    const db = await getDatabase();
-    // Simple health check query
-    await db.getFirstAsync('SELECT 1 as health_check');
-    lastHealthCheck = now;
-    return true;
-  } catch (error) {
-    console.warn('[EPG][DB] Health check failed:', error);
-    // Reset database connection on failure
-    databasePromise = null;
-    initialized = false;
-    return false;
-  }
-};
-
-export const ensureEpgDatabase = async (): Promise<SQLite.SQLiteDatabase> => {
-  // Perform health check first
-  const isHealthy = await checkDatabaseHealth();
-  if (!isHealthy) {
-    console.log('[EPG][DB] Database connection reset due to health check failure');
-  }
-
-  const db = await getDatabase();
-  if (initialized && isHealthy) {
-    return db;
-  }
-
-  await db.execAsync(`
-    PRAGMA journal_mode = WAL;
-    CREATE TABLE IF NOT EXISTS epg_programs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      playlistId TEXT NOT NULL,
-      channelId TEXT NOT NULL,
-      title TEXT,
-      description TEXT,
-      start INTEGER NOT NULL,
-      end INTEGER NOT NULL,
-      epgChannelId TEXT,
-      createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now') * 1000)
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_epg_programs_unique
-      ON epg_programs (playlistId, channelId, start, end, title);
-    CREATE INDEX IF NOT EXISTS idx_epg_programs_channel_start
-      ON epg_programs (playlistId, channelId, start);
-    CREATE TABLE IF NOT EXISTS epg_metadata (
-      playlistId TEXT PRIMARY KEY,
-      lastUpdated INTEGER NOT NULL,
-      sourceSignature TEXT
-    );
-  `);
-
-  initialized = true;
-  return db;
-};
-
-export const clearProgramsForPlaylist = async (playlistId: string): Promise<void> => {
-  await enqueueDatabaseOperation(() =>
-    runWithLockRetry(async () => {
-    const db = await ensureEpgDatabase();
-    await db.runAsync('DELETE FROM epg_programs WHERE playlistId = ?', [playlistId]);
-    await db.runAsync('DELETE FROM epg_metadata WHERE playlistId = ?', [playlistId]);
-    })
-  );
-};
+    });
+  });
 
 export const setPlaylistMetadata = async (
   playlistId: string,
   lastUpdated: number,
   sourceSignature?: string | null
-): Promise<void> => {
-  await enqueueDatabaseOperation(() =>
-    runWithLockRetry(async () => {
-      const db = await ensureEpgDatabase();
-      await db.runAsync(
-        `
-          INSERT INTO epg_metadata (playlistId, lastUpdated, sourceSignature)
-          VALUES (?, ?, ?)
-          ON CONFLICT(playlistId) DO UPDATE SET
-            lastUpdated = excluded.lastUpdated,
-            sourceSignature = excluded.sourceSignature
-        `,
-        [playlistId, lastUpdated, sourceSignature ?? null]
+): Promise<void> =>
+  enqueueRealmOperation(async (realm) => {
+    realm.write(() => {
+      realm.create(
+        'Metadata',
+        {
+          playlistId,
+          lastUpdated: new Date(lastUpdated),
+          sourceSignature: sourceSignature ?? null,
+        },
+        Realm.UpdateMode.Modified
       );
-    })
-  );
-};
+    });
+  });
 
 export const getPlaylistMetadata = async (
   playlistId: string
 ): Promise<MetadataRow | null> => {
-  const db = await ensureEpgDatabase();
-  const row = await db.getFirstAsync<MetadataRow>(
-    'SELECT playlistId, lastUpdated, sourceSignature FROM epg_metadata WHERE playlistId = ?',
-    [playlistId]
-  );
-  return row ?? null;
+  const realm = await getRealmInstance();
+  const metadata = realm.objectForPrimaryKey<MetadataObject>('Metadata', playlistId);
+
+  if (!metadata) {
+    return null;
+  }
+
+  return {
+    playlistId: metadata.playlistId,
+    lastUpdated: metadata.lastUpdated.getTime(),
+    sourceSignature: metadata.sourceSignature ?? null,
+  };
 };
 
 export const insertProgramsExclusive = async (
@@ -232,56 +162,33 @@ export const insertProgramsExclusive = async (
     return 0;
   }
 
-  return enqueueDatabaseOperation(() =>
-    runWithLockRetry(async () => {
-      const db = await ensureEpgDatabase();
-      let inserted = 0;
+  return enqueueRealmOperation(async (realm) => {
+    let inserted = 0;
 
-      await db.withExclusiveTransactionAsync(async (txn) => {
-        let statement: SQLite.SQLiteStatement | null = null;
+    realm.write(() => {
+      for (const program of programs) {
+        const primaryKey = buildProgramPrimaryKey(program);
+        const existing = realm.objectForPrimaryKey<ProgramObject>('Program', primaryKey);
 
-        try {
-          statement = await txn.prepareAsync(
-            `
-              INSERT OR IGNORE INTO epg_programs
-                (playlistId, channelId, title, description, start, end, epgChannelId)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            `
-          );
-
-          for (let i = 0; i < programs.length; i += INSERT_BATCH_SIZE) {
-            const batch = programs.slice(i, i + INSERT_BATCH_SIZE);
-            for (const program of batch) {
-              await statement.executeAsync([
-                program.playlistId,
-                program.channelId,
-                program.title,
-                program.description ?? null,
-                program.start,
-                program.end,
-                program.epgChannelId ?? null,
-              ]);
-              inserted += 1;
-            }
-          }
-        } catch (error) {
-          console.error('[EPG][DB] Error during batch insert:', error);
-          throw error; // Re-throw to trigger transaction rollback
-        } finally {
-          if (statement) {
-            try {
-              await statement.finalizeAsync();
-            } catch (finalizeError) {
-              console.warn('[EPG][DB] Failed to finalize statement:', finalizeError);
-              // Don't throw here as the transaction might already be rolling back
-            }
-          }
+        if (!existing) {
+          realm.create('Program', {
+            id: primaryKey,
+            playlistId: program.playlistId,
+            channelId: program.channelId,
+            title: program.title,
+            description: program.description ?? null,
+            start: new Date(program.start),
+            end: new Date(program.end),
+            epgChannelId: program.epgChannelId ?? null,
+            createdAt: new Date(),
+          });
+          inserted += 1;
         }
-      });
+      }
+    });
 
-      return inserted;
-    })
-  );
+    return inserted;
+  });
 };
 
 export const queryProgramsForChannels = async (
@@ -292,89 +199,63 @@ export const queryProgramsForChannels = async (
     return {};
   }
 
-  return enqueueDatabaseOperation(() =>
-    runWithLockRetry(async () => {
-      const db = await ensureEpgDatabase();
-      const placeholders = channelIds.map(() => '?').join(',');
-
-      const rows = await db.getAllAsync<ProgramRow>(
-        `
-          SELECT id, playlistId, channelId, title, description, start, end, epgChannelId
-          FROM epg_programs
-          WHERE playlistId = ? AND channelId IN (${placeholders})
-          ORDER BY channelId ASC, start ASC
-        `,
-        [playlistId, ...channelIds]
-      );
-
+  const realm = await getRealmInstance();
       const grouped: Record<string, EPGProgram[]> = {};
 
-      rows.forEach((row) => {
-        if (!grouped[row.channelId]) {
-          grouped[row.channelId] = [];
-        }
+  channelIds.forEach((channelId) => {
+    const results = realm
+      .objects<ProgramObject>('Program')
+      .filtered('playlistId == $0 && channelId == $1', playlistId, channelId)
+      .sorted('start');
 
-        grouped[row.channelId].push({
-          id: `${row.channelId}-${row.start}-${row.end}-${row.id}`,
-          channelId: row.channelId,
-          title: row.title ?? 'Untitled',
-          description: row.description ?? undefined,
-          start: new Date(row.start),
-          end: new Date(row.end),
-        });
+    grouped[channelId] = results.map(mapProgramObject);
       });
 
       return grouped;
-    })
-  );
 };
 
 export const pruneOldPrograms = async (
   playlistId: string,
   cutoffTimestamp: number
-): Promise<void> => {
-  await enqueueDatabaseOperation(() =>
-    runWithLockRetry(async () => {
-      const db = await ensureEpgDatabase();
-      await db.runAsync(
-        'DELETE FROM epg_programs WHERE playlistId = ? AND end < ?',
-        [playlistId, cutoffTimestamp]
-      );
-    })
-  );
-};
+): Promise<void> =>
+  enqueueRealmOperation(async (realm) => {
+    realm.write(() => {
+      const programs = realm
+        .objects<ProgramObject>('Program')
+        .filtered('playlistId == $0 && end < $1', playlistId, new Date(cutoffTimestamp));
+      realm.delete(programs);
+    });
+  });
 
-// Debug function to check database contents
 export const debugDatabaseContents = async (playlistId?: string): Promise<void> => {
   try {
-    const db = await ensureEpgDatabase();
+    const realm = await getRealmInstance();
 
-    // Check total program count
-    const totalPrograms = await db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM epg_programs'
-    );
-    console.log(`[DB DEBUG] Total programs in database: ${totalPrograms?.count ?? 0}`);
+    const totalPrograms = realm.objects<ProgramObject>('Program').length;
+    console.log(`[DB DEBUG] Total programs in database: ${totalPrograms}`);
 
-    // Check programs for specific playlist if provided
     if (playlistId) {
-      const playlistPrograms = await db.getFirstAsync<{ count: number }>(
-        'SELECT COUNT(*) as count FROM epg_programs WHERE playlistId = ?',
-        [playlistId]
-      );
-      console.log(`[DB DEBUG] Programs for playlist ${playlistId}: ${playlistPrograms?.count ?? 0}`);
+      const programs = realm
+        .objects<ProgramObject>('Program')
+        .filtered('playlistId == $0', playlistId);
+      console.log(`[DB DEBUG] Programs for playlist ${playlistId}: ${programs.length}`);
 
-      // Get a sample of recent programs
-      const recentPrograms = await db.getAllAsync(
-        'SELECT id, title, start, end, channelId FROM epg_programs WHERE playlistId = ? ORDER BY start DESC LIMIT 5',
-        [playlistId]
-      );
+      const recentPrograms = programs.sorted('start', true).slice(0, 5).map((program) => ({
+        id: program.id,
+        title: program.title,
+        channelId: program.channelId,
+        start: program.start,
+        end: program.end,
+      }));
       console.log('[DB DEBUG] Recent programs sample:', recentPrograms);
     }
 
-    // Check metadata
-    const metadata = await db.getAllAsync('SELECT * FROM epg_metadata');
-    console.log('[DB DEBUG] Metadata entries:', metadata);
-
+    const metadataEntries = realm.objects<MetadataObject>('Metadata').map((meta) => ({
+      playlistId: meta.playlistId,
+      lastUpdated: meta.lastUpdated,
+      sourceSignature: meta.sourceSignature ?? null,
+    }));
+    console.log('[DB DEBUG] Metadata entries:', metadataEntries);
   } catch (error) {
     console.error('[DB DEBUG] Error checking database:', error);
   }

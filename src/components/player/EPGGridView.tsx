@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useMemo, memo, useRef, useEffect } from 'react';
-import { View, Text, Image, ScrollView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Platform, ActivityIndicator, Image } from 'react-native';
 import { FlashList, ListRenderItemInfo } from '@shopify/flash-list';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
@@ -669,7 +669,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   if (!showEPGGrid || channels.length === 0 || !navigation) return null;
 
   return (
-    <View 
+    <View
       className="absolute inset-0 bg-slate-950 z-[25]" 
       style={{ elevation: 25 }}
     >
@@ -734,8 +734,8 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
             </Text>
           </View>
           <View className="flex-row gap-4">
-            <FocusableItem 
-              onPress={handleSettings} 
+            <FocusableItem
+              onPress={handleSettings}
               className="w-14 h-14 rounded-xl bg-slate-800/80 border border-slate-700 justify-center items-center"
               style={{
                 elevation: 4,
@@ -754,8 +754,8 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
             >
               <Text className="text-gray-200 text-xl">⚙️</Text>
             </FocusableItem>
-            <FocusableItem 
-              onPress={handleClose} 
+            <FocusableItem
+              onPress={handleClose}
               className="w-14 h-14 rounded-xl bg-red-600/80 border border-red-500 justify-center items-center"
               style={{
                 elevation: 4,
@@ -781,8 +781,8 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
         {groups && Array.isArray(groups) && groups.length > 1 && (
           <View className="px-8 pb-6 bg-slate-950/90 border-t border-slate-900/60">
             <Text className="text-slate-200 text-xs font-semibold mb-3 px-1 tracking-[0.3em] uppercase">Categories</Text>
-            <ScrollView 
-              horizontal 
+            <ScrollView
+              horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 4 }}
             >
@@ -791,9 +791,9 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
                   const isFocused = focusedGroup === group;
                   const isSelected = selectedGroup === group;
                   return (
-                  <FocusableItem
-                    key={group}
-                    onPress={() => setSelectedGroup(group)}
+                    <FocusableItem
+                      key={group}
+                      onPress={() => setSelectedGroup(group)}
                       onFocus={() => setFocusedGroup(group)}
                       onBlur={() => setFocusedGroup(null)}
                       hasTVPreferredFocus={index === 0 && showEPGGrid}
@@ -826,14 +826,14 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
                               : 'text-slate-300'
                           }`}
                           numberOfLines={2}
-                    >
-                      {group}
-                    </Text>
+                        >
+                          {group}
+                        </Text>
                         {isSelected && (
                           <View className="w-8 h-1 bg-cyan-300 rounded-full mt-2" />
                         )}
                       </View>
-                  </FocusableItem>
+                    </FocusableItem>
                   );
                 })}
               </View>
@@ -855,7 +855,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
           <TimeHeader currentTimePosition={currentTimePosition} />
           
           {/* Virtualized Channel List - Optimized for Android TV */}
-          <View style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
             <FlashList
               ref={flatListRef}
               data={channelData}
@@ -869,9 +869,9 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
               viewabilityConfig={{
                 itemVisiblePercentThreshold: 50, // Item is considered visible when 50% is visible
                 minimumViewTime: 300, // Item must be visible for 300ms
-              }}
-            />
-          </View>
+          }}
+        />
+      </View>
         </View>
       </ScrollView>
     </View>

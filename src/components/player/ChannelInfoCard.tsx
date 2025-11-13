@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Image, Platform, Text, View } from 'react-native';
+import { Animated, Platform, Text, View } from 'react-native';
 import { Channel, EPGProgram } from '../../types';
+import { Image } from 'react-native';
 
 interface ChannelInfoCardProps {
   channel: Channel | null;
@@ -126,27 +127,17 @@ const ChannelInfoCard: React.FC<ChannelInfoCardProps> = ({
         <View className="flex-row items-center mb-3">
           {channel.logo && !imageError ? (
             <View className="mr-3">
-              <View
+              <Image
+                source={{ uri: channel.logo }}
                 style={{
                   width: 56,
                   height: 56,
-                  backgroundColor: '#fff',
-                  borderRadius: 8,
-                  overflow: 'hidden',
-                  justifyContent: 'center',
-                  alignItems: 'center',
+                  borderRadius: 12,
+                  backgroundColor: '#0f172a',
                 }}
-              >
-                <Image
-                  source={{ uri: channel.logo }}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    resizeMode: 'contain',
-                  }}
-                  onError={() => setImageError(true)}
-                />
-              </View>
+                resizeMode="contain"
+                onError={() => setImageError(true)}
+              />
             </View>
           ) : channel.logo ? (
             <View className="mr-3">
