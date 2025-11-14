@@ -35,6 +35,7 @@
     "plugins": [
       "./expo-plugins/android-tv.js",
       "./plugins/withKeyEvent.js",
+      "./expo-plugins/withNativeEpgIngestion.js",
       [
         "expo-build-properties",
         {

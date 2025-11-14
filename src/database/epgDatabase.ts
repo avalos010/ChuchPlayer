@@ -163,7 +163,7 @@ export const insertProgramsExclusive = async (
   }
 
   return enqueueRealmOperation(async (realm) => {
-    let inserted = 0;
+      let inserted = 0;
 
     realm.write(() => {
       for (const program of programs) {
@@ -182,12 +182,12 @@ export const insertProgramsExclusive = async (
             epgChannelId: program.epgChannelId ?? null,
             createdAt: new Date(),
           });
-          inserted += 1;
+              inserted += 1;
+          }
         }
-      }
-    });
+      });
 
-    return inserted;
+      return inserted;
   });
 };
 

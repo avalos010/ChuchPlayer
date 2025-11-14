@@ -1,18 +1,24 @@
 package com.chuchplayer.epg
 
+import android.content.Context
 import android.util.Log
+import androidx.work.*
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import io.realm.*
 import kotlinx.coroutines.*
 import okhttp3.*
 import org.json.JSONArray
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
+import java.io.File
 import java.io.InputStream
 import java.util.*
+import java.util.concurrent.TimeUnit
 
 class EpgIngestionModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val reactContext = reactContext
     
     companion object {
         private const val TAG = "EpgIngestionModule"
@@ -21,15 +27,34 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) : ReactContextBa
         private const val EVENT_ERROR = "EPG_INGESTION_ERROR"
         private const val HOURS_BEFORE = 12
         private const val HOURS_AFTER = 36
+        private const val BATCH_SIZE = 2000
+        private const val SYNC_INTERVAL_HOURS = 4L
+        private const val WORK_NAME_PREFIX = "epg_sync_"
     }
 
     override fun getName(): String = "EpgIngestionModule"
+    
+    private fun getRealmInstance(): Realm {
+        // Realm JS stores database in app's files directory
+        // Default Realm path matches what Realm JS uses
+        // Realm Java SDK 10.x auto-discovers RealmObject classes
+        val config = RealmConfiguration.Builder()
+            .name("default.realm")
+            .schemaVersion(1)
+            .build()
+        return Realm.getInstance(config)
+    }
+    
+    private fun buildProgramPrimaryKey(program: ProgramData): String {
+        return "${program.playlistId}|${program.channelId}|${program.start}|${program.end}|${program.title}"
+    }
 
     @ReactMethod
     fun startIngestion(
         epgUrl: String,
         playlistId: String,
         channelsJson: String,
+        datasetSignature: String?,
         promise: Promise
     ) {
         Log.d(TAG, "Starting EPG ingestion for playlist: $playlistId, URL: $epgUrl")
@@ -44,37 +69,99 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) : ReactContextBa
                     .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
                     .build()
                 
+                // Add User-Agent and rate limiting headers
                 val request = Request.Builder()
                     .url(epgUrl)
+                    .header("User-Agent", "chuchPlayer/1.0")
+                    .header("Accept", "application/xml, text/xml, */*")
                     .build()
                 
-                val response = client.newCall(request).execute()
+                // Retry logic with exponential backoff for rate limiting
+                var response: okhttp3.Response? = null
+                var retryCount = 0
+                val maxRetries = 3
+                var lastException: Exception? = null
                 
-                if (!response.isSuccessful) {
-                    val error = "HTTP ${response.code}: ${response.message}"
+                while (retryCount <= maxRetries) {
+                    try {
+                        response = client.newCall(request).execute()
+                        
+                        // Handle 429 (Too Many Requests) with retry
+                        if (response.code == 429) {
+                            response.close()
+                            val retryAfter = response.header("Retry-After")?.toLongOrNull() ?: (1L shl retryCount) // Exponential backoff: 1s, 2s, 4s
+                            
+                            if (retryCount < maxRetries) {
+                                Log.w(TAG, "Rate limited (429), retrying after ${retryAfter}s (attempt ${retryCount + 1}/${maxRetries})")
+                                delay(retryAfter * 1000)
+                                retryCount++
+                                continue
+                            } else {
+                                val error = "HTTP 429: Too Many Requests (max retries exceeded)"
+                                Log.e(TAG, error)
+                                sendEvent(EVENT_ERROR, createErrorMap(error, epgUrl))
+                                promise.reject("HTTP_429", error)
+                                return@launch
+                            }
+                        }
+                        
+                        // Break if successful or non-retryable error
+                        break
+                    } catch (e: Exception) {
+                        lastException = e
+                        if (retryCount < maxRetries) {
+                            val backoffMs = (1L shl retryCount) * 1000 // Exponential backoff
+                            Log.w(TAG, "Request failed, retrying after ${backoffMs}ms (attempt ${retryCount + 1}/${maxRetries})", e)
+                            delay(backoffMs)
+                            retryCount++
+                        } else {
+                            throw e
+                        }
+                    }
+                }
+                
+                val finalResponse = response ?: throw lastException ?: Exception("No response received")
+                
+                if (!finalResponse.isSuccessful) {
+                    val error = "HTTP ${finalResponse.code}: ${finalResponse.message}"
                     Log.e(TAG, error)
-                    sendEvent(EVENT_ERROR, createErrorMap(error))
+                    sendEvent(EVENT_ERROR, createErrorMap(error, epgUrl))
                     promise.reject("HTTP_ERROR", error)
                     return@launch
                 }
                 
-                val body = response.body ?: run {
+                val body = finalResponse.body ?: run {
+                    finalResponse.close()
                     val error = "Response body is null"
-                    sendEvent(EVENT_ERROR, createErrorMap(error))
+                    sendEvent(EVENT_ERROR, createErrorMap(error, epgUrl))
                     promise.reject("NO_BODY", error)
                     return@launch
                 }
                 
-                val programs = parseXmlStream(body.byteStream(), playlistId, channelIndex)
+                val programs = parseXmlStream(body.byteStream(), playlistId, channelIndex, epgUrl)
                 
-                Log.d(TAG, "Parsed ${programs.size} programs from XML")
-                sendEvent(EVENT_COMPLETE, createSuccessMap(programs.size))
-                promise.resolve(createProgramsArray(programs))
+                Log.d(TAG, "Parsed ${programs.size} programs from XML, writing to Realm...")
+                
+                // Write directly to Realm in batches
+                val inserted = writeProgramsToRealm(programs, epgUrl)
+                
+                // Update metadata if signature provided
+                if (datasetSignature != null) {
+                    updatePlaylistMetadata(playlistId, datasetSignature)
+                }
+                
+                Log.d(TAG, "Inserted $inserted programs into Realm")
+                sendEvent(EVENT_COMPLETE, createSuccessMap(inserted, epgUrl))
+                
+                // Schedule periodic sync (every 4 hours)
+                schedulePeriodicSync(epgUrl, playlistId, channelsJson, datasetSignature)
+                
+                promise.resolve(inserted)
                 
             } catch (e: Exception) {
                 val error = "Ingestion failed: ${e.message}"
                 Log.e(TAG, error, e)
-                sendEvent(EVENT_ERROR, createErrorMap(error))
+                sendEvent(EVENT_ERROR, createErrorMap(error, epgUrl))
                 promise.reject("INGESTION_ERROR", error, e)
             }
         }
@@ -138,7 +225,8 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) : ReactContextBa
     private suspend fun parseXmlStream(
         inputStream: InputStream,
         playlistId: String,
-        channelIndex: Map<String, ChannelInfo>
+        channelIndex: Map<String, ChannelInfo>,
+        epgUrl: String
     ): List<ProgramData> = withContext(Dispatchers.IO) {
         val programs = mutableListOf<ProgramData>()
         val factory = XmlPullParserFactory.newInstance()
@@ -162,12 +250,12 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) : ReactContextBa
                     currentText.clear()
                     when (parser.name) {
                         "programme" -> {
-                            val epgChannelId = parser.getAttributeValue(null, "channel") ?: ""
+                            val channelAttr = parser.getAttributeValue(null, "channel") ?: ""
                             val startStr = parser.getAttributeValue(null, "start") ?: ""
                             val stopStr = parser.getAttributeValue(null, "stop") ?: ""
                             
                             currentProgram = ProgramBuilder(playlistId, channelIndex, ::normalizeKey).apply {
-                                epgChannelId = epgChannelId
+                                epgChannelId = channelAttr
                                 start = startStr
                                 stop = stopStr
                             }
@@ -201,7 +289,7 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) : ReactContextBa
                                     
                                     // Send progress every 1000 programs
                                     if (programsMatched % 1000 == 0) {
-                                        sendEvent(EVENT_PROGRESS, createProgressMap(programsMatched))
+                                        sendEvent(EVENT_PROGRESS, createProgressMap(programsMatched, epgUrl))
                                     }
                                 }
                             }
@@ -224,41 +312,179 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) : ReactContextBa
             .emit(eventName, params)
     }
     
-    private fun createProgressMap(count: Int): WritableMap {
+    private fun createProgressMap(count: Int, epgUrl: String): WritableMap {
         return Arguments.createMap().apply {
             putInt("programsProcessed", count)
+            putString("epgUrl", epgUrl)
         }
     }
     
-    private fun createSuccessMap(count: Int): WritableMap {
+    private fun createSuccessMap(count: Int, epgUrl: String): WritableMap {
         return Arguments.createMap().apply {
             putInt("programsCount", count)
+            putString("epgUrl", epgUrl)
         }
     }
     
-    private fun createErrorMap(message: String): WritableMap {
+    private fun createErrorMap(message: String, epgUrl: String? = null): WritableMap {
         return Arguments.createMap().apply {
             putString("error", message)
-        }
-    }
-    
-    private fun createProgramsArray(programs: List<ProgramData>): WritableArray {
-        return Arguments.createArray().apply {
-            programs.forEach { program ->
-                val map = Arguments.createMap().apply {
-                    putString("playlistId", program.playlistId)
-                    putString("channelId", program.channelId)
-                    putString("title", program.title)
-                    program.description?.let { putString("description", it) }
-                    putDouble("start", program.start.toDouble())
-                    putDouble("end", program.end.toDouble())
-                    program.epgChannelId?.let { putString("epgChannelId", it) }
-                }
-                pushMap(map)
+            if (epgUrl != null) {
+                putString("epgUrl", epgUrl)
             }
         }
     }
     
+    private suspend fun writeProgramsToRealm(programs: List<ProgramData>, epgUrl: String): Int = withContext(Dispatchers.IO) {
+        if (programs.isEmpty()) {
+            return@withContext 0
+        }
+        
+        val realm = getRealmInstance()
+        var totalInserted = 0
+        
+        try {
+            // Write in batches to avoid blocking
+            programs.chunked(BATCH_SIZE).forEachIndexed { batchIndex, batch ->
+                realm.executeTransaction { transactionRealm ->
+                    batch.forEach { program ->
+                        val primaryKey = buildProgramPrimaryKey(program)
+                        val existing = transactionRealm.where(ProgramRealm::class.java)
+                            .equalTo("id", primaryKey)
+                            .findFirst()
+                        
+                        if (existing == null) {
+                            val programRealm = transactionRealm.createObject(ProgramRealm::class.java, primaryKey)
+                            programRealm.playlistId = program.playlistId
+                            programRealm.channelId = program.channelId
+                            programRealm.title = program.title
+                            programRealm.description = program.description
+                            programRealm.start = Date(program.start)
+                            programRealm.end = Date(program.end)
+                            programRealm.epgChannelId = program.epgChannelId
+                            programRealm.createdAt = Date()
+                            totalInserted++
+                        }
+                    }
+                }
+                
+                // Send progress every 1000 programs
+                val processed = (batchIndex + 1) * BATCH_SIZE
+                if (processed % 1000 == 0 || batchIndex == programs.chunked(BATCH_SIZE).size - 1) {
+                    sendEvent(EVENT_PROGRESS, createProgressMap(processed.coerceAtMost(programs.size), epgUrl))
+                }
+                
+                // Yield to allow other operations
+                delay(0)
+            }
+        } finally {
+            realm.close()
+        }
+        
+        totalInserted
+    }
+    
+    private suspend fun updatePlaylistMetadata(playlistId: String, datasetSignature: String) = withContext(Dispatchers.IO) {
+        val realm = getRealmInstance()
+        try {
+            realm.executeTransaction { transactionRealm ->
+                val metadata = transactionRealm.where(MetadataRealm::class.java)
+                    .equalTo("playlistId", playlistId)
+                    .findFirst()
+                
+                if (metadata != null) {
+                    metadata.lastUpdated = Date()
+                    metadata.sourceSignature = datasetSignature
+                } else {
+                    val newMetadata = transactionRealm.createObject(MetadataRealm::class.java, playlistId)
+                    newMetadata.lastUpdated = Date()
+                    newMetadata.sourceSignature = datasetSignature
+                }
+            }
+        } finally {
+            realm.close()
+        }
+    }
+    
+    @ReactMethod
+    fun schedulePeriodicSync(
+        epgUrl: String,
+        playlistId: String,
+        channelsJson: String,
+        datasetSignature: String?,
+        promise: Promise
+    ) {
+        try {
+            schedulePeriodicSync(epgUrl, playlistId, channelsJson, datasetSignature)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to schedule periodic sync", e)
+            promise.reject("SCHEDULE_ERROR", "Failed to schedule periodic sync: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
+    fun cancelPeriodicSync(playlistId: String, epgUrl: String, promise: Promise) {
+        try {
+            val workName = getWorkName(playlistId, epgUrl)
+            WorkManager.getInstance(reactApplicationContext).cancelUniqueWork(workName)
+            Log.d(TAG, "Cancelled periodic sync for $playlistId - $epgUrl")
+            promise.resolve(true)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to cancel periodic sync", e)
+            promise.reject("CANCEL_ERROR", "Failed to cancel periodic sync: ${e.message}", e)
+        }
+    }
+
+    private fun schedulePeriodicSync(
+        epgUrl: String,
+        playlistId: String,
+        channelsJson: String,
+        datasetSignature: String?
+    ) {
+        val workName = getWorkName(playlistId, epgUrl)
+        val workManager = WorkManager.getInstance(reactApplicationContext)
+
+        // Create input data
+        val inputData = workDataOf(
+            "epgUrl" to epgUrl,
+            "playlistId" to playlistId,
+            "channelsJson" to channelsJson,
+            "datasetSignature" to (datasetSignature ?: "")
+        )
+
+        // Create constraints (network required)
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        // Create periodic work request (every 4 hours, with 15 minute flex window)
+        val periodicWork = PeriodicWorkRequestBuilder<EpgSyncWorker>(
+            SYNC_INTERVAL_HOURS,
+            TimeUnit.HOURS,
+            15,
+            TimeUnit.MINUTES
+        )
+            .setConstraints(constraints)
+            .setInputData(inputData)
+            .addTag("epg_sync")
+            .addTag("playlist_$playlistId")
+            .build()
+
+        // Enqueue unique work (replaces existing work with same name)
+        workManager.enqueueUniquePeriodicWork(
+            workName,
+            ExistingPeriodicWorkPolicy.REPLACE,
+            periodicWork
+        )
+
+        Log.d(TAG, "Scheduled periodic EPG sync for $playlistId - $epgUrl (every $SYNC_INTERVAL_HOURS hours)")
+    }
+
+    private fun getWorkName(playlistId: String, epgUrl: String): String {
+        return WORK_NAME_PREFIX + playlistId + "_" + epgUrl.hashCode()
+    }
+
     override fun onCatalystInstanceDestroy() {
         super.onCatalystInstanceDestroy()
         coroutineScope.cancel()
@@ -286,6 +512,10 @@ class ProgramBuilder(
     private val channelIndex: Map<String, ChannelInfo>,
     private val normalizeKey: (String) -> List<String>
 ) {
+    companion object {
+        private const val TAG = "ProgramBuilder"
+    }
+    
     var epgChannelId: String = ""
     var start: String = ""
     var stop: String = ""

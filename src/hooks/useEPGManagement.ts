@@ -2,15 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { InteractionManager } from 'react-native';
 import { EPGProgram } from '../types';
 import { usePlayerStore } from '../store/usePlayerStore';
-import { ingestXmltvToDatabase } from '../utils/epgParser';
 import {
   queryProgramsForChannels,
-  setPlaylistMetadata,
   ensureEpgDatabase,
   getPlaylistMetadata,
   pruneOldPrograms,
   debugDatabaseContents,
 } from '../database/epgDatabase';
+import {
+  isNativeIngestionAvailable,
+  startNativeEpgIngestion,
+  IngestionEventListener,
+  IngestionProgress,
+} from '../services/nativeEpgIngestion';
 
 type ProgramsByChannel = Record<string, EPGProgram[]>;
 
@@ -144,6 +148,10 @@ export const useEPGManagement = () => {
     [playlist, channelIdSet]
   );
 
+  // Track last fetch time to prevent too frequent requests
+  const lastFetchTimeRef = useRef<number>(0);
+  const MIN_TIME_BETWEEN_FETCHES_MS = 5 * 60 * 1000; // 5 minutes minimum between fetches
+
   useEffect(() => {
     if (!datasetSignature) {
       loadedSignatureRef.current = null;
@@ -153,11 +161,22 @@ export const useEPGManagement = () => {
       return;
     }
 
-    if (channels.length === 0) {
+    // Prevent re-fetching if we already loaded this signature
+    if (loadedSignatureRef.current === datasetSignature) {
       return;
     }
 
-    if (loadedSignatureRef.current === datasetSignature) {
+    // Rate limiting: Don't fetch if we fetched recently (within 5 minutes)
+    const now = Date.now();
+    if (now - lastFetchTimeRef.current < MIN_TIME_BETWEEN_FETCHES_MS) {
+      console.log('[EPG] Rate limiting: Skipping fetch, last fetch was', 
+        Math.round((now - lastFetchTimeRef.current) / 1000), 'seconds ago');
+      // Mark as loaded to prevent re-triggering
+      loadedSignatureRef.current = datasetSignature;
+      return;
+    }
+
+    if (channels.length === 0) {
       return;
     }
 
@@ -190,6 +209,9 @@ export const useEPGManagement = () => {
     setEpgStatus({ loading: true, error: null });
 
     const loadEpg = async () => {
+      // Update last fetch time immediately to prevent concurrent fetches
+      lastFetchTimeRef.current = Date.now();
+      
       const errors: string[] = [];
 
       try {
@@ -219,14 +241,18 @@ export const useEPGManagement = () => {
           setEpgLastUpdated(existingMetadata.lastUpdated);
           setEpgStatus({ loading: false, error: null });
           console.log('[EPG] Using cached programs for playlist', playlistId);
-        // Respect refresh interval: skip re-ingest if data is recent
-        const now = Date.now();
-        if (now - existingMetadata.lastUpdated < DEFAULT_REFRESH_INTERVAL_MS) {
-          console.log('[EPG] Cached data is still fresh, skipping ingestion');
-          return;
-        }
-        console.log('[EPG] Cached data expired, continuing with ingestion');
-          return;
+          // Respect refresh interval: skip re-ingest if data is recent
+          const now = Date.now();
+          const timeSinceLastUpdate = now - existingMetadata.lastUpdated;
+          if (timeSinceLastUpdate < DEFAULT_REFRESH_INTERVAL_MS) {
+            console.log('[EPG] Cached data is still fresh (updated', 
+              Math.round(timeSinceLastUpdate / 1000 / 60), 'minutes ago), skipping ingestion');
+            // Mark as loaded to prevent re-triggering
+            loadedSignatureRef.current = datasetSignature;
+            return;
+          }
+          console.log('[EPG] Cached data expired (updated', 
+            Math.round(timeSinceLastUpdate / 1000 / 60), 'minutes ago), continuing with ingestion');
         }
 
         const cutoff = Date.now() - PRUNE_LOWER_BOUND_HOURS * 60 * 60 * 1000;
@@ -234,28 +260,52 @@ export const useEPGManagement = () => {
         console.log('[EPG] active URLs', activeEpgUrls);
 
         console.log('[EPG] Active EPG URLs:', activeEpgUrls);
-        for (const epgUrl of activeEpgUrls) {
-          console.log('[EPG] fetching', epgUrl);
+        
+        // Check if native ingestion is available
+        if (!isNativeIngestionAvailable()) {
+          console.warn('[EPG] Native ingestion not available - EPG loading skipped');
+          setEpgStatus({ loading: false, error: 'Native EPG ingestion not available on this platform' });
+          return;
+        }
+
+        // Native ingestion runs in Kotlin background thread
+        // Process URLs sequentially with delay to avoid rate limiting
+        for (let i = 0; i < activeEpgUrls.length; i++) {
+          const epgUrl = activeEpgUrls[i];
+          
+          // Add delay between requests to avoid rate limiting (except for first one)
+          if (i > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay between URLs
+          }
+          
+          console.log('[EPG] Starting native ingestion for', epgUrl);
           try {
-            const response = await fetch(epgUrl);
-            console.log(
-              '[EPG] response status',
-              response.status,
-              response.headers.get('content-length')
-            );
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}`);
-            }
+            const onEvent: IngestionEventListener = (type, data) => {
+              const getUrlShort = (url?: string): string => {
+                if (!url || typeof url !== 'string') return 'unknown';
+                const parts = url.split('/');
+                return parts[parts.length - 1] || url;
+              };
 
-            await ingestXmltvToDatabase({
-              response,
-              playlistId,
-              channels,
-            });
+              if (type === 'progress') {
+                const progress = data as IngestionProgress;
+                const urlShort = getUrlShort(progress.epgUrl);
+                console.log(`[EPG] ${urlShort}: ${progress.programsProcessed} programs processed`);
+              } else if (type === 'complete') {
+                const complete = data as { programsCount: number; epgUrl?: string };
+                const urlShort = getUrlShort(complete.epgUrl);
+                console.log(`[EPG] ${urlShort}: Complete - ${complete.programsCount} programs inserted`);
+              } else if (type === 'error') {
+                const error = data as { error: string; epgUrl?: string };
+                const urlShort = getUrlShort(error.epgUrl);
+                console.error(`[EPG] ${urlShort}: Error - ${error.error}`);
+              }
+            };
 
-            console.log('[EPG] ingest complete for', epgUrl);
+            await startNativeEpgIngestion(epgUrl, playlistId, channels, datasetSignature, onEvent);
+            console.log('[EPG] Native ingest complete for', epgUrl);
           } catch (error) {
-            console.warn(`Failed to load EPG from ${epgUrl}:`, error);
+            console.error(`Native ingestion failed for ${epgUrl}:`, error);
             const message = error instanceof Error ? error.message : 'Unknown error';
             errors.push(`${epgUrl} - ${message}`);
           }
@@ -266,7 +316,8 @@ export const useEPGManagement = () => {
         }
 
         const timestamp = Date.now();
-        await setPlaylistMetadata(playlistId, timestamp, datasetSignature);
+        
+        // Metadata is updated by Kotlin module during native ingestion
 
         if (cancelled) {
           return;
@@ -320,7 +371,10 @@ export const useEPGManagement = () => {
       clearTimeout(timeoutId);
       interactionHandle?.cancel();
     };
-  }, [datasetSignature, channels, activeEpgUrls, loadProgramsForChannels]);
+    // Only depend on datasetSignature and activeEpgUrls - not channels array reference
+    // This prevents re-fetching when just switching channels
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datasetSignature, activeEpgUrls]);
 
   const getProgramsForChannel = useCallback(
     (channelId: string): EPGProgram[] => {
@@ -358,3 +412,5 @@ export const useEPGManagement = () => {
     prefetchProgramsForChannels: loadProgramsForChannels,
   };
 };
+
+
