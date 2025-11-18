@@ -30,14 +30,38 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) : ReactContextBa
         private const val BATCH_SIZE = 2000
         private const val SYNC_INTERVAL_HOURS = 4L
         private const val WORK_NAME_PREFIX = "epg_sync_"
+        
+        @Volatile
+        private var realmInitialized = false
+        private val initLock = Any()
     }
 
     override fun getName(): String = "EpgIngestionModule"
     
+    private fun initializeRealmIfNeeded(context: Context) {
+        if (!realmInitialized) {
+            synchronized(initLock) {
+                if (!realmInitialized) {
+                    try {
+                        Realm.init(context)
+                        realmInitialized = true
+                        Log.d(TAG, "Realm initialized successfully")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to initialize Realm", e)
+                        throw e
+                    }
+                }
+            }
+        }
+    }
+    
     private fun getRealmInstance(): Realm {
+        // Initialize Realm with Context if not already done
+        initializeRealmIfNeeded(reactApplicationContext)
+        
         // Realm JS stores database in app's files directory
         // Default Realm path matches what Realm JS uses
-        // Realm Java SDK 10.x auto-discovers RealmObject classes
+        // Realm auto-discovers RealmObject classes, no need to specify schema
         val config = RealmConfiguration.Builder()
             .name("default.realm")
             .schemaVersion(1)

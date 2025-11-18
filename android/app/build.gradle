@@ -125,16 +125,19 @@ android {
         jniLibs {
             def enableLegacyPackaging = findProperty('expo.useLegacyPackaging') ?: 'false'
             useLegacyPackaging enableLegacyPackaging.toBoolean()
-            pickFirsts += [
-                "lib/arm64-v8a/libworklets.so",
-                "lib/armeabi-v7a/libworklets.so",
-                "lib/x86/libworklets.so",
-                "lib/x86_64/libworklets.so"
-            ]
         }
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+    
+    sourceSets {
+        main {
+            java {
+                // Include Kotlin source files from native/android folder
+                srcDirs += ['../../native/android/src/main/java']
+            }
+        }
     }
 }
 
@@ -189,4 +192,9 @@ dependencies {
     // EPG Ingestion native module dependencies
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    // Realm Java SDK - compatible with Realm JS
+    // Note: Realm Java SDK uses different versioning than Realm JS
+    implementation("io.realm:realm-android-library:10.15.1")
+    // WorkManager for periodic EPG fetching
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 }

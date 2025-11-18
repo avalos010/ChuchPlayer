@@ -15,7 +15,7 @@ import { Video, ResizeMode } from 'expo-av';
 import FocusableItem from '../components/FocusableItem';
 import { RootStackParamList } from '../types';
 import EPGOverlay from '../components/player/EPGOverlay';
-import EPGGridView from '../components/player/EPGGridView';
+import EPGGridView from '../components/player/EPGGridViewLight';
 import ChannelListPanel from '../components/player/ChannelListPanel';
 import GroupsPlaylistsPanel from '../components/player/GroupsPlaylistsPanel';
 import ChannelNumberPad from '../components/player/ChannelNumberPad';
@@ -86,6 +86,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     epgError,
     epgLastUpdated,
     prefetchProgramsForChannels,
+    forceRefreshEpg,
   } = useEPGManagement();
   const { pipAnim, pipScale, enterPIP, exitPIP } = usePIPMode();
   const { showChannelInfoCard, setShowChannelInfoCard } = useChannelInfo({ showOnInitialLoad: true });
@@ -607,10 +608,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           navigation={navigation}
           epgLoading={epgLoading}
           epgError={epgError}
-          handleManualEpgRefresh={() => {
-            useUIStore.getState().setShowEPGGrid(false);
-            useUIStore.getState().setShowEPGGrid(true);
-          }}
+          handleManualEpgRefresh={forceRefreshEpg}
         />
       )}
 

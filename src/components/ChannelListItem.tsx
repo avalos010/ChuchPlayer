@@ -1,5 +1,6 @@
 import React, { useState, forwardRef } from 'react';
-import { View, Text, Image } from 'react-native';
+import { View, Text } from 'react-native';
+import { Image } from 'expo-image';
 import FocusableItem from './FocusableItem';
 import { Channel } from '../types';
 
@@ -64,7 +65,9 @@ const ChannelListItem = forwardRef<any, ChannelListItemProps>(({
               borderWidth: 1,
               borderColor: 'rgba(148, 163, 184, 0.6)',
             }}
-            resizeMode="contain"
+            contentFit="contain"
+            cachePolicy="memory-disk"
+            transition={200}
             onError={() => setImageError(true)}
           />
         ) : (

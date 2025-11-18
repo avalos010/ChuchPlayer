@@ -29,6 +29,27 @@ class EpgSyncWorker(
         private const val SYNC_INTERVAL_MS = SYNC_INTERVAL_HOURS * 60 * 60 * 1000
         private const val MIN_DELAY_BETWEEN_REQUESTS_MS = 2000L // 2 seconds between requests
         private const val BATCH_SIZE = 2000
+        
+        @Volatile
+        private var realmInitialized = false
+        private val initLock = Any()
+    }
+    
+    private fun initializeRealmIfNeeded(context: Context) {
+        if (!realmInitialized) {
+            synchronized(initLock) {
+                if (!realmInitialized) {
+                    try {
+                        Realm.init(context)
+                        realmInitialized = true
+                        Log.d(TAG, "Realm initialized successfully")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to initialize Realm", e)
+                        throw e
+                    }
+                }
+            }
+        }
     }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
@@ -148,6 +169,10 @@ class EpgSyncWorker(
     }
 
     private fun getRealmInstance(): Realm {
+        // Initialize Realm with Context if not already done
+        initializeRealmIfNeeded(applicationContext)
+        
+        // Realm auto-discovers RealmObject classes, no need to specify schema
         val config = RealmConfiguration.Builder()
             .name("default.realm")
             .schemaVersion(1)

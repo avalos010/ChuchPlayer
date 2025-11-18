@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { Image } from 'expo-image';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
 import { ResizeMode } from 'expo-av';
@@ -97,7 +98,9 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
             <Image
               source={{ uri: channel.logo }}
               className="w-[140px] h-[140px] rounded-2xl bg-subtle border border-border"
-              resizeMode="contain"
+              contentFit="contain"
+              cachePolicy="memory-disk"
+              transition={200}
               onError={() => setImageError(true)}
             />
           ) : (

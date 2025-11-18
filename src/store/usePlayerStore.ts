@@ -189,15 +189,16 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const translateX = width / 2 - scaledWidth / 2 - margin;
     const translateY = -height / 2 + scaledHeight / 2 + margin;
     
+    // Use native driver for better performance
     Animated.parallel([
       Animated.timing(pipAnim, {
         toValue: { x: translateX, y: translateY },
-        duration: 300,
+        duration: 250, // Slightly faster for better responsiveness
         useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.timing(pipScale, {
         toValue: scale,
-        duration: 300,
+        duration: 250,
         useNativeDriver: Platform.OS !== 'web',
       }),
     ]).start();
@@ -206,12 +207,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     Animated.parallel([
       Animated.timing(pipAnim, {
         toValue: { x: 0, y: 0 },
-        duration: 300,
+        duration: 250,
         useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.timing(pipScale, {
         toValue: 1,
-        duration: 300,
+        duration: 250,
         useNativeDriver: Platform.OS !== 'web',
       }),
     ]).start();

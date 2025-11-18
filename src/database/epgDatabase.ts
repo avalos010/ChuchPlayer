@@ -193,25 +193,55 @@ export const insertProgramsExclusive = async (
 
 export const queryProgramsForChannels = async (
   playlistId: string,
-  channelIds: string[]
+  channelIds: string[],
+  options?: {
+    startTime?: Date;
+    endTime?: Date;
+    maxProgramsPerChannel?: number;
+  }
 ): Promise<Record<string, EPGProgram[]>> => {
   if (channelIds.length === 0) {
     return {};
   }
 
   const realm = await getRealmInstance();
-      const grouped: Record<string, EPGProgram[]> = {};
+  const grouped: Record<string, EPGProgram[]> = {};
+  
+  // Default to 48 hours window if not specified (24 hours before and after now)
+  const now = new Date();
+  const defaultStartTime = options?.startTime || new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const defaultEndTime = options?.endTime || new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const maxPrograms = options?.maxProgramsPerChannel || 100; // Limit to 100 programs per channel
 
   channelIds.forEach((channelId) => {
-    const results = realm
-      .objects<ProgramObject>('Program')
-      .filtered('playlistId == $0 && channelId == $1', playlistId, channelId)
-      .sorted('start');
+    try {
+      // Query programs that overlap with the time window
+      // A program overlaps if: (start < endTime) && (end > startTime)
+      let query = realm
+        .objects<ProgramObject>('Program')
+        .filtered(
+          'playlistId == $0 && channelId == $1 && start < $2 && end > $3',
+          playlistId,
+          channelId,
+          defaultEndTime,
+          defaultStartTime
+        )
+        .sorted('start');
 
-    grouped[channelId] = results.map(mapProgramObject);
-      });
+      // Limit results if specified
+      if (maxPrograms > 0) {
+        const results = Array.from(query.slice(0, maxPrograms));
+        grouped[channelId] = results.map(mapProgramObject);
+      } else {
+        grouped[channelId] = query.map(mapProgramObject);
+      }
+    } catch (error) {
+      console.warn(`[EPG DB] Error querying programs for channel ${channelId}:`, error);
+      grouped[channelId] = [];
+    }
+  });
 
-      return grouped;
+  return grouped;
 };
 
 export const pruneOldPrograms = async (

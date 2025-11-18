@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Platform, Text, View } from 'react-native';
 import { Channel, EPGProgram } from '../../types';
-import { Image } from 'react-native';
+import { Image } from 'expo-image';
 
 interface ChannelInfoCardProps {
   channel: Channel | null;
@@ -135,7 +135,9 @@ const ChannelInfoCard: React.FC<ChannelInfoCardProps> = ({
                   borderRadius: 12,
                   backgroundColor: '#0f172a',
                 }}
-                resizeMode="contain"
+                contentFit="contain"
+                cachePolicy="memory-disk"
+                transition={200}
                 onError={() => setImageError(true)}
               />
             </View>

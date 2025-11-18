@@ -201,9 +201,16 @@ export const useChannelNavigation = ({
       currentChannelId: currentChannel?.id 
     });
 
-    // Only handle when no blocking overlays are showing
-    if (showEPGGrid || showEPG || showGroupsPlaylists) {
+    // Allow navigation when EPG grid is open (it handles its own navigation)
+    // Only block for other overlays
+    if (showEPG || showGroupsPlaylists) {
       console.log('🔵 Blocked by overlay');
+      return;
+    }
+    
+    // If EPG grid is open, let it handle navigation - don't block
+    if (showEPGGrid) {
+      // EPG grid will handle its own channel navigation
       return;
     }
 
@@ -240,9 +247,16 @@ export const useChannelNavigation = ({
       currentChannelId: currentChannel?.id 
     });
 
-    // Only handle when no blocking overlays are showing
-    if (showEPGGrid || showEPG || showGroupsPlaylists) {
+    // Allow navigation when EPG grid is open (it handles its own navigation)
+    // Only block for other overlays
+    if (showEPG || showGroupsPlaylists) {
       console.log('🔴 Blocked by overlay');
+      return;
+    }
+    
+    // If EPG grid is open, let it handle navigation - don't block
+    if (showEPGGrid) {
+      // EPG grid will handle its own channel navigation
       return;
     }
 

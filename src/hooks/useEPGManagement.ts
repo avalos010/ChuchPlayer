@@ -111,15 +111,35 @@ export const useEPGManagement = () => {
       fetchIds.forEach((id) => pendingChannelLoadsRef.current.add(id));
 
       try {
-        console.log(`[EPG] Loading programs for channels: ${fetchIds.join(', ')}`);
-        const result = await queryProgramsForChannels(playlist.id, fetchIds);
+        const channelNames = fetchIds.map(id => {
+          const ch = Array.from(channelIdSet).find(cid => {
+            // Find channel by matching the ID
+            const channel = channels.find(channel => channel.id === cid);
+            return channel?.id === id;
+          });
+          const channel = channels.find(channel => channel.id === id);
+          return channel ? `${channel.name} (tvgId: ${channel.tvgId || 'none'})` : id;
+        });
+        console.log(`[EPG] Loading programs for channels: ${channelNames.join(', ')}`);
+        
+        // Limit to 24 hours window (12 hours before and after now) and max 50 programs per channel
+        const now = new Date();
+        const startTime = new Date(now.getTime() - 12 * 60 * 60 * 1000); // 12 hours ago
+        const endTime = new Date(now.getTime() + 12 * 60 * 60 * 1000); // 12 hours ahead
+        
+        const result = await queryProgramsForChannels(playlist.id, fetchIds, {
+          startTime,
+          endTime,
+          maxProgramsPerChannel: 50, // Limit to 50 programs per channel for faster loading
+        });
         console.log('[EPG] Loaded programs for channels:', Object.keys(result));
         let foundAny = false;
 
         // Debug: log what we found
         fetchIds.forEach((id) => {
           const programs = result[id] ?? [];
-          console.log(`[EPG] Found ${programs.length} programs for channel ${id}`);
+          const channel = channels.find(c => c.id === id);
+          console.log(`[EPG] Found ${programs.length} programs for channel ${channel?.name || id} (id: ${id}, tvgId: ${channel?.tvgId || 'none'})`);
           if (programs.length > 0 && !foundAny) {
             foundAny = true;
           }
@@ -145,12 +165,27 @@ export const useEPGManagement = () => {
         fetchIds.forEach((id) => pendingChannelLoadsRef.current.delete(id));
       }
     },
-    [playlist, channelIdSet]
+    [playlist, channelIdSet, channels]
   );
 
   // Track last fetch time to prevent too frequent requests
   const lastFetchTimeRef = useRef<number>(0);
+  const forceRefreshRef = useRef<boolean>(false);
   const MIN_TIME_BETWEEN_FETCHES_MS = 5 * 60 * 1000; // 5 minutes minimum between fetches
+
+  // Expose force refresh function
+  const forceRefreshEpg = useCallback(() => {
+    console.log('[EPG] Force refresh requested');
+    forceRefreshRef.current = true;
+    loadedSignatureRef.current = null;
+    lastFetchTimeRef.current = 0;
+    setProgramsByChannel({});
+    loadedChannelsRef.current.clear();
+    pendingChannelLoadsRef.current.clear();
+    // Force a re-render by updating state - this will trigger the useEffect
+    setEpgLastUpdated(Date.now());
+    setEpgStatus({ loading: true, error: null });
+  }, []);
 
   useEffect(() => {
     if (!datasetSignature) {
@@ -161,19 +196,30 @@ export const useEPGManagement = () => {
       return;
     }
 
-    // Prevent re-fetching if we already loaded this signature
-    if (loadedSignatureRef.current === datasetSignature) {
-      return;
-    }
+    // If force refresh is requested, bypass all checks
+    const isForceRefresh = forceRefreshRef.current;
+    if (isForceRefresh) {
+      console.log('[EPG] Force refresh active - bypassing all checks');
+      forceRefreshRef.current = false; // Reset flag after reading
+      // Clear the loaded signature to force reload
+      loadedSignatureRef.current = null;
+      lastFetchTimeRef.current = 0;
+    } else {
+      // Prevent re-fetching if we already loaded this signature
+      if (loadedSignatureRef.current === datasetSignature) {
+        console.log('[EPG] Already loaded this signature, skipping');
+        return;
+      }
 
-    // Rate limiting: Don't fetch if we fetched recently (within 5 minutes)
-    const now = Date.now();
-    if (now - lastFetchTimeRef.current < MIN_TIME_BETWEEN_FETCHES_MS) {
-      console.log('[EPG] Rate limiting: Skipping fetch, last fetch was', 
-        Math.round((now - lastFetchTimeRef.current) / 1000), 'seconds ago');
-      // Mark as loaded to prevent re-triggering
-      loadedSignatureRef.current = datasetSignature;
-      return;
+      // Rate limiting: Don't fetch if we fetched recently (within 5 minutes)
+      const now = Date.now();
+      if (now - lastFetchTimeRef.current < MIN_TIME_BETWEEN_FETCHES_MS) {
+        console.log('[EPG] Rate limiting: Skipping fetch, last fetch was', 
+          Math.round((now - lastFetchTimeRef.current) / 1000), 'seconds ago');
+        // Mark as loaded to prevent re-triggering
+        loadedSignatureRef.current = datasetSignature;
+        return;
+      }
     }
 
     if (channels.length === 0) {
@@ -181,7 +227,7 @@ export const useEPGManagement = () => {
     }
 
     if (activeEpgUrls.length === 0) {
-      console.log('[EPG] No active EPG URLs found. Playlist info:', {
+      console.warn('[EPG] No active EPG URLs found. Playlist info:', {
         id: playlist?.id,
         name: playlist?.name,
         sourceType: playlist?.sourceType,
@@ -192,10 +238,12 @@ export const useEPGManagement = () => {
       });
       loadedSignatureRef.current = datasetSignature;
       setProgramsByChannel({});
-      setEpgStatus({ loading: false, error: null });
+      setEpgStatus({ loading: false, error: 'No EPG source configured for this playlist' });
       setEpgLastUpdated(Date.now());
       return;
     }
+    
+    console.log('[EPG] Using EPG source URLs:', activeEpgUrls);
 
     if (!playlist) {
       return;
@@ -207,6 +255,14 @@ export const useEPGManagement = () => {
     pendingChannelLoadsRef.current.clear();
     setProgramsByChannel({});
     setEpgStatus({ loading: true, error: null });
+
+    // Add timeout to prevent infinite loading (30 seconds max)
+    const loadingTimeout = setTimeout(() => {
+      if (!cancelled) {
+        console.warn('[EPG] Loading timeout - clearing loading state');
+        setEpgStatus({ loading: false, error: 'EPG loading timed out. Please try refreshing.' });
+      }
+    }, 30000);
 
     const loadEpg = async () => {
       // Update last fetch time immediately to prevent concurrent fetches
@@ -260,6 +316,12 @@ export const useEPGManagement = () => {
         console.log('[EPG] active URLs', activeEpgUrls);
 
         console.log('[EPG] Active EPG URLs:', activeEpgUrls);
+        console.log('[EPG] Channels to match:', channels.length, 'channels');
+        console.log('[EPG] Sample channels:', channels.slice(0, 3).map(ch => ({
+          id: ch.id,
+          name: ch.name,
+          tvgId: ch.tvgId || 'none'
+        })));
         
         // Check if native ingestion is available
         if (!isNativeIngestionAvailable()) {
@@ -356,6 +418,9 @@ export const useEPGManagement = () => {
 
         const message = error instanceof Error ? error.message : 'Unknown error';
         setEpgStatus({ loading: false, error: message });
+      } finally {
+        // Always clear timeout
+        clearTimeout(loadingTimeout);
       }
     };
 
@@ -369,12 +434,14 @@ export const useEPGManagement = () => {
     return () => {
       cancelled = true;
       clearTimeout(timeoutId);
+      clearTimeout(loadingTimeout);
       interactionHandle?.cancel();
     };
-    // Only depend on datasetSignature and activeEpgUrls - not channels array reference
+    // Only depend on datasetSignature, activeEpgUrls, and epgLastUpdated - not channels array reference
     // This prevents re-fetching when just switching channels
+    // epgLastUpdated is included to trigger refresh when forceRefreshEpg is called
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datasetSignature, activeEpgUrls]);
+  }, [datasetSignature, activeEpgUrls, epgLastUpdated]);
 
   const getProgramsForChannel = useCallback(
     (channelId: string): EPGProgram[] => {
@@ -385,9 +452,17 @@ export const useEPGManagement = () => {
       ) {
         loadProgramsForChannels([channelId]);
       }
-      return programsByChannel[channelId] ?? [];
+      const programs = programsByChannel[channelId] ?? [];
+      
+      // Debug logging when programs are requested but not found
+      if (programs.length === 0 && loadedChannelsRef.current.has(channelId)) {
+        const channel = channels.find(ch => ch.id === channelId);
+        console.log(`[EPG] No programs found for channel ${channel?.name || channelId} (id: ${channelId}, tvgId: ${channel?.tvgId || 'none'})`);
+      }
+      
+      return programs;
     },
-    [programsByChannel, loadProgramsForChannels]
+    [programsByChannel, loadProgramsForChannels, channels]
   );
 
   const getCurrentProgram = useCallback(
@@ -410,6 +485,7 @@ export const useEPGManagement = () => {
     epgError: epgStatus.error,
     epgLastUpdated,
     prefetchProgramsForChannels: loadProgramsForChannels,
+    forceRefreshEpg,
   };
 };
 
