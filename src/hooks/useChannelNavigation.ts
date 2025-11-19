@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { Video } from 'expo-av';
+import Video from 'react-native-video';
 import { Channel, EPGProgram } from '../types';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
@@ -10,6 +10,7 @@ import { showError } from '../utils/toast';
 interface UseChannelNavigationProps {
   videoRef: React.RefObject<Video | null>;
   getCurrentProgram: (channelId: string) => EPGProgram | null;
+  prefetchProgramsForChannels?: (channelIds: string[]) => void;
   setHasUserInteracted: (value: boolean) => void;
   hasUserInteracted: boolean;
   centerZoneRef?: React.RefObject<any>;
@@ -19,6 +20,7 @@ interface UseChannelNavigationProps {
 export const useChannelNavigation = ({
   videoRef,
   getCurrentProgram,
+  prefetchProgramsForChannels,
   setHasUserInteracted,
   hasUserInteracted,
   centerZoneRef,
@@ -157,8 +159,18 @@ export const useChannelNavigation = ({
 
       console.log('Switching to channel', newChannel.name);
       setChannel(newChannel);
-      const program = getCurrentProgram(newChannel.id);
-      setCurrentProgram(program);
+      
+      // Prefetch EPG data for the new channel
+      if (prefetchProgramsForChannels) {
+        prefetchProgramsForChannels([newChannel.id]);
+      }
+      
+      // Get current program after a short delay to allow EPG data to load
+      setTimeout(() => {
+        const program = getCurrentProgram(newChannel.id);
+        setCurrentProgram(program);
+      }, 100);
+      
       setShowChannelInfoCard?.(true);
 
       // Reset flag immediately after channel is set to allow rapid switching
@@ -184,7 +196,7 @@ export const useChannelNavigation = ({
       }
       setError('Failed to switch channel. Please try again.');
     }
-  }, [videoRef, getCurrentProgram, setChannel, setCurrentProgram, setLoading, setError, setIsPlaying, centerZoneRef, setShowChannelInfoCard]);
+  }, [videoRef, getCurrentProgram, prefetchProgramsForChannels, setChannel, setCurrentProgram, setLoading, setError, setIsPlaying, centerZoneRef, setShowChannelInfoCard]);
 
   const handleUpDpad = useCallback(async (exitPIP?: () => void) => {
     // Get latest state from store to avoid stale closures
@@ -193,41 +205,29 @@ export const useChannelNavigation = ({
     const currentChannels = currentState.channels;
     const currentNavigateToChannel = currentState.navigateToChannel;
     
-    console.log('🔵 handleUpDpad called', { 
-      showEPGGrid, 
-      showEPG, 
-      showGroupsPlaylists, 
-      isSwitching: isSwitchingChannelRef.current,
-      currentChannelId: currentChannel?.id 
-    });
 
     // Allow navigation when EPG grid is open (it handles its own navigation)
     // Only block for other overlays
     if (showEPG || showGroupsPlaylists) {
-      console.log('🔵 Blocked by overlay');
       return;
     }
     
     // If EPG grid is open, let it handle navigation - don't block
     if (showEPGGrid) {
-      // EPG grid will handle its own channel navigation
+      // EPG grid will handle its own channel navigation via FocusableItem
       return;
     }
 
     // Prevent rapid channel switching
     if (isSwitchingChannelRef.current) {
-      console.log('🔵 Channel switch already in progress, ignoring');
       return;
     }
 
-    console.log('🔵 D-pad Up: Navigating to previous channel');
     if (currentChannel && currentChannels.length > 0) {
       const newChannel = currentNavigateToChannel('prev', currentChannels, currentChannel.id);
-      console.log('🔵 New channel:', newChannel?.name, 'Current:', currentChannel?.name);
       if (newChannel && newChannel.id !== currentChannel.id) {
         await switchChannel(newChannel, exitPIP);
       } else {
-        console.log('🔵 Same channel or no channel found');
       }
     }
   }, [showEPGGrid, showEPG, showGroupsPlaylists, switchChannel]);
@@ -239,41 +239,29 @@ export const useChannelNavigation = ({
     const currentChannels = currentState.channels;
     const currentNavigateToChannel = currentState.navigateToChannel;
     
-    console.log('🔴 handleDownDpad called', { 
-      showEPGGrid, 
-      showEPG, 
-      showGroupsPlaylists, 
-      isSwitching: isSwitchingChannelRef.current,
-      currentChannelId: currentChannel?.id 
-    });
 
     // Allow navigation when EPG grid is open (it handles its own navigation)
     // Only block for other overlays
     if (showEPG || showGroupsPlaylists) {
-      console.log('🔴 Blocked by overlay');
       return;
     }
     
     // If EPG grid is open, let it handle navigation - don't block
     if (showEPGGrid) {
-      // EPG grid will handle its own channel navigation
+      // EPG grid will handle its own channel navigation via FocusableItem
       return;
     }
 
     // Prevent rapid channel switching
     if (isSwitchingChannelRef.current) {
-      console.log('🔴 Channel switch already in progress, ignoring');
       return;
     }
 
-    console.log('🔴 D-pad Down: Navigating to next channel');
     if (currentChannel && currentChannels.length > 0) {
       const newChannel = currentNavigateToChannel('next', currentChannels, currentChannel.id);
-      console.log('🔴 New channel:', newChannel?.name, 'Current:', currentChannel?.name);
       if (newChannel && newChannel.id !== currentChannel.id) {
         await switchChannel(newChannel, exitPIP);
       } else {
-        console.log('🔴 Same channel or no channel found');
       }
     }
   }, [showEPGGrid, showEPG, showGroupsPlaylists, switchChannel]);

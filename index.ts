@@ -1,5 +1,10 @@
 import { registerRootComponent } from 'expo';
 
+// Enable why-did-you-render in development
+if (__DEV__) {
+  require('./src/utils/whyDidYouRender');
+}
+
 import App from './App';
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

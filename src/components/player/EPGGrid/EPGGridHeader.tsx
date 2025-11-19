@@ -7,6 +7,7 @@ interface EPGGridHeaderProps {
   onRefresh?: () => void;
   onSettings: () => void;
   onClose: () => void;
+  categoryDropdown?: React.ReactNode;
 }
 
 export const EPGGridHeader: React.FC<EPGGridHeaderProps> = ({
@@ -14,12 +15,18 @@ export const EPGGridHeader: React.FC<EPGGridHeaderProps> = ({
   onRefresh,
   onSettings,
   onClose,
+  categoryDropdown,
 }) => {
   return (
     <View style={styles.header}>
       <View style={styles.headerContent}>
-        <Text style={styles.title}>Electronic Program Guide</Text>
-        {playlistName && <Text style={styles.subtitle}>{playlistName}</Text>}
+        <View style={styles.titleRow}>
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>Electronic Program Guide</Text>
+            {playlistName && <Text style={styles.subtitle}>{playlistName}</Text>}
+          </View>
+          {categoryDropdown}
+        </View>
       </View>
       <View style={styles.headerActions}>
         {onRefresh && (
@@ -70,23 +77,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
-    backgroundColor: '#0f172a',
+    borderBottomColor: '#334155',
+    backgroundColor: '#1e293b',
   },
   headerContent: {
     flex: 1,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+  },
+  titleContainer: {
+    flex: 1,
+  },
   title: {
     color: '#ffffff',
-    fontSize: 28,
+    fontSize: 20,
     fontWeight: '800',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   subtitle: {
     color: '#cbd5e1',
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: '600',
   },
   headerActions: {

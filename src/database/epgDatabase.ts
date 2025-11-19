@@ -40,12 +40,12 @@ const ProgramSchema: Realm.ObjectSchema = {
   primaryKey: 'id',
   properties: {
     id: 'string',
-    playlistId: 'string',
-    channelId: 'string',
+    playlistId: { type: 'string', indexed: true },
+    channelId: { type: 'string', indexed: true },
     title: 'string',
     description: 'string?',
-    start: 'date',
-    end: 'date',
+    start: { type: 'date', indexed: true },
+    end: { type: 'date', indexed: true },
     epgChannelId: 'string?',
     createdAt: 'date',
   },
@@ -64,11 +64,49 @@ const MetadataSchema: Realm.ObjectSchema = {
 let realmPromise: Promise<Realm> | null = null;
 let operationChain: Promise<void> = Promise.resolve();
 
+// Query result cache with TTL
+interface CacheEntry {
+  data: Record<string, EPGProgram[]>;
+  timestamp: number;
+}
+
+const queryCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60000; // 1 minute cache TTL
+
+// Build cache key from query parameters
+const buildCacheKey = (
+  playlistId: string,
+  channelIds: string[],
+  startTime: Date,
+  endTime: Date,
+  maxPrograms: number
+): string => {
+  const sortedChannelIds = [...channelIds].sort().join(',');
+  return `${playlistId}:${sortedChannelIds}:${startTime.getTime()}:${endTime.getTime()}:${maxPrograms}`;
+};
+
+// Clear cache for a playlist (called when EPG data is refreshed)
+export const clearQueryCache = (playlistId?: string): void => {
+  if (playlistId) {
+    // Clear only entries for this playlist
+    const keysToDelete: string[] = [];
+    queryCache.forEach((_, key) => {
+      if (key.startsWith(`${playlistId}:`)) {
+        keysToDelete.push(key);
+      }
+    });
+    keysToDelete.forEach((key) => queryCache.delete(key));
+  } else {
+    // Clear all cache
+    queryCache.clear();
+  }
+};
+
 const getRealmInstance = async (): Promise<Realm> => {
   if (!realmPromise) {
     realmPromise = Realm.open({
       schema: [ProgramSchema, MetadataSchema],
-      schemaVersion: 1,
+      schemaVersion: 2, // Increment version due to schema change (added indexes)
     });
   }
   return realmPromise;
@@ -103,8 +141,11 @@ const buildProgramPrimaryKey = (program: InsertableProgram): string =>
 
 export const ensureEpgDatabase = async (): Promise<Realm> => getRealmInstance();
 
-export const clearProgramsForPlaylist = async (playlistId: string): Promise<void> =>
-  enqueueRealmOperation(async (realm) => {
+export const clearProgramsForPlaylist = async (playlistId: string): Promise<void> => {
+  // Clear cache for this playlist
+  clearQueryCache(playlistId);
+  
+  return enqueueRealmOperation(async (realm) => {
     realm.write(() => {
       const programs = realm
         .objects<ProgramObject>('Program')
@@ -117,6 +158,7 @@ export const clearProgramsForPlaylist = async (playlistId: string): Promise<void
       }
     });
   });
+};
 
 export const setPlaylistMetadata = async (
   playlistId: string,
@@ -162,8 +204,8 @@ export const insertProgramsExclusive = async (
     return 0;
   }
 
-  return enqueueRealmOperation(async (realm) => {
-      let inserted = 0;
+  const inserted = await enqueueRealmOperation(async (realm) => {
+    let count = 0;
 
     realm.write(() => {
       for (const program of programs) {
@@ -182,13 +224,20 @@ export const insertProgramsExclusive = async (
             epgChannelId: program.epgChannelId ?? null,
             createdAt: new Date(),
           });
-              inserted += 1;
-          }
+          count += 1;
         }
-      });
+      }
+    });
+
+    return count;
+  });
+
+  // Clear cache when new programs are inserted
+  if (inserted > 0) {
+    clearQueryCache(playlistId);
+  }
 
       return inserted;
-  });
 };
 
 export const queryProgramsForChannels = async (
@@ -204,51 +253,103 @@ export const queryProgramsForChannels = async (
     return {};
   }
 
-  const realm = await getRealmInstance();
-  const grouped: Record<string, EPGProgram[]> = {};
-  
-  // Default to 48 hours window if not specified (24 hours before and after now)
+  // Default to 12 hours window if not specified (6 hours before and 6 hours after now)
   const now = new Date();
-  const defaultStartTime = options?.startTime || new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const defaultEndTime = options?.endTime || new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const maxPrograms = options?.maxProgramsPerChannel || 100; // Limit to 100 programs per channel
+  const defaultStartTime = options?.startTime || new Date(now.getTime() - 6 * 60 * 60 * 1000);
+  const defaultEndTime = options?.endTime || new Date(now.getTime() + 6 * 60 * 60 * 1000);
+  const maxPrograms = options?.maxProgramsPerChannel || 50; // Limit to 50 programs per channel
 
-  channelIds.forEach((channelId) => {
-    try {
-      // Query programs that overlap with the time window
-      // A program overlaps if: (start < endTime) && (end > startTime)
-      let query = realm
-        .objects<ProgramObject>('Program')
-        .filtered(
-          'playlistId == $0 && channelId == $1 && start < $2 && end > $3',
-          playlistId,
-          channelId,
-          defaultEndTime,
-          defaultStartTime
-        )
-        .sorted('start');
-
-      // Limit results if specified
-      if (maxPrograms > 0) {
-        const results = Array.from(query.slice(0, maxPrograms));
-        grouped[channelId] = results.map(mapProgramObject);
-      } else {
-        grouped[channelId] = query.map(mapProgramObject);
+  // Check cache first
+  const cacheKey = buildCacheKey(playlistId, channelIds, defaultStartTime, defaultEndTime, maxPrograms);
+  const cached = queryCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    // Return cached result, but ensure all requested channels are present
+    const result: Record<string, EPGProgram[]> = { ...cached.data };
+    channelIds.forEach((channelId) => {
+      if (!result[channelId]) {
+        result[channelId] = [];
       }
-    } catch (error) {
-      console.warn(`[EPG DB] Error querying programs for channel ${channelId}:`, error);
-      grouped[channelId] = [];
-    }
+    });
+    return result;
+  }
+
+  const realm = await getRealmInstance();
+
+  // Initialize grouped result with empty arrays for all requested channels
+      const grouped: Record<string, EPGProgram[]> = {};
+  channelIds.forEach((channelId) => {
+    grouped[channelId] = [];
   });
 
-  return grouped;
+  try {
+    // Single batched query for all channels at once
+    // Build OR conditions for channelId: (channelId == id1) || (channelId == id2) || ...
+    // This is more efficient than N separate queries
+    const channelIdConditions = channelIds.map((id, index) => `channelId == $${index + 1}`).join(' || ');
+    const filterString = `playlistId == $0 && (${channelIdConditions}) && start < $${channelIds.length + 1} && end > $${channelIds.length + 2}`;
+    
+    // Build parameters array: [playlistId, channelId1, channelId2, ..., endTime, startTime]
+    const params: any[] = [playlistId, ...channelIds, defaultEndTime, defaultStartTime];
+    
+    // Query programs that overlap with the time window for any of the requested channels
+    // A program overlaps if: (start < endTime) && (end > startTime)
+    // Keep Realm Results lazy - don't convert to array yet
+    const query = realm
+      .objects<ProgramObject>('Program')
+      .filtered(filterString, ...params)
+      .sorted('start');
+
+    // Lazy conversion optimization:
+    // - Realm Results are lazy until we iterate
+    // - We convert to array only once (not per-channel)
+    // - Grouping happens in a single pass
+    // - Only convert programs that match our channelIds (already filtered)
+    const allPrograms = Array.from(query);
+
+    // Group programs by channelId in a single pass
+    // This is more efficient than multiple queries
+    allPrograms.forEach((program) => {
+      const channelId = program.channelId;
+      if (grouped[channelId]) {
+        // Convert Realm object to plain JS object only when needed
+        grouped[channelId].push(mapProgramObject(program));
+      }
+    });
+
+    // Apply maxPrograms limit per channel if specified
+    if (maxPrograms > 0) {
+      Object.keys(grouped).forEach((channelId) => {
+        if (grouped[channelId].length > maxPrograms) {
+          grouped[channelId] = grouped[channelId].slice(0, maxPrograms);
+        }
+      });
+    }
+
+    // Cache the result
+    queryCache.set(cacheKey, {
+      data: grouped,
+      timestamp: Date.now(),
+    });
+  } catch (error) {
+    console.warn('[EPG DB] Error querying programs for channels:', error);
+    // On error, ensure all channels have empty arrays
+    channelIds.forEach((channelId) => {
+      grouped[channelId] = [];
+    });
+  }
+
+      return grouped;
 };
 
 export const pruneOldPrograms = async (
   playlistId: string,
   cutoffTimestamp: number
-): Promise<void> =>
-  enqueueRealmOperation(async (realm) => {
+): Promise<void> => {
+  // Clear cache when programs are pruned
+  clearQueryCache(playlistId);
+  
+  return enqueueRealmOperation(async (realm) => {
     realm.write(() => {
       const programs = realm
         .objects<ProgramObject>('Program')
@@ -256,6 +357,7 @@ export const pruneOldPrograms = async (
       realm.delete(programs);
     });
   });
+};
 
 export const debugDatabaseContents = async (playlistId?: string): Promise<void> => {
   try {

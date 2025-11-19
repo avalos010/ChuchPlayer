@@ -2,14 +2,16 @@ import React, { useCallback, useState, useMemo, useRef, useEffect } from 'react'
 import { View, ScrollView, Platform, StyleSheet, ViewStyle, Dimensions } from 'react-native';
 import { FlashList, ListRenderItemInfo } from '@shopify/flash-list';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import KeyEvent from 'react-native-keyevent';
 import { Channel, EPGProgram } from '../../types';
 import { RootStackParamList } from '../../types';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { groupChannelsByCategory } from '../../utils/m3uParser';
+import { instrumentFunction } from '../../hooks/usePerformanceMonitor';
 import {
   EPGGridHeader,
-  EPGGridGroupFilter,
+  EPGGridCategoryDropdown,
   EPGGridTimeHeader,
   EPGChannelRow,
   EPGGridLoadingOverlay,
@@ -26,6 +28,8 @@ interface EPGGridViewProps {
   epgLoading?: boolean;
   epgError?: string | null;
   handleManualEpgRefresh?: () => void;
+  onLeftKeyPress?: (horizontalScrollX: number) => boolean; // Returns true if handled
+  epgLastUpdated?: number; // Track when EPG data was last updated to force recomputation
 }
 
 const CHANNEL_WIDTH = 200;
@@ -44,6 +48,8 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   epgLoading = false,
   epgError = null,
   handleManualEpgRefresh,
+  onLeftKeyPress,
+  epgLastUpdated,
 }) => {
   const showEPGGrid = useUIStore((state) => state.showEPGGrid);
   const setShowEPGGrid = useUIStore((state) => state.setShowEPGGrid);
@@ -51,11 +57,34 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   const channel = usePlayerStore((state) => state.channel);
   const playlist = usePlayerStore((state) => state.playlist);
 
-  const [selectedGroup, setSelectedGroup] = useState<string>('All');
+  // Debug: Log when component renders
+  useEffect(() => {
+    if (__DEV__ && showEPGGrid) {
+      console.log(`[EPG Grid] Component rendered, channels: ${channels.length}, getProgramsForChannel: ${!!getProgramsForChannel}, epgLastUpdated: ${epgLastUpdated}`);
+    }
+  }, [showEPGGrid, channels.length, getProgramsForChannel, epgLastUpdated]);
+
+  // Initialize selected group to current channel's category when EPG opens
+  const [selectedGroup, setSelectedGroup] = useState<string>(() => {
+    if (channel?.group) {
+      return channel.group;
+    }
+    return 'All';
+  });
+  
+  // Update selected group when channel changes and EPG grid opens
+  useEffect(() => {
+    if (showEPGGrid && channel?.group) {
+      setSelectedGroup(channel.group);
+    }
+  }, [showEPGGrid, channel?.group]);
   const [focusedChannelId, setFocusedChannelId] = useState<string | null>(null);
   const [horizontalScrollX, setHorizontalScrollX] = useState(0);
   const horizontalScrollRef = useRef<ScrollView>(null);
   const verticalScrollRef = useRef<FlashList<Channel>>(null);
+  
+  // UI state for categories
+  const setShowGroupsPlaylists = useUIStore((state) => state.setShowGroupsPlaylists);
 
   // Generate time slots
   const timeSlots = useMemo(() => {
@@ -95,73 +124,90 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     return ['All', ...groupNames];
   }, [channels]);
 
-  // Get programs for a channel
+  // Get programs for a channel - memoized to prevent unnecessary recalculations
   const getChannelPrograms = useCallback((channelId: string): EPGProgram[] => {
     if (!getProgramsForChannel) return [];
-    return getProgramsForChannel(channelId);
+    return getProgramsForChannel(channelId) || [];
   }, [getProgramsForChannel]);
 
-  // Check if we have any programs loaded at all
-  const hasAnyPrograms = useMemo(() => {
-    if (!getProgramsForChannel || filteredChannels.length === 0) return false;
-    // Check first few channels to see if any have programs
-    return filteredChannels.slice(0, 5).some(ch => {
-      const programs = getProgramsForChannel(ch.id);
-      return programs && programs.length > 0;
-    });
-  }, [filteredChannels, getProgramsForChannel]);
-
-  // Calculate program position and width
-  const getProgramStyle = useCallback((program: EPGProgram) => {
-    try {
-      if (!program || !program.start || !program.end) {
-        return { left: 0, width: 80 };
-      }
-      
-      const now = new Date();
-      const programStart = program.start instanceof Date ? program.start : new Date(program.start);
-      const programEnd = program.end instanceof Date ? program.end : new Date(program.end);
-      
-      // Validate dates
-      if (isNaN(programStart.getTime()) || isNaN(programEnd.getTime())) {
-        return { left: 0, width: 80 };
-      }
-      
-      // Calculate hours from current time
-      const hoursFromNow = (programStart.getTime() - now.getTime()) / (1000 * 60 * 60);
-      const duration = (programEnd.getTime() - programStart.getTime()) / (1000 * 60 * 60);
-      
-      const left = hoursFromNow * HOUR_WIDTH;
-      const width = Math.max(duration * HOUR_WIDTH, 80);
-      
-      return {
-        left: Math.max(0, left),
-        width: Math.min(width, HOURS_TO_SHOW * HOUR_WIDTH), // Cap width to timeline
-      };
-    } catch (error) {
-      console.warn('[EPG Grid] Error calculating program style:', error);
-      return { left: 0, width: 80 };
-    }
+  // Memoize current time to avoid creating new Date on every call
+  const currentTimeRef = useRef<Date>(new Date());
+  useEffect(() => {
+    // Update current time every minute
+    const interval = setInterval(() => {
+      currentTimeRef.current = new Date();
+    }, 60000);
+    return () => clearInterval(interval);
   }, []);
 
-  // Check if program is currently playing
-  const isProgramNow = useCallback((program: EPGProgram) => {
-    try {
-      if (!program || !program.start || !program.end) return false;
-      
-      const now = new Date();
-      const programStart = program.start instanceof Date ? program.start : new Date(program.start);
-      const programEnd = program.end instanceof Date ? program.end : new Date(program.end);
-      
-      if (isNaN(programStart.getTime()) || isNaN(programEnd.getTime())) {
-        return false;
-      }
-      
-      return programStart <= now && programEnd > now;
-    } catch (error) {
-      return false;
-    }
-  }, []);
+  // Calculate program position and width - optimized
+  // Timeline starts at current hour (00:00 of current hour), not current time
+  const getProgramStyle = useCallback(
+    instrumentFunction(
+      (program: EPGProgram) => {
+        try {
+          if (!program?.start || !program?.end) {
+            return { left: 0, width: 80 };
+          }
+          
+          const now = currentTimeRef.current;
+          const programStart = program.start instanceof Date ? program.start : new Date(program.start);
+          const programEnd = program.end instanceof Date ? program.end : new Date(program.end);
+          
+          // Validate dates
+          if (isNaN(programStart.getTime()) || isNaN(programEnd.getTime())) {
+            return { left: 0, width: 80 };
+          }
+          
+          // Calculate timeline start (beginning of current hour)
+          const timelineStart = new Date(now);
+          timelineStart.setMinutes(0, 0, 0);
+          
+          // Calculate hours from timeline start (can be negative for past programs)
+          const hoursFromTimelineStart = (programStart.getTime() - timelineStart.getTime()) / (1000 * 60 * 60);
+    const duration = (programEnd.getTime() - programStart.getTime()) / (1000 * 60 * 60);
+    
+          // Calculate position relative to timeline start
+          const left = hoursFromTimelineStart * HOUR_WIDTH;
+    const width = Math.max(duration * HOUR_WIDTH, 80);
+    
+    return {
+            left: left,
+            width: Math.min(width, HOURS_TO_SHOW * HOUR_WIDTH * 2), // Allow wider programs
+          };
+        } catch (error) {
+          return { left: 0, width: 80 };
+        }
+      },
+      'getProgramStyle'
+    ),
+    []
+  );
+
+  // Check if program is currently playing - optimized with memoized time
+  const isProgramNow = useCallback(
+    instrumentFunction(
+      (program: EPGProgram) => {
+        try {
+          if (!program?.start || !program?.end) return false;
+          
+          const now = currentTimeRef.current;
+          const programStart = program.start instanceof Date ? program.start : new Date(program.start);
+          const programEnd = program.end instanceof Date ? program.end : new Date(program.end);
+          
+          if (isNaN(programStart.getTime()) || isNaN(programEnd.getTime())) {
+            return false;
+          }
+          
+          return programStart <= now && programEnd > now;
+        } catch (error) {
+          return false;
+        }
+      },
+      'isProgramNow'
+    ),
+    []
+  );
 
   const handleClose = useCallback(() => {
     setShowEPGGrid(false);
@@ -182,56 +228,109 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     }
   }, [setShowEPGGrid, onExitPIP, navigation]);
 
-  // Render channel row
-  const renderChannelRow = useCallback(
-    ({ item: ch }: ListRenderItemInfo<Channel>) => {
-      const isCurrent = ch.id === channel?.id;
-      const isFocused = ch.id === focusedChannelId;
+  // Pre-compute channel data to avoid repeated lookups during render
+  // This map is updated when programsByChannel changes, not on every render
+  // Include epgLastUpdated to force recomputation when EPG data is loaded
+  const channelDataMap = useMemo(() => {
+    if (__DEV__) {
+      console.log(`[EPG Grid] Computing channelDataMap for ${filteredChannels.length} channels, epgLastUpdated: ${epgLastUpdated}`);
+    }
+    
+    const start = performance.now();
+    const map = new Map<string, { programs: EPGProgram[]; currentProgram: EPGProgram | null }>();
+    
+    // Only compute for filtered channels to limit work
+    filteredChannels.forEach((ch) => {
       const programs = getChannelPrograms(ch.id);
       const currentProgram = getCurrentProgram(ch.id);
+      map.set(ch.id, { programs, currentProgram });
+      
+      // Debug: Always log for first few channels
+      if (__DEV__) {
+        console.log(`[EPG Grid] Channel "${ch.name}" (${ch.id}): ${programs.length} programs, currentProgram: ${currentProgram?.title || 'none'}`);
+        if (programs.length > 0) {
+          console.log(`[EPG Grid] First program: "${programs[0].title}" from ${programs[0].start} to ${programs[0].end}`);
+        }
+      }
+    });
+    
+    const duration = performance.now() - start;
+    if (__DEV__) {
+      console.log(`[PERF] channelDataMap computation took ${duration.toFixed(2)}ms for ${filteredChannels.length} channels`);
+    }
+    
+    return map;
+  }, [filteredChannels, getChannelPrograms, getCurrentProgram, epgLastUpdated]);
 
-      return (
-        <EPGChannelRow
-          channel={ch}
-          isCurrent={isCurrent}
-          isFocused={isFocused}
-          programs={programs}
-          currentProgram={currentProgram}
-          currentTimePosition={currentTimePosition}
-          horizontalScrollX={horizontalScrollX}
-          hoursToShow={HOURS_TO_SHOW}
-          hourWidth={HOUR_WIDTH}
-          rowHeight={ROW_HEIGHT}
-          channelWidth={CHANNEL_WIDTH}
-          onPress={() => onChannelSelect(ch)}
-          onFocus={() => setFocusedChannelId(ch.id)}
-          getProgramStyle={getProgramStyle}
-          isProgramNow={isProgramNow}
-        />
-      );
-    },
+  // Check if we have any programs loaded - computed from pre-computed data
+  const hasAnyPrograms = useMemo(() => {
+    if (filteredChannels.length === 0) return false;
+    // Only check first 3 channels for performance
+    return filteredChannels.slice(0, 3).some(ch => {
+      const channelData = channelDataMap.get(ch.id);
+      return channelData?.programs && channelData.programs.length > 0;
+    });
+  }, [filteredChannels, channelDataMap]);
+
+  // Render channel row - optimized to use pre-computed data
+  const renderChannelRow = useCallback(
+    instrumentFunction(
+      ({ item: ch }: ListRenderItemInfo<Channel>) => {
+    const isCurrent = ch.id === channel?.id;
+    const isFocused = ch.id === focusedChannelId;
+        
+        // Use pre-computed data - O(1) lookup, no computation during render
+        const channelData = channelDataMap.get(ch.id);
+        const programs = channelData?.programs ?? [];
+        const currentProgram = channelData?.currentProgram ?? null;
+
+    return (
+          <EPGChannelRow
+            channel={ch}
+            isCurrent={isCurrent}
+            isFocused={isFocused}
+            programs={programs}
+            currentProgram={currentProgram}
+            currentTimePosition={currentTimePosition}
+            horizontalScrollX={horizontalScrollX}
+            hoursToShow={HOURS_TO_SHOW}
+            hourWidth={HOUR_WIDTH}
+            rowHeight={ROW_HEIGHT}
+            channelWidth={CHANNEL_WIDTH}
+        onPress={() => onChannelSelect(ch)}
+        onFocus={() => setFocusedChannelId(ch.id)}
+            getProgramStyle={getProgramStyle}
+            isProgramNow={isProgramNow}
+          />
+        );
+      },
+      'renderChannelRow'
+    ),
     [
-      channel,
-      focusedChannelId,
-      getChannelPrograms,
-      getCurrentProgram,
-      getProgramStyle,
-      isProgramNow,
-      onChannelSelect,
-      currentTimePosition,
-      horizontalScrollX,
+    channel,
+    focusedChannelId,
+      channelDataMap,
+    getProgramStyle,
+    isProgramNow,
+    onChannelSelect,
+    currentTimePosition,
+    horizontalScrollX,
     ]
   );
 
-  // Scroll to current time on mount
+  // Scroll to current time on mount - ensure we can see current programs
   useEffect(() => {
     if (showEPGGrid && horizontalScrollRef.current) {
       setTimeout(() => {
+        // Scroll to show current time (which is at position 0 in our calculation)
+        // But we need to account for the channel width offset
+        const scrollX = Math.max(0, currentTimePosition - CHANNEL_WIDTH - 100);
         horizontalScrollRef.current?.scrollTo({
-          x: currentTimePosition - 50,
+          x: scrollX,
           animated: false,
         });
-      }, 100);
+        setHorizontalScrollX(scrollX);
+      }, 200);
     }
   }, [showEPGGrid, currentTimePosition]);
 
@@ -265,11 +364,57 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     }
   }, [showEPGGrid, channel, filteredChannels]);
 
+  // Expose scroll position to parent for left key handling
+  const horizontalScrollXRef = useRef(horizontalScrollX);
+  useEffect(() => {
+    horizontalScrollXRef.current = horizontalScrollX;
+  }, [horizontalScrollX]);
+
+  // Handle left key press in EPG grid - open categories if at leftmost position
+  useEffect(() => {
+    if (!showEPGGrid || Platform.OS !== 'android') return;
+
+    try {
+      const keyDownListener = (keyEvent: any) => {
+        const { keyCode } = keyEvent;
+        
+        // DPAD_LEFT = 21
+        if (keyCode === 21) {
+          const currentScrollX = horizontalScrollXRef.current;
+          
+          // Check if we're at the leftmost position (horizontalScrollX is 0 or very close)
+          // Allow a small threshold (10px) to account for floating point precision
+          if (currentScrollX <= 10) {
+            // We're at the leftmost position, open categories
+            setShowGroupsPlaylists(true);
+            // If parent handler is provided, also call it
+            if (onLeftKeyPress) {
+              onLeftKeyPress(currentScrollX);
+            }
+          } else if (onLeftKeyPress) {
+            // Let parent handle it if not at leftmost position
+            onLeftKeyPress(currentScrollX);
+          }
+          // Otherwise, let the default scrolling behavior handle it
+        }
+      };
+
+      KeyEvent.onKeyDownListener(keyDownListener);
+
+      return () => {
+        KeyEvent.removeKeyDownListener();
+      };
+    } catch (error) {
+      // KeyEvent might not be available, ignore
+    }
+  }, [showEPGGrid, setShowGroupsPlaylists, onLeftKeyPress]);
+
   // Track which channels have been requested to avoid duplicate requests
   const requestedChannelsRef = useRef<Set<string>>(new Set());
   
   // Load EPG data when grid opens - only load a small initial batch
   useEffect(() => {
+    console.log(`[EPG Grid] Prefetch effect - showEPGGrid: ${showEPGGrid}, filteredChannels: ${filteredChannels.length}, prefetchProgramsForChannels: ${!!prefetchProgramsForChannels}`);
     if (showEPGGrid && filteredChannels.length > 0 && prefetchProgramsForChannels) {
       // Only load first 5-8 visible channels initially for faster startup
       const initialChannelIds = filteredChannels
@@ -277,14 +422,14 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
         .map(ch => ch.id)
         .filter(id => !requestedChannelsRef.current.has(id));
       
+      console.log(`[EPG Grid] Prefetching programs for ${initialChannelIds.length} channels:`, initialChannelIds);
       if (initialChannelIds.length > 0) {
         initialChannelIds.forEach(id => requestedChannelsRef.current.add(id));
-        console.log('[EPG Grid Light] Loading initial EPG data for', initialChannelIds.length, 'channels');
         prefetchProgramsForChannels(initialChannelIds);
       }
     }
   }, [showEPGGrid, filteredChannels, prefetchProgramsForChannels, selectedGroup]);
-  
+
   // Reset requested channels when group changes
   useEffect(() => {
     requestedChannelsRef.current.clear();
@@ -293,7 +438,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   // Throttle viewable items changes to avoid too many rapid loads
   const viewableItemsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
-  // Lazy load EPG data for visible channels only
+  // Lazy load EPG data for visible channels only - optimized with longer throttle
   const handleViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: Array<{ item: Channel; index: number | null }> }) => {
     try {
       if (!prefetchProgramsForChannels || !viewableItems || viewableItems.length === 0) return;
@@ -303,9 +448,9 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
         clearTimeout(viewableItemsTimeoutRef.current);
       }
       
-      // Throttle: wait 200ms before loading to batch rapid scroll events
+      // Throttle: wait 300ms before loading to batch rapid scroll events (increased for performance)
       viewableItemsTimeoutRef.current = setTimeout(() => {
-        const visibleChannelIds = viewableItems
+    const visibleChannelIds = viewableItems
           .map((viewableItem) => viewableItem?.item?.id)
           .filter((id: string | undefined): id is string => id != null && id.length > 0);
         
@@ -318,41 +463,40 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
         
         if (channelsToLoad.length === 0) return;
         
-        // Also prefetch a small buffer (2-3 channels) before and after visible ones
+        // Also prefetch a small buffer (2 channels) before and after visible ones
         const allChannelIds = filteredChannels.map(ch => ch?.id).filter((id): id is string => id != null);
-        const prefetchIds = new Set<string>();
-        
+      const prefetchIds = new Set<string>();
+      
         // Add visible channels
         channelsToLoad.forEach(id => prefetchIds.add(id));
         
-        // Add small buffer around visible channels
+        // Add small buffer around visible channels (reduced from 3 to 2 for performance)
         channelsToLoad.forEach((id: string) => {
-          const index = allChannelIds.indexOf(id);
-          if (index !== -1) {
-            const bufferSize = 3; // Smaller buffer for better performance
+        const index = allChannelIds.indexOf(id);
+        if (index !== -1) {
+            const bufferSize = 2; // Smaller buffer for better performance
             const start = Math.max(0, index - bufferSize);
             const end = Math.min(allChannelIds.length, index + bufferSize);
-            for (let i = start; i < end; i++) {
+          for (let i = start; i < end; i++) {
               if (allChannelIds[i] && !requestedChannelsRef.current.has(allChannelIds[i])) {
-                prefetchIds.add(allChannelIds[i]);
+            prefetchIds.add(allChannelIds[i]);
               }
-            }
           }
-        });
-        
+        }
+      });
+      
         if (prefetchIds.size > 0) {
           const idsToLoad = Array.from(prefetchIds);
           // Mark as requested before loading
           idsToLoad.forEach(id => requestedChannelsRef.current.add(id));
-          console.log('[EPG Grid Light] Lazy loading', idsToLoad.length, 'channels');
           prefetchProgramsForChannels(idsToLoad);
         }
-      }, 200); // 200ms throttle
+      }, 300); // 300ms throttle (increased for better performance)
     } catch (error) {
-      console.warn('[EPG Grid] Error in handleViewableItemsChanged:', error);
+      // Silently handle errors to avoid performance impact
     }
   }, [filteredChannels, prefetchProgramsForChannels]);
-  
+
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -363,7 +507,15 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   }, []);
 
 
-  if (!showEPGGrid || channels.length === 0 || !navigation) return null;
+  // Always log when component is called (even if returning early)
+  console.log(`[EPG Grid] Component called - showEPGGrid: ${showEPGGrid}, channels: ${channels.length}, navigation: ${!!navigation}`);
+  
+  if (!showEPGGrid || channels.length === 0 || !navigation) {
+    console.log(`[EPG Grid] Early return - not rendering`);
+    return null;
+  }
+  
+  console.log(`[EPG Grid] Rendering EPG grid with ${filteredChannels.length} filtered channels`);
 
   const playlistName = playlist?.name;
 
@@ -378,12 +530,13 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
         onRefresh={handleManualEpgRefresh}
         onSettings={handleSettings}
         onClose={handleClose}
-      />
-
-      <EPGGridGroupFilter
-        groups={groups}
-        selectedGroup={selectedGroup}
-        onGroupSelect={setSelectedGroup}
+        categoryDropdown={
+          <EPGGridCategoryDropdown
+            groups={groups}
+            selectedGroup={selectedGroup}
+            onGroupSelect={setSelectedGroup}
+          />
+        }
       />
 
       {/* EPG Grid */}
@@ -399,37 +552,42 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
         />
 
         {/* Channel List with Programs - Fixed height to show 5 channels */}
-        <View style={[styles.horizontalScroll, { height: ROW_HEIGHT * VISIBLE_ROWS }]}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
+        <View style={[styles.channelListContainer, { height: ROW_HEIGHT * VISIBLE_ROWS }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
             style={styles.horizontalScrollInner}
-            contentContainerStyle={{ width: HOURS_TO_SHOW * HOUR_WIDTH }}
-            onScroll={(e) => {
-              const offsetX = e.nativeEvent.contentOffset.x;
-              horizontalScrollRef.current?.scrollTo({ x: offsetX, animated: false });
-            }}
-            scrollEventThrottle={16}
+          contentContainerStyle={{ width: HOURS_TO_SHOW * HOUR_WIDTH }}
+          onScroll={(e) => {
+            const offsetX = e.nativeEvent.contentOffset.x;
+            horizontalScrollRef.current?.scrollTo({ x: offsetX, animated: false });
+          }}
+          scrollEventThrottle={16}
             nestedScrollEnabled={Platform.OS === 'android'}
             focusable={Platform.OS === 'android'}
-          >
-            <FlashList
-              ref={verticalScrollRef}
-              data={filteredChannels}
-              renderItem={renderChannelRow}
-              keyExtractor={(item) => item.id}
-              estimatedItemSize={ROW_HEIGHT}
+        >
+          <FlashList
+            ref={verticalScrollRef}
+            data={filteredChannels}
+            renderItem={renderChannelRow}
+            keyExtractor={(item) => item.id}
+            estimatedItemSize={ROW_HEIGHT}
               contentContainerStyle={flashListContentStyle}
-              showsVerticalScrollIndicator={false}
-              onViewableItemsChanged={handleViewableItemsChanged}
-              viewabilityConfig={{
-                itemVisiblePercentThreshold: 50,
-                minimumViewTime: 100,
-              }}
-              nestedScrollEnabled={Platform.OS === 'android'}
-              drawDistance={500}
-            />
-          </ScrollView>
+            showsVerticalScrollIndicator={false}
+            onViewableItemsChanged={handleViewableItemsChanged}
+            viewabilityConfig={{
+              itemVisiblePercentThreshold: 50,
+              minimumViewTime: 100,
+            }}
+            nestedScrollEnabled={Platform.OS === 'android'}
+              drawDistance={300}
+              // Force FlashList to use the container height
+              style={{ height: ROW_HEIGHT * VISIBLE_ROWS }}
+              // Performance optimizations
+              removeClippedSubviews={true}
+              estimatedListSize={{ height: ROW_HEIGHT * VISIBLE_ROWS, width: HOURS_TO_SHOW * HOUR_WIDTH }}
+          />
+        </ScrollView>
         </View>
       </View>
     </View>
@@ -439,17 +597,27 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#1e293b',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 50,
+    elevation: 50,
   },
   gridContainer: {
     flex: 1,
+  },
+  channelListContainer: {
+    overflow: 'visible', // Allow programs to be visible when scrolling
   },
   horizontalScroll: {
     flex: 1,
     overflow: 'hidden',
   },
   horizontalScrollInner: {
-    flex: 1,
+    height: ROW_HEIGHT * VISIBLE_ROWS,
   },
   channelList: {
     flex: 1,

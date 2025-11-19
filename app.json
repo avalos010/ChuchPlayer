@@ -46,7 +46,8 @@
             "enableMinifyInReleaseBuilds": true
           }
         }
-      ]
+      ],
+      "react-native-video"
     ],
     "extra": {
       "eas": {

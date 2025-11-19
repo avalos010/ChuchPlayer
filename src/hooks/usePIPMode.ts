@@ -21,15 +21,12 @@ export const usePIPMode = () => {
     exitPIPStore(pipAnim, pipScale);
   }, [exitPIPStore, pipAnim, pipScale]);
 
-  // Enter PIP mode when EPG grid is shown - minimize video to top-right corner (TiviMate style)
-  // Delay PIP animation slightly to let EPG grid render first for smoother performance
+  // Enter PIP mode when EPG grid is shown - minimize video to bottom-right corner (TiviMate style)
+  // Start animation immediately to avoid visual glitches
   useEffect(() => {
     if (showEPGGrid && channels.length > 0) {
-      // Small delay to let EPG grid start rendering before animating video
-      const timer = setTimeout(() => {
-        enterPIP();
-      }, 50);
-      return () => clearTimeout(timer);
+      // Start animation immediately to prevent black screen
+      enterPIP();
     } else if (!showEPGGrid) {
       exitPIP();
     }

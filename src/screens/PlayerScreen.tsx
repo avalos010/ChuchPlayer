@@ -5,13 +5,14 @@ import {
   AppState,
   Dimensions,
   FlatList,
+  InteractionManager,
   Platform,
   Text,
   View,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
-import { Video, ResizeMode } from 'expo-av';
+import Video from 'react-native-video';
 import FocusableItem from '../components/FocusableItem';
 import { RootStackParamList } from '../types';
 import EPGOverlay from '../components/player/EPGOverlay';
@@ -38,6 +39,7 @@ import { usePIPMode } from '../hooks/usePIPMode';
 import { useEPGAutoHide } from '../hooks/useEPGAutoHide';
 import { usePlayerHandlers } from '../hooks/usePlayerHandlers';
 import { useEPGManagement } from '../hooks/useEPGManagement';
+import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor';
 
 
 interface PlayerScreenProps {
@@ -47,6 +49,11 @@ interface PlayerScreenProps {
 
 const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const { channel: initialChannel } = route.params || {};
+  
+  // Monitor render performance (only in dev)
+  if (__DEV__) {
+    usePerformanceMonitor('PlayerScreen', 16);
+  }
 
   // Refs
   const videoRef = useRef<Video>(null);
@@ -62,6 +69,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const loading = usePlayerStore((state) => state.loading);
   const error = usePlayerStore((state) => state.error);
   const resizeMode = usePlayerStore((state) => state.resizeMode);
+  const volume = usePlayerStore((state) => state.volume);
   
   // UI store state
   const showEPG = useUIStore((state) => state.showEPG);
@@ -105,6 +113,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   } = useChannelNavigation({
     videoRef,
     getCurrentProgram,
+    prefetchProgramsForChannels,
     setHasUserInteracted,
     hasUserInteracted,
     centerZoneRef,
@@ -139,9 +148,27 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
 
   useEffect(() => {
     if (!channel) return;
-    const program = getCurrentProgram(channel.id);
-    setCurrentProgram(program);
-  }, [channel?.id, getCurrentProgram, setCurrentProgram, epgLastUpdated]);
+    
+    // Ensure EPG data is loaded for this channel first
+    prefetchProgramsForChannels([channel.id]);
+    
+    // Function to update current program
+    const updateCurrentProgram = () => {
+      const program = getCurrentProgram(channel.id);
+      setCurrentProgram(program);
+    };
+    
+    // Get the current program immediately (might be null if data not loaded yet)
+    updateCurrentProgram();
+    
+    // Also update after interactions and with a delay to catch data that loads asynchronously
+    InteractionManager.runAfterInteractions(() => {
+      // Try multiple times to catch async-loaded data
+      setTimeout(updateCurrentProgram, 100);
+      setTimeout(updateCurrentProgram, 500);
+      setTimeout(updateCurrentProgram, 1000);
+    });
+  }, [channel?.id, getCurrentProgram, setCurrentProgram, epgLastUpdated, prefetchProgramsForChannels]);
 
   const currentChannelPrograms = useMemo(() => {
     if (!channel) return [];
@@ -251,10 +278,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           {/* Central focusable zone - default focus */}
           <FocusableItem
             ref={centerZoneRef}
-            onPress={() => {
-              console.log('Center zone pressed');
-              handleCenterPress();
-            }}
+            onPress={handleCenterPress}
             hasTVPreferredFocus={true}
             className=""
             style={{
@@ -283,14 +307,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
 
           {/* Left edge - opens channel list */}
           <FocusableItem
-            onPress={() => {
-              console.log('Left zone pressed - opening channel list');
-              handleLeftDpad();
-            }}
-            onFocus={() => {
-              console.log('Left zone focused - opening channel list');
-              handleLeftDpad();
-            }}
+            onPress={handleLeftDpad}
+            onFocus={handleLeftDpad}
             className=""
             style={{
               position: 'absolute',
@@ -319,7 +337,6 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           {/* Top edge - previous channel */}
           <FocusableItem
             onPress={() => {
-              console.log('Top zone pressed - previous channel');
               handleUpDpad(exitPIP);
               // Immediately return focus to center zone
               setTimeout(() => {
@@ -327,7 +344,6 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
               }, 50);
             }}
             onFocus={() => {
-              console.log('Top zone focused - switching to previous channel');
               handleUpDpad(exitPIP);
               // Immediately return focus to center zone to prevent border from showing
               setTimeout(() => {
@@ -362,7 +378,6 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           {/* Bottom edge - next channel */}
           <FocusableItem
             onPress={() => {
-              console.log('Bottom zone pressed - next channel');
               handleDownDpad(exitPIP);
               // Immediately return focus to center zone
               setTimeout(() => {
@@ -370,7 +385,6 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
               }, 50);
             }}
             onFocus={() => {
-              console.log('Bottom zone focused - switching to next channel');
               handleDownDpad(exitPIP);
               // Immediately return focus to center zone to prevent border from showing
               setTimeout(() => {
@@ -415,8 +429,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
                 setHasUserInteracted(true);
                 // Try to play if autoplay is enabled
                 if (isPlaying && videoRef.current) {
-                  videoRef.current.playAsync().catch(err => {
-                    console.log('Play failed:', err);
+                  videoRef.current.playAsync().catch(() => {
+                    // Play failed - error handled by error state
                   });
                 }
               }
@@ -442,17 +456,14 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       )}
 
 
-      {/* Video Container - Minimized to top-right when EPG grid is shown */}
+      {/* Video Container - Minimized to bottom-right when EPG grid is shown */}
       {channel && (
         <Animated.View
           style={{
             flex: showEPGGrid ? undefined : 1,
-            position: showEPGGrid ? 'absolute' : 'relative',
-            top: showEPGGrid ? undefined : undefined,
-            bottom: showEPGGrid ? 48 : undefined,
-            right: showEPGGrid ? 48 : undefined,
             width: showEPGGrid ? pipPreviewWidth : undefined,
             height: showEPGGrid ? pipPreviewHeight : undefined,
+            position: 'relative',
             zIndex: showEPGGrid ? 40 : 1,
             elevation: showEPGGrid ? 40 : 1,
             borderRadius: showEPGGrid ? 20 : 0,
@@ -464,7 +475,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
             shadowOffset: showEPGGrid ? { width: 0, height: 12 } : { width: 0, height: 0 },
             shadowOpacity: showEPGGrid ? 0.3 : 0,
             shadowRadius: showEPGGrid ? 24 : 0,
-            transform: showEPGGrid ? [] : [
+            transform: [
               { translateX: pipAnim.x },
               { translateY: pipAnim.y },
               { scale: pipScale },
@@ -489,16 +500,23 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
                 margin: Platform.OS === 'web' ? 'auto' : 0,
                 backgroundColor: '#020617',
               } as any}
-              focusable={false}
-              resizeMode={resizeMode}
-              shouldPlay={isPlaying}
+              paused={!isPlaying}
+              resizeMode={resizeMode === 'contain' ? 'contain' : resizeMode === 'cover' ? 'cover' : 'stretch'}
               onLoad={handleVideoReadyWithPlayback}
               onError={handleVideoError}
-              onPlaybackStatusUpdate={handlePlaybackStatusUpdateWithError}
-              useNativeControls={false}
-              isLooping={false}
-              volume={1.0}
-              isMuted={false}
+              onProgress={handlePlaybackStatusUpdateWithError}
+              onBuffer={handlePlaybackStatusUpdateWithError}
+              onLoadStart={() => {
+                // Video started loading
+              }}
+              repeat={false}
+              volume={volume}
+              muted={false}
+              playInBackground={false}
+              playWhenInactive={false}
+              ignoreSilentSwitch="ignore"
+              progressUpdateInterval={1000}
+              controls={false}
             />
           </View>
           {/* Channel name overlay when minimized */}
@@ -609,6 +627,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           epgLoading={epgLoading}
           epgError={epgError}
           handleManualEpgRefresh={forceRefreshEpg}
+          epgLastUpdated={epgLastUpdated}
         />
       )}
 

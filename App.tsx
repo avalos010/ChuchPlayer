@@ -7,6 +7,7 @@ import Toast from 'react-native-toast-message';
 import AppNavigator from './src/navigation/AppNavigator';
 import './global.css';
 import { useDataRefreshScheduler } from './src/hooks/useDataRefreshScheduler';
+import { enablePerformanceMonitor, useFrameMonitor, startFunctionMetricsReporting } from './src/hooks/usePerformanceMonitor';
 
 // Verify NativeWind installation
 if (__DEV__) {
@@ -16,10 +17,22 @@ if (__DEV__) {
   } catch (e) {
     console.warn('NativeWind verification failed:', e);
   }
+  
+  // Enable performance monitoring
+  enablePerformanceMonitor();
 }
 
 const App = () => {
   useDataRefreshScheduler();
+  useFrameMonitor(); // Monitor frame drops and JS thread blocking
+  
+  // Start periodic reporting of slow functions
+  React.useEffect(() => {
+    if (__DEV__) {
+      const cleanup = startFunctionMetricsReporting(10000); // Report every 10 seconds
+      return cleanup;
+    }
+  }, []);
 
   return (
     <GestureHandlerRootView className="flex-1 bg-dark">

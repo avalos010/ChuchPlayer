@@ -113,8 +113,11 @@ export const usePlayerHandlers = (
   ]);
 
   const handleLeftDpad = useCallback(() => {
-    // Don't handle left D-pad when EPG grid is showing - let it scroll
+    // When EPG grid is showing, check if we're at the leftmost position
+    // If so, open categories dropdown instead of scrolling
     if (showEPGGrid) {
+      // This will be handled by the EPG grid component itself
+      // We'll pass a callback to handle this
       return;
     }
 

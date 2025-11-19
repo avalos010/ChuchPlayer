@@ -69,20 +69,20 @@ export const EPGGridTimeHeader: React.FC<EPGGridTimeHeaderProps> = ({
 
 const styles = StyleSheet.create({
   timeHeader: {
-    height: 50,
-    backgroundColor: '#0f172a',
+    height: 40,
+    backgroundColor: '#1e293b',
     borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
+    borderBottomColor: '#334155',
   },
   timeSlot: {
-    height: 50,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
     borderRightWidth: 1,
-    borderRightColor: '#1e293b',
+    borderRightColor: '#334155',
   },
   timeSlotCurrent: {
-    backgroundColor: '#1e293b',
+    backgroundColor: '#334155',
   },
   timeSlotText: {
     color: '#94a3b8',

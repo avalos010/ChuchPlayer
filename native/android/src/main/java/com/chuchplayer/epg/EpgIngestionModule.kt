@@ -64,9 +64,62 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) : ReactContextBa
         // Realm auto-discovers RealmObject classes, no need to specify schema
         val config = RealmConfiguration.Builder()
             .name("default.realm")
-            .schemaVersion(1)
+            .schemaVersion(2)
+            .migration { realm, oldVersion, newVersion ->
+                // Migration from version 1 to 2: Added indexes to playlistId, channelId, start, end
+                // No data migration needed, just schema version bump
+                if (oldVersion < 2) {
+                    // Indexes are handled automatically by Realm based on @Index annotations
+                    // This migration just increments the version
+                }
+            }
             .build()
-        return Realm.getInstance(config)
+        
+        return try {
+            Realm.getInstance(config)
+        } catch (e: io.realm.exceptions.RealmError) {
+            // If database version is incompatible, delete and recreate
+            val errorMessage = e.message ?: ""
+            if (errorMessage.contains("unsupported version", ignoreCase = true) || 
+                errorMessage.contains("cannot be upgraded", ignoreCase = true) ||
+                errorMessage.contains("version (", ignoreCase = true)) {
+                Log.w(TAG, "Database version incompatible, deleting and recreating: $errorMessage")
+                try {
+                    Realm.deleteRealm(config)
+                    Log.d(TAG, "Deleted incompatible database, recreating...")
+                    // Try to get instance again after deletion
+                    Realm.getInstance(config)
+                } catch (deleteError: Exception) {
+                    Log.e(TAG, "Failed to delete/recreate database: ${deleteError.message}", deleteError)
+                    // If deletion/recreation fails, try with deleteIfMigrationNeeded as fallback
+                    try {
+                        val fallbackConfig = RealmConfiguration.Builder()
+                            .name("default.realm")
+                            .schemaVersion(2)
+                            .deleteRealmIfMigrationNeeded()
+                            .build()
+                        Realm.deleteRealm(fallbackConfig)
+                        Realm.getInstance(config)
+                    } catch (fallbackError: Exception) {
+                        Log.e(TAG, "All recovery attempts failed: ${fallbackError.message}", fallbackError)
+                        throw e
+                    }
+                }
+            } else {
+                throw e
+            }
+        } catch (e: Exception) {
+            // Catch any other exceptions and try to recover
+            Log.e(TAG, "Unexpected error getting Realm instance: ${e.message}", e)
+            try {
+                Realm.deleteRealm(config)
+                Log.d(TAG, "Deleted database due to error, recreating...")
+                Realm.getInstance(config)
+            } catch (recoveryError: Exception) {
+                Log.e(TAG, "Failed to recover from error: ${recoveryError.message}", recoveryError)
+                throw e
+            }
+        }
     }
     
     private fun buildProgramPrimaryKey(program: ProgramData): String {

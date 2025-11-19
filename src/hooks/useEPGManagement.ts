@@ -8,6 +8,7 @@ import {
   getPlaylistMetadata,
   pruneOldPrograms,
   debugDatabaseContents,
+  clearQueryCache,
 } from '../database/epgDatabase';
 import {
   isNativeIngestionAvailable,
@@ -15,6 +16,7 @@ import {
   IngestionEventListener,
   IngestionProgress,
 } from '../services/nativeEpgIngestion';
+import { instrumentFunction } from './usePerformanceMonitor';
 
 type ProgramsByChannel = Record<string, EPGProgram[]>;
 
@@ -100,10 +102,7 @@ export const useEPGManagement = () => {
       );
 
       const fetchIds = targetIds.filter((id) => !pendingChannelLoadsRef.current.has(id));
-      if (fetchIds.length > 0) {
-        console.log('[EPG] Loading programs for channels:', fetchIds);
-      }
-
+      
       if (fetchIds.length === 0) {
         return false;
       }
@@ -111,35 +110,20 @@ export const useEPGManagement = () => {
       fetchIds.forEach((id) => pendingChannelLoadsRef.current.add(id));
 
       try {
-        const channelNames = fetchIds.map(id => {
-          const ch = Array.from(channelIdSet).find(cid => {
-            // Find channel by matching the ID
-            const channel = channels.find(channel => channel.id === cid);
-            return channel?.id === id;
-          });
-          const channel = channels.find(channel => channel.id === id);
-          return channel ? `${channel.name} (tvgId: ${channel.tvgId || 'none'})` : id;
-        });
-        console.log(`[EPG] Loading programs for channels: ${channelNames.join(', ')}`);
-        
-        // Limit to 24 hours window (12 hours before and after now) and max 50 programs per channel
+        // Limit to 12 hours window (6 hours before and 6 hours after now) for faster loading
         const now = new Date();
-        const startTime = new Date(now.getTime() - 12 * 60 * 60 * 1000); // 12 hours ago
-        const endTime = new Date(now.getTime() + 12 * 60 * 60 * 1000); // 12 hours ahead
+        const startTime = new Date(now.getTime() - 6 * 60 * 60 * 1000); // 6 hours ago
+        const endTime = new Date(now.getTime() + 6 * 60 * 60 * 1000); // 6 hours ahead
         
         const result = await queryProgramsForChannels(playlist.id, fetchIds, {
           startTime,
           endTime,
-          maxProgramsPerChannel: 50, // Limit to 50 programs per channel for faster loading
+          maxProgramsPerChannel: 30, // Limit to 30 programs per channel (12 hour window = ~30 programs)
         });
-        console.log('[EPG] Loaded programs for channels:', Object.keys(result));
+        
         let foundAny = false;
-
-        // Debug: log what we found
-        fetchIds.forEach((id) => {
-          const programs = result[id] ?? [];
-          const channel = channels.find(c => c.id === id);
-          console.log(`[EPG] Found ${programs.length} programs for channel ${channel?.name || id} (id: ${id}, tvgId: ${channel?.tvgId || 'none'})`);
+        // Check if any programs were found (without logging each one)
+        Object.values(result).forEach((programs) => {
           if (programs.length > 0 && !foundAny) {
             foundAny = true;
           }
@@ -150,7 +134,17 @@ export const useEPGManagement = () => {
           fetchIds.forEach((id) => {
             const programs = result[id] ?? [];
             next[id] = programs;
+            if (__DEV__) {
+              console.log(`[EPG] setProgramsByChannel: Channel ${id} now has ${programs.length} programs`);
+              if (programs.length > 0) {
+                console.log(`[EPG] First program: "${programs[0].title}" from ${programs[0].start} to ${programs[0].end}`);
+              }
+            }
           });
+          if (__DEV__) {
+            const totalPrograms = Object.values(next).reduce((sum, progs) => sum + progs.length, 0);
+            console.log(`[EPG] Total programs in programsByChannel: ${totalPrograms} across ${Object.keys(next).length} channels`);
+          }
           return next;
         });
 
@@ -158,7 +152,10 @@ export const useEPGManagement = () => {
 
         return foundAny;
       } catch (error) {
-        console.warn('[EPG] Failed to load programs for channels', fetchIds, error);
+        // Only log errors, not warnings for normal flow
+        if (__DEV__) {
+          console.error('[EPG] Failed to load programs for channels', fetchIds, error);
+        }
         fetchIds.forEach((id) => loadedChannelsRef.current.delete(id));
         return false;
       } finally {
@@ -175,17 +172,21 @@ export const useEPGManagement = () => {
 
   // Expose force refresh function
   const forceRefreshEpg = useCallback(() => {
-    console.log('[EPG] Force refresh requested');
     forceRefreshRef.current = true;
     loadedSignatureRef.current = null;
     lastFetchTimeRef.current = 0;
     setProgramsByChannel({});
     loadedChannelsRef.current.clear();
     pendingChannelLoadsRef.current.clear();
+    // Clear caches to ensure fresh data
+    if (playlist?.id) {
+      clearQueryCache(playlist.id);
+    }
+    currentProgramCache.current.clear();
     // Force a re-render by updating state - this will trigger the useEffect
     setEpgLastUpdated(Date.now());
     setEpgStatus({ loading: true, error: null });
-  }, []);
+  }, [playlist?.id]);
 
   useEffect(() => {
     if (!datasetSignature) {
@@ -199,7 +200,6 @@ export const useEPGManagement = () => {
     // If force refresh is requested, bypass all checks
     const isForceRefresh = forceRefreshRef.current;
     if (isForceRefresh) {
-      console.log('[EPG] Force refresh active - bypassing all checks');
       forceRefreshRef.current = false; // Reset flag after reading
       // Clear the loaded signature to force reload
       loadedSignatureRef.current = null;
@@ -207,15 +207,12 @@ export const useEPGManagement = () => {
     } else {
       // Prevent re-fetching if we already loaded this signature
       if (loadedSignatureRef.current === datasetSignature) {
-        console.log('[EPG] Already loaded this signature, skipping');
         return;
       }
 
       // Rate limiting: Don't fetch if we fetched recently (within 5 minutes)
       const now = Date.now();
       if (now - lastFetchTimeRef.current < MIN_TIME_BETWEEN_FETCHES_MS) {
-        console.log('[EPG] Rate limiting: Skipping fetch, last fetch was', 
-          Math.round((now - lastFetchTimeRef.current) / 1000), 'seconds ago');
         // Mark as loaded to prevent re-triggering
         loadedSignatureRef.current = datasetSignature;
         return;
@@ -227,23 +224,12 @@ export const useEPGManagement = () => {
     }
 
     if (activeEpgUrls.length === 0) {
-      console.warn('[EPG] No active EPG URLs found. Playlist info:', {
-        id: playlist?.id,
-        name: playlist?.name,
-        sourceType: playlist?.sourceType,
-        hasEpgUrls: !!playlist?.epgUrls?.length,
-        epgUrls: playlist?.epgUrls,
-        hasXtreamCreds: !!playlist?.xtreamCredentials,
-        xtreamServer: playlist?.xtreamCredentials?.serverUrl
-      });
       loadedSignatureRef.current = datasetSignature;
       setProgramsByChannel({});
       setEpgStatus({ loading: false, error: 'No EPG source configured for this playlist' });
       setEpgLastUpdated(Date.now());
       return;
     }
-    
-    console.log('[EPG] Using EPG source URLs:', activeEpgUrls);
 
     if (!playlist) {
       return;
@@ -259,7 +245,6 @@ export const useEPGManagement = () => {
     // Add timeout to prevent infinite loading (30 seconds max)
     const loadingTimeout = setTimeout(() => {
       if (!cancelled) {
-        console.warn('[EPG] Loading timeout - clearing loading state');
         setEpgStatus({ loading: false, error: 'EPG loading timed out. Please try refreshing.' });
       }
     }, 30000);
@@ -275,9 +260,8 @@ export const useEPGManagement = () => {
 
         const existingMetadata = await getPlaylistMetadata(playlistId);
 
-        // Debug: check database state before processing
-        console.log('[EPG] Checking database state before processing...');
-        await debugDatabaseContents(playlistId);
+        // Only debug in verbose mode (disabled for performance)
+        // await debugDatabaseContents(playlistId);
 
         if (
           existingMetadata?.sourceSignature === datasetSignature &&
@@ -296,36 +280,21 @@ export const useEPGManagement = () => {
           loadedSignatureRef.current = datasetSignature;
           setEpgLastUpdated(existingMetadata.lastUpdated);
           setEpgStatus({ loading: false, error: null });
-          console.log('[EPG] Using cached programs for playlist', playlistId);
           // Respect refresh interval: skip re-ingest if data is recent
           const now = Date.now();
           const timeSinceLastUpdate = now - existingMetadata.lastUpdated;
           if (timeSinceLastUpdate < DEFAULT_REFRESH_INTERVAL_MS) {
-            console.log('[EPG] Cached data is still fresh (updated', 
-              Math.round(timeSinceLastUpdate / 1000 / 60), 'minutes ago), skipping ingestion');
             // Mark as loaded to prevent re-triggering
             loadedSignatureRef.current = datasetSignature;
             return;
           }
-          console.log('[EPG] Cached data expired (updated', 
-            Math.round(timeSinceLastUpdate / 1000 / 60), 'minutes ago), continuing with ingestion');
         }
 
         const cutoff = Date.now() - PRUNE_LOWER_BOUND_HOURS * 60 * 60 * 1000;
         await pruneOldPrograms(playlistId, cutoff);
-        console.log('[EPG] active URLs', activeEpgUrls);
-
-        console.log('[EPG] Active EPG URLs:', activeEpgUrls);
-        console.log('[EPG] Channels to match:', channels.length, 'channels');
-        console.log('[EPG] Sample channels:', channels.slice(0, 3).map(ch => ({
-          id: ch.id,
-          name: ch.name,
-          tvgId: ch.tvgId || 'none'
-        })));
         
         // Check if native ingestion is available
         if (!isNativeIngestionAvailable()) {
-          console.warn('[EPG] Native ingestion not available - EPG loading skipped');
           setEpgStatus({ loading: false, error: 'Native EPG ingestion not available on this platform' });
           return;
         }
@@ -340,34 +309,22 @@ export const useEPGManagement = () => {
             await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay between URLs
           }
           
-          console.log('[EPG] Starting native ingestion for', epgUrl);
           try {
             const onEvent: IngestionEventListener = (type, data) => {
-              const getUrlShort = (url?: string): string => {
-                if (!url || typeof url !== 'string') return 'unknown';
-                const parts = url.split('/');
-                return parts[parts.length - 1] || url;
-              };
-
-              if (type === 'progress') {
-                const progress = data as IngestionProgress;
-                const urlShort = getUrlShort(progress.epgUrl);
-                console.log(`[EPG] ${urlShort}: ${progress.programsProcessed} programs processed`);
-              } else if (type === 'complete') {
-                const complete = data as { programsCount: number; epgUrl?: string };
-                const urlShort = getUrlShort(complete.epgUrl);
-                console.log(`[EPG] ${urlShort}: Complete - ${complete.programsCount} programs inserted`);
-              } else if (type === 'error') {
+              // Only log errors, not progress (too verbose and slow)
+              if (type === 'error') {
                 const error = data as { error: string; epgUrl?: string };
-                const urlShort = getUrlShort(error.epgUrl);
-                console.error(`[EPG] ${urlShort}: Error - ${error.error}`);
+                if (__DEV__) {
+                  console.error(`[EPG] Ingestion error: ${error.error}`);
+                }
               }
             };
 
             await startNativeEpgIngestion(epgUrl, playlistId, channels, datasetSignature, onEvent);
-            console.log('[EPG] Native ingest complete for', epgUrl);
           } catch (error) {
-            console.error(`Native ingestion failed for ${epgUrl}:`, error);
+            if (__DEV__) {
+              console.error(`[EPG] Native ingestion failed:`, error);
+            }
             const message = error instanceof Error ? error.message : 'Unknown error';
             errors.push(`${epgUrl} - ${message}`);
           }
@@ -388,13 +345,11 @@ export const useEPGManagement = () => {
         const initialChannelIds = channels
           .slice(0, INITIAL_PREFETCH_COUNT)
           .map((channel) => channel.id);
-        console.log('[EPG] Forcing initial channel load with cached metadata:', initialChannelIds);
 
         await loadProgramsForChannels(initialChannelIds, { force: true });
         const postIngestChannelIds = channels
           .slice(0, INITIAL_PREFETCH_COUNT)
           .map((channel) => channel.id);
-        console.log('[EPG] Forcing initial channel load after ingest:', postIngestChannelIds);
 
         await loadProgramsForChannels(postIngestChannelIds, { force: true });
 
@@ -444,37 +399,90 @@ export const useEPGManagement = () => {
   }, [datasetSignature, activeEpgUrls, epgLastUpdated]);
 
   const getProgramsForChannel = useCallback(
-    (channelId: string): EPGProgram[] => {
-      if (
-        channelId &&
-        !loadedChannelsRef.current.has(channelId) &&
-        !pendingChannelLoadsRef.current.has(channelId)
-      ) {
-        loadProgramsForChannels([channelId]);
-      }
-      const programs = programsByChannel[channelId] ?? [];
-      
-      // Debug logging when programs are requested but not found
-      if (programs.length === 0 && loadedChannelsRef.current.has(channelId)) {
-        const channel = channels.find(ch => ch.id === channelId);
-        console.log(`[EPG] No programs found for channel ${channel?.name || channelId} (id: ${channelId}, tvgId: ${channel?.tvgId || 'none'})`);
-      }
-      
-      return programs;
-    },
-    [programsByChannel, loadProgramsForChannels, channels]
+    instrumentFunction(
+      (channelId: string): EPGProgram[] => {
+        if (
+          channelId &&
+          !loadedChannelsRef.current.has(channelId) &&
+          !pendingChannelLoadsRef.current.has(channelId)
+        ) {
+          // Defer loading to avoid blocking render
+          if (__DEV__) {
+            console.log(`[EPG] Requesting programs for channel ${channelId}`);
+          }
+          InteractionManager.runAfterInteractions(() => {
+            loadProgramsForChannels([channelId]);
+          });
+        }
+        const programs = programsByChannel[channelId] ?? [];
+        if (__DEV__ && programs.length > 0) {
+          console.log(`[EPG] getProgramsForChannel(${channelId}): returning ${programs.length} programs`);
+        } else if (__DEV__ && channelId) {
+          console.log(`[EPG] getProgramsForChannel(${channelId}): no programs found in programsByChannel`);
+        }
+        return programs;
+      },
+      'getProgramsForChannel'
+    ),
+    [programsByChannel, loadProgramsForChannels]
   );
 
+  // Cache current program lookups to avoid repeated array searches
+  const currentProgramCache = useRef<Map<string, { program: EPGProgram | null; timestamp: number }>>(new Map());
+  const CACHE_TTL_MS = 60000; // 1 minute cache
+  
+  // Shared current time reference - updated every minute to avoid creating new Date objects
+  const currentTimeRef = useRef<Date>(new Date());
+  useEffect(() => {
+    const interval = setInterval(() => {
+      currentTimeRef.current = new Date();
+      // Clear cache when time updates to ensure fresh lookups
+      currentProgramCache.current.clear();
+    }, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
+
   const getCurrentProgram = useCallback(
-    (channelId: string): EPGProgram | null => {
-      const programs = getProgramsForChannel(channelId);
-      const now = new Date();
-      return (
-        programs.find((program) => program.start <= now && program.end > now) ||
-        programs[0] ||
-        null
-      );
-    },
+    instrumentFunction(
+      (channelId: string): EPGProgram | null => {
+        if (!channelId) return null;
+        
+        // Check cache first
+        const cached = currentProgramCache.current.get(channelId);
+        const now = Date.now();
+        if (cached && (now - cached.timestamp) < CACHE_TTL_MS) {
+          return cached.program;
+        }
+
+        const programs = getProgramsForChannel(channelId);
+        // Use shared time reference instead of creating new Date
+        const currentTime = currentTimeRef.current;
+        
+        // Find current program (optimized: stop at first match)
+        let currentProgram: EPGProgram | null = null;
+        for (let i = 0; i < programs.length; i++) {
+          const program = programs[i];
+          if (program.start <= currentTime && program.end > currentTime) {
+            currentProgram = program;
+            break;
+          }
+        }
+        
+        // Fallback to first program if no current program found
+        if (!currentProgram && programs.length > 0) {
+          currentProgram = programs[0];
+        }
+
+        // Cache the result
+        currentProgramCache.current.set(channelId, {
+          program: currentProgram,
+          timestamp: now,
+        });
+
+        return currentProgram;
+      },
+      'getCurrentProgram'
+    ),
     [getProgramsForChannel]
   );
 

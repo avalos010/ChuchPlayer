@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'rea
 import { Image } from 'expo-image';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
-import { ResizeMode } from 'expo-av';
+// ResizeMode is now a string type: 'contain' | 'cover' | 'stretch'
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useEPGStore } from '../../store/useEPGStore';
@@ -248,9 +248,9 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
           >
             <Text className="text-accent text-[36px] mb-2">▦</Text>
             <Text className="text-text-primary text-sm font-semibold">
-              {resizeMode === ResizeMode.COVER
+              {resizeMode === 'cover'
                 ? 'Cover'
-                : resizeMode === ResizeMode.CONTAIN
+                : resizeMode === 'contain'
                 ? 'Fit'
                 : 'Stretch'}
             </Text>

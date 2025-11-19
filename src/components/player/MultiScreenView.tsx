@@ -1,6 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import Video from 'react-native-video';
 import { Channel } from '../../types';
 import { useMultiScreenStore, type MultiScreen } from '../../store/useMultiScreenStore';
 import FocusableItem from '../FocusableItem';
@@ -24,47 +24,17 @@ const MultiScreenPlayer: React.FC<MultiScreenPlayerProps> = ({
   const [error, setError] = useState<string | null>(null);
   const { updateScreen } = useMultiScreenStore();
 
-  useEffect(() => {
-    if (videoRef.current && screen.channel.url) {
-      videoRef.current.loadAsync({ uri: screen.channel.url }).then(() => {
-        if (screen.isPlaying) {
-          videoRef.current?.playAsync();
-        }
-      }).catch((err) => {
-        console.error('Error loading channel:', err);
-        setError('Failed to load stream');
-        showError('Failed to load stream', String(err));
-      });
-    }
-  }, [screen.channel.url]);
+  // react-native-video handles loading, playback, and volume via props
+  // No need for loadAsync/playAsync/pauseAsync/setVolumeAsync
 
-  useEffect(() => {
-    if (videoRef.current) {
-      if (screen.isPlaying) {
-        videoRef.current.playAsync();
-      } else {
-        videoRef.current.pauseAsync();
-      }
+  const handlePlaybackStatusUpdate = useCallback((data: any) => {
+    // react-native-video onProgress gives: { currentTime, playableDuration, seekableDuration }
+    // onBuffer gives: { isBuffering: boolean }
+    if (data.isBuffering !== undefined) {
+      setLoading(data.isBuffering);
     }
-  }, [screen.isPlaying]);
-
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.setVolumeAsync(screen.isMuted ? 0 : screen.volume);
-    }
-  }, [screen.volume, screen.isMuted]);
-
-  const handlePlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
-    if (!status.isLoaded) {
-      if (status.error) {
-        setError('Playback error');
-        setLoading(false);
-      }
-      return;
-    }
-    setLoading(status.isBuffering);
-    updateScreen(screen.id, { isPlaying: status.isPlaying });
-  }, [screen.id, updateScreen]);
+    // Note: isPlaying is controlled by paused prop, not status updates
+  }, []);
 
   const handlePress = useCallback(() => {
     onFocus();
@@ -95,18 +65,23 @@ const MultiScreenPlayer: React.FC<MultiScreenPlayerProps> = ({
         ref={videoRef}
         source={{ uri: screen.channel.url }}
         style={{ width: '100%', height: '100%' }}
-        resizeMode={ResizeMode.COVER}
-        shouldPlay={screen.isPlaying}
+        resizeMode="cover"
+        paused={!screen.isPlaying}
         onLoad={() => setLoading(false)}
-        onError={(err) => {
+        onError={(err: any) => {
           setLoading(false);
           setError('Failed to load');
           showError('Video load error', String(err));
         }}
-        onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-        useNativeControls={false}
-        isLooping={false}
+        onProgress={handlePlaybackStatusUpdate}
+        onBuffer={handlePlaybackStatusUpdate}
+        progressUpdateInterval={1000}
+        controls={false}
+        repeat={false}
         volume={screen.isMuted ? 0 : screen.volume}
+        muted={screen.isMuted}
+        playInBackground={false}
+        playWhenInactive={false}
       />
 
       {/* Loading indicator */}
