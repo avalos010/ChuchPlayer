@@ -371,26 +371,8 @@ export const ingestXmltvToDatabase = async ({
     console.log('[EPG] Sample unmatched channel IDs from XML:', unmatchedSamples);
   }
 
-  try {
-    const realm = await ensureEpgDatabase();
-    const totalForPlaylist = realm
-      .objects('Program')
-      .filtered('playlistId == $0', playlistId).length;
-
-    console.log(
-      '[EPG] inserted',
-      inserted,
-      'programs for playlist',
-      playlistId,
-      '- total rows for playlist =',
-      totalForPlaylist
-    );
-
-    console.log('[EPG] Checking database contents after ingestion...');
-    await debugDatabaseContents(playlistId);
-  } catch (logError) {
-    console.warn('[EPG] Failed to read Program count from Realm:', logError);
-  }
+  console.log(`[EPG] Ingestion complete for playlist ${playlistId}: ${inserted} programs inserted`);
+  await debugDatabaseContents(playlistId);
 
   return inserted;
 };

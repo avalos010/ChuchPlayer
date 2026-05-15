@@ -1,5 +1,5 @@
-import React, { useState, forwardRef } from 'react';
-import { View, Text, Image } from 'react-native';
+import React, { useState, forwardRef, useCallback } from 'react';
+import { View, Text, Image, StyleSheet, Platform } from 'react-native';
 import FocusableItem from './FocusableItem';
 import { Channel } from '../types';
 
@@ -11,84 +11,76 @@ interface ChannelListItemProps {
   isCurrentChannel?: boolean;
 }
 
-const ChannelListItem = forwardRef<any, ChannelListItemProps>(({ 
-  channel, 
-  onPress, 
+const TV = Platform.OS === 'android';
+
+const ChannelListItem = forwardRef<any, ChannelListItemProps>(({
+  channel,
+  onPress,
   onFocus,
   hasTVPreferredFocus = false,
   isCurrentChannel = false,
 }, ref) => {
-  const [imageError, setImageError] = useState(false);
+  const [imgErr, setImgErr] = useState(false);
 
-  const handlePress = () => {
-    console.log('ChannelListItem pressed:', channel.name, channel.url);
-    onPress(channel);
-  };
+  const handlePress  = useCallback(() => onPress(channel), [channel, onPress]);
+  const handleFocus  = useCallback(() => onFocus?.(channel.id), [channel.id, onFocus]);
 
-  const handleFocus = () => {
-    onFocus?.(channel.id);
-  };
+  const logoSz = TV ? 68 : 56;
+  const initials = channel.name.substring(0, 2).toUpperCase();
 
   return (
-    <FocusableItem 
+    <FocusableItem
       ref={ref}
       onPress={handlePress}
       onFocus={handleFocus}
       hasTVPreferredFocus={hasTVPreferredFocus}
-      className="bg-card rounded-xl border border-border"
-      style={{
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
-        elevation: 4,
-        borderWidth: isCurrentChannel ? 2 : undefined,
-        borderColor: isCurrentChannel ? '#00aaff' : undefined,
-        backgroundColor: isCurrentChannel ? 'rgba(0, 170, 255, 0.12)' : undefined,
-      }}
-      focusedStyle={{
-        backgroundColor: 'rgba(0, 170, 255, 0.15)',
-        borderColor: '#00aaff',
-        borderWidth: 2,
-      }}
+      style={[
+        s.item,
+        isCurrentChannel && s.itemCurrent,
+      ]}
+      focusedStyle={FOCUSED_STYLE}
     >
-      <View className="flex-row items-center p-4 gap-4">
-        {channel.logo && !imageError ? (
+      <View style={s.inner}>
+        {/* Logo / initials */}
+        {channel.logo && !imgErr ? (
           <Image
             source={{ uri: channel.logo }}
-            style={{
-              width: 70,
-              height: 70,
-              borderRadius: 12,
-              backgroundColor: '#0f172a',
-              borderWidth: 1,
-              borderColor: 'rgba(148, 163, 184, 0.6)',
-            }}
+            style={[s.logo, { width: logoSz, height: logoSz }]}
             resizeMode="contain"
-            onError={() => setImageError(true)}
+            onError={() => setImgErr(true)}
           />
         ) : (
-          <View className={`w-[70px] h-[70px] rounded-xl border border-border justify-center items-center ${isCurrentChannel ? 'bg-accent/30' : 'bg-subtle'}`}>
-            <Text className={`text-xl font-bold tracking-wide ${isCurrentChannel ? 'text-white' : 'text-text-primary'}`}>
-              {channel.name.substring(0, 2).toUpperCase()}
+          <View style={[s.logoFallback, { width: logoSz, height: logoSz },
+            isCurrentChannel && s.logoFallbackCurrent,
+          ]}>
+            <Text style={[s.logoInitials, isCurrentChannel && { color: '#f5f5f5' }]}>
+              {initials}
             </Text>
           </View>
         )}
 
-        <View className="flex-1">
-          <Text className={`text-lg font-semibold mb-1 ${isCurrentChannel ? 'text-white' : 'text-text-primary'}`} numberOfLines={1}>
+        {/* Name + group */}
+        <View style={s.meta}>
+          <Text
+            style={[s.name, isCurrentChannel && s.nameCurrent]}
+            numberOfLines={1}
+          >
             {channel.name}
           </Text>
           {channel.group ? (
-            <Text className={`${isCurrentChannel ? 'text-white/70' : 'text-text-muted'} text-sm`} numberOfLines={1}>
+            <Text
+              style={[s.group, isCurrentChannel && s.groupCurrent]}
+              numberOfLines={1}
+            >
               {channel.group}
             </Text>
           ) : null}
         </View>
 
+        {/* LIVE badge for current channel */}
         {isCurrentChannel && (
-          <View className="px-3 py-1 rounded-full bg-accent/60 border border-accent">
-            <Text className="text-white text-xs font-bold">LIVE</Text>
+          <View style={s.liveBadge}>
+            <Text style={s.liveTxt}>LIVE</Text>
           </View>
         )}
       </View>
@@ -97,6 +89,97 @@ const ChannelListItem = forwardRef<any, ChannelListItemProps>(({
 });
 
 ChannelListItem.displayName = 'ChannelListItem';
-
 export default ChannelListItem;
 
+// ─── Focused style (static) ───────────────────────────────────────────────────
+
+const FOCUSED_STYLE = {
+  backgroundColor: '#1c1c1c',
+  borderColor: '#ffffff',
+  borderWidth: 2,
+  transform: [] as any[],
+  elevation: 6,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.5,
+  shadowRadius: 6,
+};
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  item: {
+    marginHorizontal: 10,
+    marginVertical: 3,
+    borderRadius: 12,
+    backgroundColor: '#111111',
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
+  },
+  itemCurrent: {
+    backgroundColor: '#161616',
+    borderColor: '#333333',
+    borderLeftWidth: 3,
+    borderLeftColor: '#e5e5e5',
+  },
+  inner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: TV ? 16 : 14,
+    paddingVertical: TV ? 14 : 11,
+    gap: TV ? 14 : 12,
+  },
+
+  // Logo
+  logo: {
+    borderRadius: 10,
+    backgroundColor: '#181818',
+  },
+  logoFallback: {
+    borderRadius: 10,
+    backgroundColor: '#181818',
+    borderWidth: 1,
+    borderColor: '#222222',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoFallbackCurrent: {
+    backgroundColor: '#1f1f1f',
+    borderColor: '#333333',
+  },
+  logoInitials: {
+    color: '#3d3d3d',
+    fontSize: TV ? 20 : 17,
+    fontWeight: '800',
+  },
+
+  // Text
+  meta: { flex: 1 },
+  name: {
+    color: '#8a8a8a',
+    fontSize: TV ? 17 : 15,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  nameCurrent: { color: '#f5f5f5' },
+  group: {
+    color: '#333333',
+    fontSize: TV ? 13 : 11,
+    fontWeight: '500',
+  },
+  groupCurrent: { color: '#555555' },
+
+  // LIVE badge
+  liveBadge: {
+    backgroundColor: '#e5e5e5',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  liveTxt: {
+    color: '#0a0a0a',
+    fontSize: TV ? 11 : 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+});

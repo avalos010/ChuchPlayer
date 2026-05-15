@@ -1,5 +1,20 @@
-import React, { useCallback, useState, useMemo, memo, useRef, useEffect } from 'react';
-import { View, Text, ScrollView, Platform, ActivityIndicator, Image } from 'react-native';
+import React, {
+  useCallback,
+  useState,
+  useMemo,
+  memo,
+  useRef,
+  useEffect,
+} from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  Platform,
+  ActivityIndicator,
+  Image,
+  StyleSheet,
+} from 'react-native';
 import { FlashList, ListRenderItemInfo } from '@shopify/flash-list';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
@@ -27,409 +42,248 @@ interface ChannelRowData {
   programs: EPGProgram[];
 }
 
-// Modern TV-friendly row height - taller when focused to show program info
-const ROW_HEIGHT_BASE = Platform.OS === 'android' ? 140 : 120;
-const ROW_HEIGHT_FOCUSED = Platform.OS === 'android' ? 200 : 180;
-const CHANNEL_COLUMN_WIDTH = Platform.OS === 'android' ? 320 : 260;
-const TIME_SLOT_WIDTH = Platform.OS === 'android' ? 160 : 130;
+// ─── Constants ───────────────────────────────────────────────────────────────
 
-// Memoized channel row component optimized for Android TV
+const TV = Platform.OS === 'android';
+const CH_COL  = TV ? 300 : 240;  // channel column px
+const SLOT_W  = TV ? 180 : 140;  // 1-hour slot px
+const ROW_H   = TV ? 110 : 90;   // unfocused row height
+const ROW_H_F = TV ? 168 : 145;  // focused row height
+const HDR_H   = TV ? 68 : 54;    // time header height
+
+const HDR_BTN_FOCUSED = {
+  backgroundColor: '#ffffff',
+  borderColor: '#ffffff',
+  borderWidth: 2,
+  transform: [] as any[],
+  elevation: 6,
+  shadowColor: '#ffffff',
+  shadowOffset: { width: 0, height: 0 },
+  shadowOpacity: 0.2,
+  shadowRadius: 8,
+};
+
+const GROUP_TAB_FOCUSED = {
+  backgroundColor: '#1f1f1f',
+  borderColor: '#e5e5e5',
+  borderWidth: 2,
+  transform: [] as any[],
+  elevation: 4,
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const fmtTime = (d?: Date | null) => {
+  if (!d) return '';
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+// ─── Channel Row ─────────────────────────────────────────────────────────────
+
 const ChannelRow = memo<{
   data: ChannelRowData;
-  onChannelSelect: (channel: Channel) => void;
-  onFocus?: (channelId: string) => void;
+  onChannelSelect: (ch: Channel) => void;
+  onFocus?: (id: string) => void;
   isFocused?: boolean;
   hasTVPreferredFocus?: boolean;
   currentTimePosition?: number;
 }>(({ data, onChannelSelect, onFocus, isFocused = false, hasTVPreferredFocus = false, currentTimePosition }) => {
   const { channel, isCurrent, programs } = data;
-  const [imageError, setImageError] = useState(false);
-  
-  // Calculate positions for all programs
-  const programPositions = useMemo(() => {
-    if (!programs || programs.length === 0) return [];
-    
+  const [imgErr, setImgErr] = useState(false);
+
+  const initials   = useMemo(() => channel.name.substring(0, 2).toUpperCase(), [channel.name]);
+  const handlePress = useCallback(() => onChannelSelect(channel), [channel, onChannelSelect]);
+  const handleFocus = useCallback(() => onFocus?.(channel.id), [channel.id, onFocus]);
+  const rowH = isFocused ? ROW_H_F : ROW_H;
+  const logoSz = TV ? 56 : 44;
+
+  const nowProgram = useMemo(() => {
     const now = new Date();
-    const currentHour = now.getHours() + now.getMinutes() / 60;
-    
-    return programs.map(program => {
-      const programStart = program.start;
-      const programEnd = program.end;
-    
-    const startHour = programStart.getHours() + programStart.getMinutes() / 60;
-    const endHour = programEnd.getHours() + programEnd.getMinutes() / 60;
-    const duration = endHour - startHour;
-      
-      // Calculate hours from current time (slot 12 is current hour)
-      const hoursFromNow = (programStart.getTime() - now.getTime()) / (1000 * 60 * 60);
-      
-      // Position relative to slot 12 (current hour)
-      const leftPosition = 12 * TIME_SLOT_WIDTH + (hoursFromNow * TIME_SLOT_WIDTH);
-      const programWidth = Math.max(duration * TIME_SLOT_WIDTH, 120);
-      
-      return {
-        program,
-        leftPosition,
-        programWidth,
-        isCurrent: programStart <= now && programEnd > now,
-      };
-    }).filter(pos => {
-      // Only show programs that are visible in the timeline (within 48 hours window)
-      return pos.leftPosition >= -TIME_SLOT_WIDTH && pos.leftPosition <= 48 * TIME_SLOT_WIDTH;
-    });
+    return programs.find(p => p.start <= now && p.end > now) ?? null;
   }, [programs]);
-  
-  // Get current program for display
-  const currentProgram = useMemo(() => {
+
+  const blocks = useMemo(() => {
+    if (!programs.length) return [];
     const now = new Date();
-    return programs.find(p => p.start <= now && p.end > now) || null;
+    return programs
+      .map(p => {
+        const durH = (p.end.getTime() - p.start.getTime()) / 3_600_000;
+        const hoursFromNow = (p.start.getTime() - now.getTime()) / 3_600_000;
+        const left = 12 * SLOT_W + hoursFromNow * SLOT_W;
+        const width = Math.max(durH * SLOT_W, 72);
+        const isNow = p.start <= now && p.end > now;
+        return { p, left, width, isNow };
+      })
+      .filter(b => b.left >= -SLOT_W && b.left <= 48 * SLOT_W);
   }, [programs]);
-  
-  const handlePress = useCallback(() => {
-    onChannelSelect(channel);
-  }, [channel, onChannelSelect]);
 
-  const handleFocus = useCallback(() => {
-    onFocus?.(channel.id);
-  }, [channel.id, onFocus]);
-  
-  const channelInitials = useMemo(() => 
-    channel.name.substring(0, 2).toUpperCase(),
-    [channel.name]
-  );
-  
-  // Enhanced focus styles for TV with modern design
-  const rowHeight = isFocused ? ROW_HEIGHT_FOCUSED : ROW_HEIGHT_BASE;
-  const logoSize = Platform.OS === 'android' ? 72 : 60;
-  const channelNameSize = Platform.OS === 'android' ? 'text-lg' : 'text-base';
+  // Row background: focused = near-white overlay, current channel = slightly lighter dark, else pure dark
+  const rowBg   = isFocused ? '#1c1c1c' : isCurrent ? '#161616' : '#0e0e0e';
+  const lBorder = isFocused ? '#ffffff' : isCurrent ? '#3d3d3d' : '#181818';
 
-  const rowBackground = isFocused
-    ? '#3b82f6'
-    : isCurrent
-      ? '#1f2937'
-      : '#0f172a';
-
-  const borderAccent = isFocused
-    ? '#f8fafc'
-    : isCurrent
-      ? '#3b82f6'
-      : '#1f2937';
-  
   return (
     <FocusableItem
       onPress={handlePress}
       onFocus={handleFocus}
-      className="border-b border-slate-900"
-      style={{
-        minHeight: rowHeight,
-        backgroundColor: rowBackground,
-        borderLeftWidth: isFocused || isCurrent ? 3 : 1,
-        borderLeftColor: borderAccent,
-        paddingLeft: CHANNEL_COLUMN_WIDTH,
-      }}
       hasTVPreferredFocus={hasTVPreferredFocus}
-      focusedStyle={Platform.OS === 'android' ? {
-        backgroundColor: '#2563eb',
+      style={[s.row, { height: rowH, backgroundColor: rowBg, borderLeftColor: lBorder, paddingLeft: CH_COL }]}
+      focusedStyle={{
+        backgroundColor: '#1c1c1c',
+        borderLeftColor: '#ffffff',
         borderLeftWidth: 3,
-        borderLeftColor: '#f8fafc',
         transform: [],
-      } : {
-        backgroundColor: '#2563eb',
-        borderLeftWidth: 3,
-        borderLeftColor: '#f8fafc',
-        transform: [{ scale: 1.01 }],
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.5,
+        shadowRadius: 6,
       }}
     >
-      {/* Program Timeline Column */}
-      <View className="flex-1 relative" style={{ minWidth: 48 * TIME_SLOT_WIDTH }}>
-        {/* Current Time Indicator Line - Modern Design */}
+      {/* ── Program timeline ────────────────────── */}
+      <View style={{ flex: 1, position: 'relative', minWidth: 48 * SLOT_W }}>
         {currentTimePosition !== undefined && (
-          <View
-            className="absolute top-0 bottom-0 w-1 bg-cyan-400 z-[20] shadow-lg"
-            style={{ left: currentTimePosition }}
-          >
-            <View className="absolute -top-2 -left-2 w-4 h-4 rounded-full bg-cyan-400 border-2 border-slate-900 shadow-xl" />
+          <View style={[s.timeLine, { left: currentTimePosition }]}>
+            <View style={s.timeDot} />
           </View>
         )}
-        
-        {/* Render program blocks with lazy loading for performance */}
-        {programPositions.length > 0 ? (
-          // On Android TV, only render visible programs or when focused
-          Platform.OS === 'android' && !isFocused ? (
-            // Simplified view for unfocused rows on Android TV - Modern Design
-            programPositions.slice(0, 3).map((pos, idx) => {
-              const isCurrentProgram = pos.isCurrent;
-              const program = pos.program;
 
-              return (
-                <View
-                  key={program.id}
-                  className={`absolute rounded-lg border top-3 bottom-3 px-4 py-3 ${
-                    isCurrentProgram
-                      ? 'bg-sky-400 border-sky-200'
-                      : 'bg-slate-900 border-slate-700'
-                  }`}
-                  style={{
-                    left: Math.max(0, pos.leftPosition),
-                    width: pos.programWidth,
-                    minWidth: 160,
-                    zIndex: isCurrentProgram ? 10 : 5,
-                  }}
-                >
-                  <View className="flex-1 justify-center">
-                    <Text 
-                      className={`font-bold ${
-                        isCurrentProgram ? 'text-slate-900' : 'text-slate-100'
-                      } ${Platform.OS === 'android' ? 'text-base' : 'text-sm'} leading-snug`}
-                      numberOfLines={1}
-                    >
-                      {program.title}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })
-          ) : (
-            // Full detailed view for focused rows or non-Android TV - Modern Design
-            programPositions.map((pos, idx) => {
-              const isCurrentProgram = pos.isCurrent;
-              const program = pos.program;
-              const timeString = `${program.start.toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })} - ${program.end.toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}`;
-              
-              return (
-                <View
-                  key={program.id}
-                  className={`absolute rounded-xl border top-3 bottom-3 ${
-                    isCurrentProgram || isFocused
-                      ? 'bg-sky-400 border-sky-100 shadow-lg shadow-sky-900/40'
-                      : 'bg-slate-900 border-slate-700'
-                  } ${isFocused && isCurrentProgram ? 'px-5 py-4' : 'px-4 py-3'}`}
-            style={{
-                    left: Math.max(0, pos.leftPosition),
-                    width: pos.programWidth,
-                    minWidth: 180,
-                    zIndex: isCurrentProgram ? 10 : 5,
-                  }}
-                >
-                  <View className="flex-1 justify-center">
-                    <Text 
-                      className={`font-bold mb-2 leading-tight ${
-                        isCurrentProgram || isFocused ? 'text-slate-900' : 'text-slate-100'
-                      } ${Platform.OS === 'android' ? 'text-base' : 'text-sm'}`}
-                      numberOfLines={isFocused ? 2 : 1}
-                    >
-                      {program.title}
-                    </Text>
-                    <Text 
-                      className={`text-xs font-semibold ${
-                        isCurrentProgram || isFocused ? 'text-slate-900' : 'text-slate-300'
-                      }`}
-                    >
-                      {timeString}
-                    </Text>
-                    {isFocused && isCurrentProgram && program.description && (
-                      <Text 
-                        className="text-slate-900 text-xs mt-3 leading-relaxed font-medium"
-                        numberOfLines={2}
-                      >
-                        {program.description}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              );
-            })
-          )
-        ) : (
-          <View 
-            className="absolute top-3 bottom-3 left-0 right-0 items-center justify-center px-8"
-            style={{
-              borderRadius: 16,
-              borderWidth: 2,
-              borderColor: '#f97316',
-              backgroundColor: '#111827',
-              zIndex: 5,
-              shadowColor: '#000',
-              shadowOpacity: 0.5,
-              shadowRadius: 18,
-              shadowOffset: { width: 0, height: 8 },
-            }}
-          >
-            <Text 
-              className="text-white text-base font-bold uppercase tracking-[0.3em]"
-              numberOfLines={1}
+        {blocks.length > 0 ? blocks.map(b => {
+          // Current program: white bg with dark text. Others: dark surface with gray text.
+          const blockBg     = b.isNow ? '#f5f5f5' : (isFocused ? '#252525' : '#181818');
+          const blockBorder = b.isNow ? '#e5e5e5' : '#232323';
+          const titleColor  = b.isNow ? '#0a0a0a' : (isFocused ? '#d4d4d4' : '#737373');
+          const timeColor   = b.isNow ? '#4a4a4a' : '#3d3d3d';
+
+          return (
+            <View
+              key={b.p.id}
+              style={[s.block, {
+                left: Math.max(0, b.left),
+                width: b.width,
+                backgroundColor: blockBg,
+                borderColor: blockBorder,
+                top: 8, bottom: 8,
+              }]}
             >
-              NO PROGRAM DATA
-            </Text>
-            <Text 
-              className="text-orange-200 text-sm font-semibold mt-3 text-center"
-            >
-              Your provider did not supply guide information for this channel.
-            </Text>
+              <Text style={[s.blockTitle, { color: titleColor }]} numberOfLines={isFocused ? 2 : 1}>
+                {b.p.title}
+              </Text>
+              <Text style={[s.blockTime, { color: timeColor }]}>
+                {fmtTime(b.p.start)} – {fmtTime(b.p.end)}
+              </Text>
+              {isFocused && b.isNow && typeof b.p.description === 'string' && b.p.description.trim() ? (
+                <Text style={s.blockDesc} numberOfLines={2}>{b.p.description.trim()}</Text>
+              ) : null}
+            </View>
+          );
+        }) : (
+          <View style={s.noData}>
+            <Text style={s.noDataText}>No guide data</Text>
           </View>
         )}
       </View>
 
-      {/* Fixed Channel Column Overlay */}
+      {/* ── Fixed channel column ─────────────────── */}
       <View
         pointerEvents="none"
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: CHANNEL_COLUMN_WIDTH,
-          borderRightWidth: 2,
-          borderRightColor: '#1f2937',
-          backgroundColor: '#020617',
-          zIndex: 6,
-          shadowColor: '#000',
-          shadowOpacity: 0.5,
-          shadowRadius: 16,
-          shadowOffset: { width: 4, height: 0 },
-        }}
+        style={[s.chCol, { backgroundColor: isFocused ? '#141414' : '#0a0a0a' }]}
       >
-        <View className="flex-row items-center px-6 py-5 gap-4">
-          {channel.logo && !imageError ? (
-            <Image
-              source={{ uri: channel.logo }}
-              className="bg-slate-900 border border-slate-600 rounded-2xl"
-              style={{ width: logoSize, height: logoSize }}
-              resizeMode="contain"
-              onError={() => setImageError(true)}
-            />
-          ) : (
-            <View 
-              className="bg-slate-800 border border-slate-600 justify-center items-center rounded-2xl"
-              style={{ width: logoSize, height: logoSize }}
-            >
-              <Text className="text-white text-xl font-extrabold tracking-wide">
-                {channelInitials}
-              </Text>
-            </View>
-          )}
-          <View className="flex-1">
-            <Text 
-              className={`font-extrabold mb-1 ${channelNameSize} leading-tight text-white`}
-              numberOfLines={isFocused ? 3 : 2}
-            >
-              {channel.name}
-            </Text>
-            {channel.group && (
-              <Text 
-                className="text-slate-300 text-sm font-medium"
-                numberOfLines={1}
-              >
-                {channel.group}
-              </Text>
-            )}
+        {channel.logo && !imgErr ? (
+          <Image
+            source={{ uri: channel.logo }}
+            style={{ width: logoSz, height: logoSz, borderRadius: 8, backgroundColor: '#141414' }}
+            resizeMode="contain"
+            onError={() => setImgErr(true)}
+          />
+        ) : (
+          <View style={[s.logoFallback, { width: logoSz, height: logoSz }]}>
+            <Text style={[s.logoInitials, isFocused && { color: '#f5f5f5' }]}>{initials}</Text>
           </View>
+        )}
+
+        <View style={s.chMeta}>
+          <Text
+            style={[s.chName, isFocused && { color: '#f5f5f5' }]}
+            numberOfLines={2}
+          >
+            {channel.name}
+          </Text>
+          {nowProgram && (
+            <Text style={s.chNow} numberOfLines={1}>{nowProgram.title}</Text>
+          )}
+          {channel.group ? (
+            <Text style={s.chGroup} numberOfLines={1}>{channel.group}</Text>
+          ) : null}
         </View>
+
         {isCurrent && (
-          <View className="absolute bottom-4 right-5 px-3 py-1 rounded-full bg-white">
-            <Text className="text-sky-600 text-xs font-bold tracking-[0.3em]">ON NOW</Text>
+          <View style={s.onNowBadge}>
+            <Text style={s.onNowText}>ON NOW</Text>
           </View>
         )}
       </View>
     </FocusableItem>
   );
-}, (prevProps, nextProps) => {
-  return (
-    prevProps.data.channel.id === nextProps.data.channel.id &&
-    prevProps.data.isCurrent === nextProps.data.isCurrent &&
-    prevProps.data.programs.length === nextProps.data.programs.length &&
-    prevProps.isFocused === nextProps.isFocused &&
-    prevProps.hasTVPreferredFocus === nextProps.hasTVPreferredFocus &&
-    prevProps.currentTimePosition === nextProps.currentTimePosition &&
-    prevProps.onFocus === nextProps.onFocus
-  );
-});
-
+}, (prev, next) =>
+  prev.data.channel.id   === next.data.channel.id   &&
+  prev.data.isCurrent    === next.data.isCurrent    &&
+  prev.data.programs.length === next.data.programs.length &&
+  prev.isFocused         === next.isFocused         &&
+  prev.hasTVPreferredFocus === next.hasTVPreferredFocus &&
+  prev.currentTimePosition === next.currentTimePosition &&
+  prev.onFocus           === next.onFocus,
+);
 ChannelRow.displayName = 'ChannelRow';
 
-// Memoized time header component with TV-optimized sizing
+// ─── Time Header ─────────────────────────────────────────────────────────────
+
 const TimeHeader = memo<{ currentTimePosition?: number }>(({ currentTimePosition }) => {
-  const timeSlots = useMemo(() => {
+  const slots = useMemo(() => {
     const now = new Date();
-    const currentHour = now.getHours();
+    const cur = now.getHours();
     return Array.from({ length: 48 }, (_, i) => {
-      const hour = (currentHour - 12 + i) % 24;
-      const hour24 = hour < 0 ? hour + 24 : hour;
-      return {
-        id: i,
-        hour24,
-        isCurrent: i === 12,
-      };
+      const h = ((cur - 12 + i) % 24 + 24) % 24;
+      return { id: i, h, isCurrent: i === 12 };
     });
   }, []);
-  
-  const headerHeight = Platform.OS === 'android' ? 70 : 56;
-  const timeTextSize = Platform.OS === 'android' ? 'text-base' : 'text-xs';
-  
+
   return (
-    <View
-      className="border-b border-slate-800/70 z-10 bg-slate-950/95"
-      style={{ height: headerHeight, paddingLeft: CHANNEL_COLUMN_WIDTH }}
-    >
-      {/* Timeline header */}
-      <View className="flex-1 h-full relative">
-        {currentTimePosition !== undefined && (
+    <View style={[s.timeHeader, { paddingLeft: CH_COL }]}>
+      <View style={{ flexDirection: 'row' }}>
+        {slots.map(slot => (
           <View
-            className="absolute top-0 bottom-0 w-1 bg-cyan-400 z-[20] shadow-lg"
-            style={{ left: currentTimePosition }}
+            key={slot.id}
+            style={[s.timeSlot, slot.isCurrent && s.timeSlotNow]}
           >
-            <View className="absolute -top-2 -left-2 w-4 h-4 rounded-full bg-cyan-400 border-2 border-slate-950 shadow-xl" />
+            <Text style={[s.timeText, slot.isCurrent && s.timeTextNow]}>
+              {slot.h.toString().padStart(2, '0')}:00
+            </Text>
           </View>
-        )}
-        <View className="flex-row h-full">
-          {timeSlots.map((slot) => (
-            <View 
-              key={slot.id}
-              className="border-r border-slate-800/60 items-center justify-center bg-slate-950/88"
-              style={{ width: TIME_SLOT_WIDTH }}
-            >
-              <Text className={`${timeTextSize} font-semibold tracking-wide ${slot.isCurrent ? 'text-white' : 'text-slate-300'}`}>
-                {slot.hour24.toString().padStart(2, '0')}:00
-              </Text>
-            </View>
-          ))}
-        </View>
+        ))}
       </View>
 
-      {/* Fixed channel/time label */}
-      <View
-        pointerEvents="none"
-        style={{
+      {currentTimePosition !== undefined && (
+        <View style={[s.timeLine, {
+          left: currentTimePosition + CH_COL,
+          top: 0, bottom: 0,
           position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: CHANNEL_COLUMN_WIDTH,
-          borderRightWidth: 1,
-          borderRightColor: 'rgba(71, 85, 105, 0.55)',
-          backgroundColor: 'rgba(10, 19, 38, 0.96)',
-          justifyContent: 'center',
-          paddingHorizontal: 20,
-          zIndex: 8,
-          shadowColor: '#0f172a',
-          shadowOpacity: 0.4,
-          shadowRadius: 10,
-          shadowOffset: { width: 4, height: 0 },
-        }}
-      >
-        <Text className="text-white text-xs font-extrabold tracking-[0.35em] uppercase">TIME</Text>
+        }]}>
+          <View style={s.timeDot} />
+        </View>
+      )}
+
+      {/* Sticky "CHANNELS" label */}
+      <View pointerEvents="none" style={s.timeChLabel}>
+        <Text style={s.timeChLabelTxt}>CHANNELS</Text>
       </View>
     </View>
   );
 });
-
 TimeHeader.displayName = 'TimeHeader';
+
+// ─── Main EPGGridView ─────────────────────────────────────────────────────────
 
 const EPGGridView: React.FC<EPGGridViewProps> = ({
   getCurrentProgram,
@@ -441,59 +295,39 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   epgLoading = false,
   epgError = null,
 }) => {
-  const showEPGGrid = useUIStore((state) => state.showEPGGrid);
-  const setShowEPGGrid = useUIStore((state) => state.setShowEPGGrid);
-  const channels = usePlayerStore((state) => state.channels);
-  const channel = usePlayerStore((state) => state.channel);
-  const playlist = usePlayerStore((state) => state.playlist);
+  const showEPGGrid  = useUIStore((st) => st.showEPGGrid);
+  const setShowEPGGrid = useUIStore((st) => st.setShowEPGGrid);
+  const channels     = usePlayerStore((st) => st.channels);
+  const channel      = usePlayerStore((st) => st.channel);
+  const playlist     = usePlayerStore((st) => st.playlist);
 
-  const [selectedGroup, setSelectedGroup] = useState<string>('All');
-  const flatListRef = React.useRef<FlashList<ChannelRowData>>(null);
-  const horizontalScrollRef = React.useRef<ScrollView>(null);
-  const [focusedChannelId, setFocusedChannelId] = useState<string | null>(null);
-  const [initialFocusChannelId, setInitialFocusChannelId] = useState<string | null>(null);
-  const [focusedGroup, setFocusedGroup] = useState<string | null>(null);
-  const [currentTimePosition, setCurrentTimePosition] = useState<number>(0);
+  const [selectedGroup, setSelectedGroup] = useState('All');
+  const flashRef    = useRef<FlashList<ChannelRowData>>(null);
+  const hScrollRef  = useRef<ScrollView>(null);
+  const [focusedId, setFocusedId]       = useState<string | null>(null);
+  const [initFocusId, setInitFocusId]   = useState<string | null>(null);
+  const [timePos, setTimePos]           = useState(0);
+  const [loadedIds, setLoadedIds]       = useState<Set<string>>(new Set());
 
-  // Lazy loading state for EPG data
-  const [loadedChannelIds, setLoadedChannelIds] = useState<Set<string>>(new Set());
-  const [visibleChannelIds, setVisibleChannelIds] = useState<Set<string>>(new Set());
-
-  // Calculate current time position for indicator line (less frequent updates for performance)
+  // Update current time position every 5 min
   useEffect(() => {
-    const updateTimePosition = () => {
+    const update = () => {
       const now = new Date();
-      const currentMinute = now.getMinutes();
-      // Position is minutes from the start of the current hour slot (12th slot = index 12)
-      // Current time is at slot 12 (index 12), so position within that slot
-      const position = (currentMinute / 60) * TIME_SLOT_WIDTH;
-      setCurrentTimePosition(12 * TIME_SLOT_WIDTH + position);
+      setTimePos(12 * SLOT_W + (now.getMinutes() / 60) * SLOT_W);
     };
-    
-    updateTimePosition();
-    // Update every 5 minutes instead of 1 minute for better performance
-    const interval = setInterval(updateTimePosition, 300000);
-    return () => clearInterval(interval);
+    update();
+    const id = setInterval(update, 300_000);
+    return () => clearInterval(id);
   }, []);
 
-  // Scroll to position current time at the leftmost visible edge when EPG opens
+  // Scroll to current time when grid opens
   useEffect(() => {
-    if (showEPGGrid && horizontalScrollRef.current && currentTimePosition > 0) {
-      // Position current time at the leftmost edge of the visible scrollable area
-      // This allows users to see current/future programs without scrolling right
-      // Users can still scroll left to see past programs if they want
-      const scrollXPos = Math.max(0, currentTimePosition - 20); // Small offset for visual padding
-      
-      // Use setTimeout to ensure the ScrollView is rendered and measured
+    if (showEPGGrid && hScrollRef.current && timePos > 0) {
       setTimeout(() => {
-        horizontalScrollRef.current?.scrollTo({
-          x: scrollXPos,
-          animated: false,
-        });
-      }, 150);
+        hScrollRef.current?.scrollTo({ x: Math.max(0, timePos - 24), animated: false });
+      }, 200);
     }
-  }, [showEPGGrid, currentTimePosition]);
-
+  }, [showEPGGrid, timePos]);
 
   const handleClose = useCallback(() => {
     setShowEPGGrid(false);
@@ -503,375 +337,183 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   const handleSettings = useCallback(() => {
     setShowEPGGrid(false);
     onExitPIP?.();
-    if (navigation) {
-      setTimeout(() => {
-        try {
-          navigation.navigate('Settings');
-        } catch (error) {
-          console.log('Navigation not ready:', error);
-        }
-      }, 100);
-    }
+    setTimeout(() => { try { navigation?.navigate('Settings'); } catch {} }, 100);
   }, [setShowEPGGrid, onExitPIP, navigation]);
 
-  const currentChannelId = channel?.id || '';
-  const playlistName = playlist?.name;
-
-  // Memoize groups
   const groups = useMemo(() => {
-    if (!channels || !Array.isArray(channels) || channels.length === 0) {
-      return ['All'];
-    }
-    const grouped = groupChannelsByCategory(channels);
-    const groupNames = Array.from(grouped.keys()).sort();
-    return ['All', ...groupNames];
+    if (!channels?.length) return ['All'];
+    const g = groupChannelsByCategory(channels);
+    return ['All', ...Array.from(g.keys()).sort()];
   }, [channels]);
 
-  // Memoize filtered channels (without loading all EPG data at once)
   const filteredChannels = useMemo(() => {
-    if (!channels || !Array.isArray(channels) || channels.length === 0) {
-      return [];
-    }
-
-    const filtered = selectedGroup === 'All'
-      ? channels
-      : channels.filter(ch => ch && ch.group === selectedGroup);
-
-    return filtered.filter(ch => ch != null);
+    if (!channels?.length) return [];
+    if (selectedGroup === 'All') return channels.filter(Boolean);
+    return channels.filter(ch => ch?.group === selectedGroup);
   }, [channels, selectedGroup]);
 
-  // Load EPG data for specific channels
-  const loadEpgDataForChannels = useCallback((channelIds: string[]) => {
-    if (!channelIds.length || !prefetchProgramsForChannels) return;
-
-    const channelsToLoad = channelIds.filter(id => !loadedChannelIds.has(id));
-    if (channelsToLoad.length > 0) {
-      prefetchProgramsForChannels(channelsToLoad);
-      setLoadedChannelIds(prev => new Set([...prev, ...channelsToLoad]));
+  const loadEpgFor = useCallback((ids: string[]) => {
+    if (!ids.length || !prefetchProgramsForChannels) return;
+    const toLoad = ids.filter(id => !loadedIds.has(id));
+    if (toLoad.length) {
+      prefetchProgramsForChannels(toLoad);
+      setLoadedIds(prev => new Set([...prev, ...toLoad]));
     }
-  }, [loadedChannelIds, prefetchProgramsForChannels]);
+  }, [loadedIds, prefetchProgramsForChannels]);
 
-  // Handle viewable items change to load EPG data for visible channels
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: any[] }) => {
-    const visibleIds = viewableItems.map(item => item.item.channel.id);
-    const visibleSet = new Set(visibleIds);
-
-    // Load EPG data for currently visible channels
-    loadEpgDataForChannels(visibleIds);
-
-    // Also load EPG data for a few channels before and after visible ones (prefetch)
-    const allChannelIds = filteredChannels.map(ch => ch.id);
-    const prefetchCount = 5; // Load 5 channels before and after visible ones
-
-    visibleIds.forEach(visibleId => {
-      const index = allChannelIds.indexOf(visibleId);
-      if (index !== -1) {
-        const startIndex = Math.max(0, index - prefetchCount);
-        const endIndex = Math.min(allChannelIds.length - 1, index + prefetchCount);
-        const prefetchIds = allChannelIds.slice(startIndex, endIndex + 1);
-        loadEpgDataForChannels(prefetchIds);
-      }
+    const visIds: string[] = viewableItems.map((i: any) => i.item.channel.id);
+    loadEpgFor(visIds);
+    const allIds = filteredChannels.map(c => c.id);
+    visIds.forEach(vid => {
+      const idx = allIds.indexOf(vid);
+      if (idx !== -1) loadEpgFor(allIds.slice(Math.max(0, idx - 5), idx + 6));
     });
+  }, [filteredChannels, loadEpgFor]);
 
-    setVisibleChannelIds(visibleSet);
-  }, [filteredChannels, loadEpgDataForChannels]);
-
-  // Memoize channel data with lazy-loaded EPG programs
-  const channelData = useMemo<ChannelRowData[]>(() => {
-    return filteredChannels.map(ch => ({
+  const channelData = useMemo<ChannelRowData[]>(() =>
+    filteredChannels.map(ch => ({
       channel: ch,
-      isCurrent: ch.id === currentChannelId,
-      programs: loadedChannelIds.has(ch.id) && getProgramsForChannel
+      isCurrent: ch.id === channel?.id,
+      programs: loadedIds.has(ch.id) && getProgramsForChannel
         ? getProgramsForChannel(ch.id)
-        : [], // Empty array for channels that haven't loaded EPG data yet
-    }));
-  }, [filteredChannels, currentChannelId, loadedChannelIds, getProgramsForChannel]);
+        : [],
+    })),
+    [filteredChannels, channel?.id, loadedIds, getProgramsForChannel],
+  );
 
-  // Clear loaded channels when group changes
-  React.useEffect(() => {
-    setLoadedChannelIds(new Set());
-    setVisibleChannelIds(new Set());
-  }, [selectedGroup]);
+  useEffect(() => { setLoadedIds(new Set()); }, [selectedGroup]);
 
-  // Load initial EPG data when EPG grid opens
-  React.useEffect(() => {
+  useEffect(() => {
     if (showEPGGrid && filteredChannels.length > 0) {
-      // Load EPG data for the first visible channels
-      const initialChannelIds = filteredChannels.slice(0, 10).map(ch => ch.id);
-      loadEpgDataForChannels(initialChannelIds);
+      loadEpgFor(filteredChannels.slice(0, 12).map(c => c.id));
     }
-  }, [showEPGGrid, filteredChannels, loadEpgDataForChannels, selectedGroup]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showEPGGrid, selectedGroup]);
 
-  // Scroll to current channel when opening or changing groups
-  React.useEffect(() => {
-    if (showEPGGrid && flatListRef.current) {
-      const focusChannelId = currentChannelId || (channelData.length > 0 ? channelData[0].channel.id : null);
-      if (focusChannelId) {
-        setFocusedChannelId(focusChannelId);
-        setInitialFocusChannelId(focusChannelId);
-        const currentIndex = channelData.findIndex(d => d.channel.id === focusChannelId);
-      if (currentIndex >= 0) {
-        setTimeout(() => {
-          flatListRef.current?.scrollToIndex({
-            index: currentIndex,
-            animated: false,
-            viewPosition: 0.3,
-          });
-        }, 100);
-        }
-      }
+  useEffect(() => {
+    if (!showEPGGrid) { setFocusedId(null); setInitFocusId(null); return; }
+    const fid = channel?.id ?? channelData[0]?.channel.id ?? null;
+    if (!fid) return;
+    setFocusedId(fid);
+    setInitFocusId(fid);
+    const idx = channelData.findIndex(d => d.channel.id === fid);
+    if (idx >= 0) {
+      setTimeout(() => {
+        flashRef.current?.scrollToIndex({ index: idx, animated: false, viewPosition: 0.3 });
+      }, 150);
     }
-  }, [showEPGGrid, currentChannelId, selectedGroup, channelData]);
+  }, [showEPGGrid, channel?.id, selectedGroup, channelData]);
 
-  // Reset focused channel when EPG grid closes
-  React.useEffect(() => {
-    if (!showEPGGrid) {
-      setFocusedChannelId(null);
-      setInitialFocusChannelId(null);
-      setFocusedGroup(null);
-    }
-  }, [showEPGGrid]);
-
-  // Handle focus change for navigation - expand row when focused
-  const handleRowFocus = useCallback((channelId: string) => {
-    setFocusedChannelId(channelId);
-    const focusedIndex = channelData.findIndex(d => d.channel.id === channelId);
-    if (focusedIndex >= 0 && flatListRef.current) {
-      // Use scrollToIndex to ensure the expanded row is visible
-      flatListRef.current.scrollToIndex({
-        index: focusedIndex,
-        animated: true,
-        viewPosition: 0.3,
-      });
+  const handleRowFocus = useCallback((id: string) => {
+    setFocusedId(id);
+    const idx = channelData.findIndex(d => d.channel.id === id);
+    if (idx >= 0) {
+      flashRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
     }
   }, [channelData]);
 
-  // Render item callback
-  const renderItem = useCallback(({ item, index }: ListRenderItemInfo<ChannelRowData>) => {
-    const isFocused = item.channel.id === focusedChannelId;
-    const hasTVPreferredFocus = item.channel.id === initialFocusChannelId;
-    
-    return (
-      <ChannelRow 
-        data={item} 
-        onChannelSelect={onChannelSelect}
-        onFocus={handleRowFocus}
-        isFocused={isFocused}
-        hasTVPreferredFocus={hasTVPreferredFocus}
-        currentTimePosition={currentTimePosition}
-      />
-    );
-  }, [onChannelSelect, handleRowFocus, focusedChannelId, initialFocusChannelId, currentTimePosition]);
+  const renderItem = useCallback(({ item }: ListRenderItemInfo<ChannelRowData>) => (
+    <ChannelRow
+      data={item}
+      onChannelSelect={onChannelSelect}
+      onFocus={handleRowFocus}
+      isFocused={item.channel.id === focusedId}
+      hasTVPreferredFocus={item.channel.id === initFocusId}
+      currentTimePosition={timePos}
+    />
+  ), [onChannelSelect, handleRowFocus, focusedId, initFocusId, timePos]);
 
-  // Key extractor
   const keyExtractor = useCallback((item: ChannelRowData) => item.channel.id, []);
 
-  if (!showEPGGrid || channels.length === 0 || !navigation) return null;
+  if (!showEPGGrid || !channels.length || !navigation) return null;
 
   return (
-    <View
-      className="absolute inset-0 bg-slate-950 z-[25]" 
-      style={{ elevation: 25 }}
-    >
+    <View style={s.root}>
+      {/* ── Loading overlay ───────────────────────── */}
       {epgLoading && (
-        <View
-          pointerEvents="none"
-          className="absolute inset-0 z-[40] bg-slate-950/80 justify-center items-center px-10"
-          style={{ elevation: 40 }}
-        >
-          <ActivityIndicator size="large" color="#22d3ee" />
-          <Text className="text-cyan-100 text-base font-semibold mt-4 text-center">
-            Loading program guide…
-          </Text>
-          <Text
-            className="text-cyan-100 text-sm mt-1 text-center"
-            style={{ opacity: 0.8 }}
-          >
-            This may take a few seconds depending on your provider.
-          </Text>
+        <View pointerEvents="none" style={s.loadingOverlay}>
+          <ActivityIndicator size="large" color="#555555" />
+          <Text style={s.loadingTxt}>Loading program guide…</Text>
         </View>
       )}
 
-      {!epgLoading && epgError && (
-        <View
-          pointerEvents="none"
-          className="absolute left-6 right-6 bottom-10 z-[35]"
-          style={{ elevation: 35 }}
-        >
-          <View
-            className="rounded-2xl border px-5 py-4"
-            style={{
-              borderColor: 'rgba(248, 113, 113, 0.45)',
-              backgroundColor: 'rgba(248, 113, 113, 0.12)',
-            }}
-          >
-            <Text className="text-red-200 text-base font-semibold mb-1">
-              Unable to refresh the program guide
-            </Text>
-            <Text
-              className="text-red-200 text-sm"
-              style={{ opacity: 0.85 }}
-              numberOfLines={3}
-            >
-              {epgError}
-            </Text>
-          </View>
+      {/* ── Header ───────────────────────────────── */}
+      <View style={s.header}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.headerTitle}>Program Guide</Text>
+          {playlist?.name ? (
+            <Text style={s.headerSub}>{playlist.name}</Text>
+          ) : null}
         </View>
-      )}
-
-      {/* Header - Modern Design */}
-      <View className="border-b border-slate-800/70 bg-slate-950/95">
-        <View className="flex-row justify-between items-center px-8 py-6">
-          <View className="flex-1">
-            <Text className="text-white text-3xl font-extrabold tracking-tight mb-1">
-              Electronic Program Guide
-            </Text>
-            {playlistName && (
-              <Text className="text-slate-200 text-base font-semibold">{playlistName}</Text>
-            )}
-            <Text className="text-slate-300 text-xs mt-2">
-              Browse live channels and upcoming shows. Use left/right to explore the timeline.
-            </Text>
-          </View>
-          <View className="flex-row gap-4">
-            <FocusableItem
-              onPress={handleSettings}
-              className="w-14 h-14 rounded-xl bg-slate-800/80 border border-slate-700 justify-center items-center"
-              style={{
-                elevation: 4,
-              }}
-              focusedStyle={Platform.OS === 'android' ? {
-                backgroundColor: '#334155',
-                borderColor: '#38bdf8',
-                borderWidth: 2,
-                transform: [],
-              } : {
-                backgroundColor: '#334155',
-                borderColor: '#38bdf8',
-                borderWidth: 2,
-                transform: [{ scale: 1.06 }],
-              }}
-            >
-              <Text className="text-gray-200 text-xl">⚙️</Text>
-            </FocusableItem>
-            <FocusableItem
-              onPress={handleClose}
-              className="w-14 h-14 rounded-xl bg-red-600/80 border border-red-500 justify-center items-center"
-              style={{
-                elevation: 4,
-              }}
-              focusedStyle={Platform.OS === 'android' ? {
-                backgroundColor: '#dc2626',
-                borderColor: '#38bdf8',
-                borderWidth: 2,
-                transform: [],
-              } : {
-                backgroundColor: '#dc2626',
-                borderColor: '#38bdf8',
-                borderWidth: 2,
-                transform: [{ scale: 1.06 }],
-              }}
-            >
-              <Text className="text-white text-xl font-bold">✕</Text>
-            </FocusableItem>
-          </View>
+        <View style={s.headerBtns}>
+          <FocusableItem onPress={handleSettings} style={s.hBtn} focusedStyle={HDR_BTN_FOCUSED}>
+            <Text style={s.hBtnIcon}>⚙</Text>
+          </FocusableItem>
+          <FocusableItem onPress={handleClose} style={[s.hBtn, s.hBtnClose]} focusedStyle={HDR_BTN_FOCUSED}>
+            <Text style={[s.hBtnIcon, { color: '#737373' }]}>✕</Text>
+          </FocusableItem>
         </View>
-
-        {/* Group Filter - Modern Design */}
-        {groups && Array.isArray(groups) && groups.length > 1 && (
-          <View className="px-8 pb-6 bg-slate-950/90 border-t border-slate-900/60">
-            <Text className="text-slate-200 text-xs font-semibold mb-3 px-1 tracking-[0.3em] uppercase">Categories</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 4 }}
-            >
-              <View className="flex-row gap-4">
-                {groups.map((group, index) => {
-                  const isFocused = focusedGroup === group;
-                  const isSelected = selectedGroup === group;
-                  return (
-                    <FocusableItem
-                      key={group}
-                      onPress={() => setSelectedGroup(group)}
-                      onFocus={() => setFocusedGroup(group)}
-                      onBlur={() => setFocusedGroup(null)}
-                      hasTVPreferredFocus={index === 0 && showEPGGrid}
-                      className={`px-8 py-4 rounded-xl border ${
-                        isSelected
-                          ? 'bg-cyan-500/15 border-cyan-400/60'
-                          : 'bg-slate-900/70 border-slate-800/70'
-                      }`}
-                      style={{
-                        minWidth: 132,
-                        elevation: 3,
-                      }}
-                      focusedStyle={Platform.OS === 'android' ? {
-                        backgroundColor: isSelected ? 'rgba(8, 145, 178, 0.4)' : 'rgba(51, 65, 85, 0.9)',
-                        borderColor: '#38bdf8',
-                        borderWidth: 2,
-                        transform: [],
-                      } : {
-                        backgroundColor: isSelected ? 'rgba(8, 145, 178, 0.4)' : 'rgba(51, 65, 85, 0.9)',
-                        borderColor: '#38bdf8',
-                        borderWidth: 2,
-                        transform: [{ scale: 1.04 }],
-                      }}
-                    >
-                      <View className="items-center">
-                        <Text
-                          className={`text-sm font-semibold text-center ${
-                            isSelected || isFocused
-                              ? 'text-white'
-                              : 'text-slate-300'
-                          }`}
-                          numberOfLines={2}
-                        >
-                          {group}
-                        </Text>
-                        {isSelected && (
-                          <View className="w-8 h-1 bg-cyan-300 rounded-full mt-2" />
-                        )}
-                      </View>
-                    </FocusableItem>
-                  );
-                })}
-              </View>
-            </ScrollView>
-          </View>
-        )}
       </View>
 
-      {/* EPG Grid with Horizontal Scroll */}
-      <ScrollView 
-        ref={horizontalScrollRef}
-        className="flex-1" 
-        horizontal 
+      {/* ── Group filter ─────────────────────────── */}
+      {groups.length > 1 && (
+        <View style={s.groupBar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}
+          >
+            {groups.map((g, idx) => {
+              const active = selectedGroup === g;
+              return (
+                <FocusableItem
+                  key={g}
+                  onPress={() => setSelectedGroup(g)}
+                  hasTVPreferredFocus={idx === 0 && showEPGGrid}
+                  style={[s.groupTab, active && s.groupTabActive]}
+                  focusedStyle={GROUP_TAB_FOCUSED}
+                >
+                  <Text style={[s.groupTabTxt, active && s.groupTabTxtActive]}>{g}</Text>
+                  {active ? <View style={s.groupTabLine} /> : null}
+                </FocusableItem>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ── Error banner ─────────────────────────── */}
+      {!epgLoading && epgError && (
+        <View pointerEvents="none" style={s.errBanner}>
+          <Text style={s.errTxt}>⚠  {epgError}</Text>
+        </View>
+      )}
+
+      {/* ── Grid ─────────────────────────────────── */}
+      <ScrollView
+        ref={hScrollRef}
+        style={{ flex: 1 }}
+        horizontal
         showsHorizontalScrollIndicator={false}
-        scrollEventThrottle={16}
+        scrollEventThrottle={32}
       >
-        <View className="flex-1">
-          {/* Time Header */}
-          <TimeHeader currentTimePosition={currentTimePosition} />
-          
-          {/* Virtualized Channel List - Optimized for Android TV */}
-      <View style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
+          <TimeHeader currentTimePosition={timePos} />
+          <View style={{ flex: 1 }}>
             <FlashList
-              ref={flatListRef}
+              ref={flashRef}
               data={channelData}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
+              estimatedItemSize={ROW_H}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled={Platform.OS === 'android'}
-              estimatedItemSize={ROW_HEIGHT_BASE}
+              nestedScrollEnabled={TV}
               onViewableItemsChanged={onViewableItemsChanged}
-              viewabilityConfig={{
-                itemVisiblePercentThreshold: 50, // Item is considered visible when 50% is visible
-                minimumViewTime: 300, // Item must be visible for 300ms
-          }}
-        />
-      </View>
+              viewabilityConfig={{ itemVisiblePercentThreshold: 40, minimumViewTime: 250 }}
+            />
+          </View>
         </View>
       </ScrollView>
     </View>
@@ -879,3 +521,171 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
 };
 
 export default EPGGridView;
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  root: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0a0a0a',
+    zIndex: 25,
+    elevation: 25,
+  },
+
+  // Loading
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 40, elevation: 40,
+    backgroundColor: 'rgba(10,10,10,0.88)',
+    justifyContent: 'center', alignItems: 'center', gap: 12,
+  },
+  loadingTxt: { color: '#555555', fontSize: TV ? 17 : 14, fontWeight: '600' },
+
+  // Header
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: TV ? 28 : 20,
+    paddingVertical: TV ? 18 : 14,
+    backgroundColor: '#0d0d0d',
+    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+  },
+  headerTitle: {
+    color: '#f5f5f5',
+    fontSize: TV ? 26 : 20,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  headerSub: {
+    color: '#3d3d3d',
+    fontSize: TV ? 14 : 11,
+    fontWeight: '500',
+    marginTop: 3,
+  },
+  headerBtns: { flexDirection: 'row', gap: 10 },
+  hBtn: {
+    width: TV ? 50 : 42, height: TV ? 50 : 42,
+    borderRadius: TV ? 12 : 10,
+    backgroundColor: '#161616', borderWidth: 1, borderColor: '#222222',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  hBtnClose: { backgroundColor: '#141414', borderColor: '#1f1f1f' },
+  hBtnIcon: { color: '#8a8a8a', fontSize: TV ? 20 : 17, fontWeight: '700' },
+
+  // Group tabs
+  groupBar: {
+    backgroundColor: '#0d0d0d',
+    paddingHorizontal: TV ? 24 : 16,
+    paddingBottom: TV ? 14 : 10,
+    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+  },
+  groupTab: {
+    paddingHorizontal: TV ? 22 : 14,
+    paddingVertical: TV ? 11 : 7,
+    borderRadius: 10,
+    backgroundColor: '#111111',
+    borderWidth: 1, borderColor: '#1e1e1e',
+    alignItems: 'center',
+    minWidth: TV ? 100 : 72,
+  },
+  groupTabActive: { backgroundColor: '#181818', borderColor: '#333333' },
+  groupTabTxt: { color: '#3d3d3d', fontSize: TV ? 14 : 11, fontWeight: '600' },
+  groupTabTxtActive: { color: '#e5e5e5' },
+  groupTabLine: {
+    width: 20, height: 2, borderRadius: 1,
+    backgroundColor: '#e5e5e5', marginTop: 5,
+  },
+
+  // Error banner
+  errBanner: {
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(239,68,68,0.2)',
+    paddingHorizontal: TV ? 28 : 20, paddingVertical: 10,
+  },
+  errTxt: { color: '#f87171', fontSize: TV ? 14 : 12, fontWeight: '500' },
+
+  // Time header
+  timeHeader: {
+    height: HDR_H,
+    backgroundColor: '#0d0d0d',
+    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  timeSlot: {
+    width: SLOT_W, height: HDR_H,
+    justifyContent: 'center', alignItems: 'center',
+    borderRightWidth: 1, borderRightColor: '#181818',
+  },
+  timeSlotNow: { backgroundColor: 'rgba(255,255,255,0.03)' },
+  timeText:    { color: '#333333', fontSize: TV ? 13 : 10, fontWeight: '600', letterSpacing: 0.5 },
+  timeTextNow: { color: '#a3a3a3' },
+  timeChLabel: {
+    position: 'absolute', left: 0, top: 0, bottom: 0, width: CH_COL,
+    borderRightWidth: 1, borderRightColor: '#1a1a1a',
+    backgroundColor: '#0a0a0a',
+    justifyContent: 'center', paddingHorizontal: TV ? 20 : 14, zIndex: 8,
+  },
+  timeChLabelTxt: { color: '#252525', fontSize: TV ? 10 : 8, fontWeight: '800', letterSpacing: 2.5 },
+
+  // Row
+  row: {
+    flexDirection: 'row',
+    borderBottomWidth: 1, borderBottomColor: '#111111',
+    borderLeftWidth: 3, overflow: 'hidden',
+  },
+
+  // Program blocks
+  block: {
+    position: 'absolute', borderRadius: 8, borderWidth: 1,
+    paddingHorizontal: 10, paddingVertical: 6,
+    justifyContent: 'center', overflow: 'hidden',
+  },
+  blockTitle: { fontSize: TV ? 14 : 12, fontWeight: '700', lineHeight: TV ? 19 : 16 },
+  blockTime:  { fontSize: TV ? 11 : 10, fontWeight: '500', marginTop: 2 },
+  blockDesc:  { color: '#5a5a5a', fontSize: TV ? 11 : 9, marginTop: 4, lineHeight: TV ? 16 : 13 },
+  noData: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  noDataText: { color: '#252525', fontSize: TV ? 12 : 10, fontWeight: '600' },
+
+  // Current time line
+  timeLine: {
+    position: 'absolute', top: 0, bottom: 0,
+    width: 1, backgroundColor: '#e5e5e5', zIndex: 20,
+  },
+  timeDot: {
+    position: 'absolute', top: -4, left: -5,
+    width: 11, height: 11, borderRadius: 6,
+    backgroundColor: '#e5e5e5', borderWidth: 2, borderColor: '#0a0a0a',
+  },
+
+  // Channel column
+  chCol: {
+    position: 'absolute', left: 0, top: 0, bottom: 0, width: CH_COL,
+    borderRightWidth: 1, borderRightColor: '#181818',
+    zIndex: 6, flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: TV ? 14 : 10, gap: 10,
+    shadowColor: '#000', shadowOffset: { width: 4, height: 0 },
+    shadowOpacity: 0.6, shadowRadius: 10, elevation: 6,
+  },
+  chMeta: { flex: 1 },
+  chName: {
+    color: '#8a8a8a',
+    fontSize: TV ? 15 : 12,
+    fontWeight: '700',
+    lineHeight: TV ? 20 : 17,
+    marginBottom: 3,
+  },
+  chNow:  { color: '#3d3d3d', fontSize: TV ? 11 : 9, fontWeight: '500' },
+  chGroup:{ color: '#252525', fontSize: TV ? 10 : 8, fontWeight: '500', marginTop: 2 },
+  logoFallback: {
+    borderRadius: 8, backgroundColor: '#141414',
+    borderWidth: 1, borderColor: '#1f1f1f',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  logoInitials: { color: '#333333', fontSize: TV ? 16 : 13, fontWeight: '800' },
+  onNowBadge: {
+    position: 'absolute', bottom: 8, right: 10,
+    backgroundColor: '#e5e5e5', borderRadius: 5,
+    paddingHorizontal: 7, paddingVertical: 3,
+  },
+  onNowText: { color: '#0a0a0a', fontSize: TV ? 9 : 7, fontWeight: '800', letterSpacing: 1 },
+});

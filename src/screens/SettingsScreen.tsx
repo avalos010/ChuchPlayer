@@ -4,10 +4,13 @@ import {
   Alert,
   FlatList,
   Modal,
+  Platform,
   ScrollView,
+  StyleSheet,
   Switch,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -24,6 +27,43 @@ interface SettingsScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Settings'>;
 }
 
+const TV = Platform.OS === 'android';
+
+// ─── Focused state (static) ───────────────────────────────────────────────────
+const BTN_FOCUSED = {
+  backgroundColor: '#ffffff',
+  borderColor: '#ffffff',
+  borderWidth: 2,
+  transform: [] as any[],
+  elevation: 6,
+  shadowColor: '#ffffff',
+  shadowOffset: { width: 0, height: 0 },
+  shadowOpacity: 0.2,
+  shadowRadius: 8,
+};
+
+const DANGER_FOCUSED = {
+  backgroundColor: '#ef4444',
+  borderColor: '#ef4444',
+  borderWidth: 2,
+  transform: [] as any[],
+  elevation: 6,
+};
+
+// ─── Small reusable pieces ────────────────────────────────────────────────────
+
+const SectionTitle: React.FC<{ label: string }> = ({ label }) => (
+  <Text style={s.sectionTitle}>{label}</Text>
+);
+
+const Card: React.FC<{ children: React.ReactNode; style?: any }> = ({ children, style }) => (
+  <View style={[s.card, style]}>{children}</View>
+);
+
+const Divider = () => <View style={s.divider} />;
+
+// ─── Main screen ─────────────────────────────────────────────────────────────
+
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [settings, setSettings] = useState<Settings>({
     autoPlay: true,
@@ -34,664 +74,479 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
     epgRefreshIntervalMinutes: 60,
     channelRefreshIntervalMinutes: 15,
   });
-  const [loading, setLoading] = useState(true);
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [loadingPlaylists, setLoadingPlaylists] = useState(true);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [sourceType, setSourceType] = useState<PlaylistSourceType>('m3u');
-  const [newPlaylistUrl, setNewPlaylistUrl] = useState('');
-  const [newPlaylistName, setNewPlaylistName] = useState('');
-  const [xtreamServerUrl, setXtreamServerUrl] = useState('');
-  const [xtreamUsername, setXtreamUsername] = useState('');
-  const [xtreamPassword, setXtreamPassword] = useState('');
-  const [addingPlaylist, setAddingPlaylist] = useState(false);
-  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [loading,            setLoading]            = useState(true);
+  const [playlists,          setPlaylists]          = useState<Playlist[]>([]);
+  const [loadingPlaylists,   setLoadingPlaylists]   = useState(true);
+  const [modalVisible,       setModalVisible]       = useState(false);
+  const [sourceType,         setSourceType]         = useState<PlaylistSourceType>('m3u');
+  const [newPlaylistUrl,     setNewPlaylistUrl]     = useState('');
+  const [newPlaylistName,    setNewPlaylistName]    = useState('');
+  const [xtreamServerUrl,    setXtreamServerUrl]    = useState('');
+  const [xtreamUsername,     setXtreamUsername]    = useState('');
+  const [xtreamPassword,     setXtreamPassword]    = useState('');
+  const [addingPlaylist,     setAddingPlaylist]     = useState(false);
+  const [manualRefreshing,   setManualRefreshing]   = useState(false);
+
+  const hasPlayer = !!usePlayerStore.getState().channel;
 
   const loadPlaylists = useCallback(async () => {
     setLoadingPlaylists(true);
     try {
-      const savedPlaylists = await getPlaylists();
-      setPlaylists(savedPlaylists);
-    } catch (error) {
-      console.error('Error loading playlists:', error);
-      // Delay error display to ensure navigation is ready
-      setTimeout(() => {
-        showError('Failed to load playlists. Please try again.', String(error));
-      }, 100);
+      setPlaylists(await getPlaylists());
+    } catch (err) {
+      setTimeout(() => showError('Failed to load playlists.', String(err)), 100);
     } finally {
       setLoadingPlaylists(false);
     }
   }, []);
 
   useEffect(() => {
-    const loadSettings = async () => {
+    (async () => {
       try {
-        const storedSettings = await getSettings();
-        setSettings(storedSettings);
-      } catch (error) {
-        console.error('Error loading settings:', error);
-        // Delay error display to ensure navigation is ready
-        setTimeout(() => {
-          showError('Failed to load settings.', String(error));
-        }, 100);
+        setSettings(await getSettings());
+      } catch (err) {
+        setTimeout(() => showError('Failed to load settings.', String(err)), 100);
       } finally {
         setLoading(false);
       }
-    };
-
-    loadSettings();
+    })();
     loadPlaylists();
   }, [loadPlaylists]);
 
-  // Auto-open add playlist modal when there are no playlists
   useEffect(() => {
-    if (!loadingPlaylists && playlists.length === 0) {
-      setModalVisible(true);
-    }
+    if (!loadingPlaylists && playlists.length === 0) setModalVisible(true);
   }, [loadingPlaylists, playlists.length]);
 
   const updateSetting = async <K extends keyof Settings>(key: K, value: Settings[K]) => {
-    const previousSettings = settings;
+    const prev = settings;
     try {
       const updated = { ...settings, [key]: value };
       setSettings(updated);
       await saveSettings(updated);
-    } catch (error) {
-      console.error('Error saving settings:', error);
-      setTimeout(() => {
-        showError('Could not save settings. Please try again.', String(error));
-      }, 100);
-      // Revert the state change on error
-      setSettings(previousSettings);
+    } catch (err) {
+      setSettings(prev);
+      setTimeout(() => showError('Could not save settings.', String(err)), 100);
     }
   };
 
+  // ── Add playlist ────────────────────────────────────────────────────────────
   const handleAddPlaylist = async () => {
-    if (!newPlaylistName.trim()) {
-      setTimeout(() => showError('Please enter a playlist name.'), 100);
-      return;
-    }
-
-    if (sourceType === 'm3u') {
-      if (!newPlaylistUrl.trim()) {
-        setTimeout(() => showError('Please enter an M3U playlist URL.'), 100);
-        return;
-      }
-    } else {
-      if (!xtreamServerUrl.trim() || !xtreamUsername.trim() || !xtreamPassword.trim()) {
-        setTimeout(() => showError('Please enter all Xtream Codes credentials.'), 100);
-        return;
-      }
+    if (!newPlaylistName.trim()) { setTimeout(() => showError('Enter a playlist name.'), 100); return; }
+    if (sourceType === 'm3u' && !newPlaylistUrl.trim()) { setTimeout(() => showError('Enter an M3U URL.'), 100); return; }
+    if (sourceType === 'xtream' && (!xtreamServerUrl.trim() || !xtreamUsername.trim() || !xtreamPassword.trim())) {
+      setTimeout(() => showError('Enter all Xtream credentials.'), 100); return;
     }
 
     setAddingPlaylist(true);
-
     try {
       let channels: Playlist['channels'] = [];
-      let playlistUrl: string;
+      let playlistUrl = '';
       let epgUrls: string[] = [];
       let xtreamCredentials;
 
       if (sourceType === 'm3u') {
-        const playlistData = await fetchM3UPlaylist(newPlaylistUrl.trim());
-        channels = playlistData.channels;
-        epgUrls = playlistData.epgUrls;
-        playlistUrl = newPlaylistUrl.trim();
+        const data = await fetchM3UPlaylist(newPlaylistUrl.trim());
+        channels = data.channels; epgUrls = data.epgUrls; playlistUrl = newPlaylistUrl.trim();
       } else {
-        const credentials = {
-          serverUrl: xtreamServerUrl.trim(),
-          username: xtreamUsername.trim(),
-          password: xtreamPassword.trim(),
-        };
-        const playlistData = await fetchXtreamPlaylist(credentials);
-        channels = playlistData.channels;
-        epgUrls = playlistData.epgUrls;
-        playlistUrl = `${credentials.serverUrl}/player_api.php`;
-        xtreamCredentials = credentials;
+        const creds = { serverUrl: xtreamServerUrl.trim(), username: xtreamUsername.trim(), password: xtreamPassword.trim() };
+        const data = await fetchXtreamPlaylist(creds);
+        channels = data.channels; epgUrls = data.epgUrls;
+        playlistUrl = `${creds.serverUrl}/player_api.php`; xtreamCredentials = creds;
       }
 
-      if (channels.length === 0) {
-        setTimeout(() => showError('No channels were found in this playlist.'), 100);
-        return;
-      }
+      if (!channels.length) { setTimeout(() => showError('No channels found in this playlist.'), 100); return; }
 
       const now = new Date();
       const playlist: Playlist = {
-        id: Date.now().toString(),
-        name: newPlaylistName.trim(),
-        url: playlistUrl,
-        sourceType,
-        channels,
-        epgUrls,
-        createdAt: now,
-        updatedAt: now,
-        xtreamCredentials,
+        id: Date.now().toString(), name: newPlaylistName.trim(), url: playlistUrl,
+        sourceType, channels, epgUrls, createdAt: now, updatedAt: now, xtreamCredentials,
       };
 
       await savePlaylist(playlist);
       setPlaylists(prev => [...prev, playlist]);
       setModalVisible(false);
-      setNewPlaylistName('');
-      setNewPlaylistUrl('');
-      setXtreamServerUrl('');
-      setXtreamUsername('');
-      setXtreamPassword('');
-      setSourceType('m3u');
+      setNewPlaylistName(''); setNewPlaylistUrl(''); setXtreamServerUrl('');
+      setXtreamUsername(''); setXtreamPassword(''); setSourceType('m3u');
 
-      // Update player store with new playlist and channels
-      const setPlaylist = usePlayerStore.getState().setPlaylist;
-      const setChannels = usePlayerStore.getState().setChannels;
-      const setShowEPGGrid = useUIStore.getState().setShowEPGGrid;
-      
-      setPlaylist(playlist);
-      setChannels(channels);
-      setShowEPGGrid(true); // Show EPG grid
-      
-      // Navigate to Player screen (EPG grid will be visible)
+      usePlayerStore.getState().setPlaylist(playlist);
+      usePlayerStore.getState().setChannels(channels);
+      useUIStore.getState().setShowEPGGrid(true);
       navigation.navigate('Player', {});
-
-      setTimeout(() => showSuccess(`Added ${channels.length} channels from ${playlist.name}.`), 100);
-    } catch (error) {
-      console.error('Error adding playlist:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      const errorPrefix = sourceType === 'm3u' 
-        ? 'Failed to load the playlist. Please check the URL and try again.'
-        : 'Failed to load the playlist. Please check your credentials and try again.';
-      setTimeout(() => showError(errorPrefix, errorMessage), 100);
+      setTimeout(() => showSuccess(`Added ${channels.length} channels.`), 100);
+    } catch (err) {
+      const msg = sourceType === 'm3u' ? 'Check the URL and try again.' : 'Check credentials and try again.';
+      setTimeout(() => showError(msg, err instanceof Error ? err.message : String(err)), 100);
     } finally {
       setAddingPlaylist(false);
     }
   };
 
-  const confirmDeletePlaylist = (playlist: Playlist) => {
-    Alert.alert(
-      'Delete Playlist',
-      `Are you sure you want to delete "${playlist.name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deletePlaylist(playlist.id);
-              setPlaylists(prev => {
-                const updated = prev.filter(item => item.id !== playlist.id);
-
-                const playerState = usePlayerStore.getState();
-                if (playerState.playlist?.id === playlist.id) {
-                  if (updated.length > 0) {
-                    const fallback = updated[0];
-                    playerState.setPlaylist(fallback);
-                    playerState.setChannels(fallback.channels);
-                    if (fallback.channels.length > 0) {
-                      playerState.setChannel(fallback.channels[0]);
-                    } else {
-                      playerState.setChannel(null);
-                    }
-                  } else {
-                    playerState.setChannel(null);
-                    playerState.setChannels([]);
-                    playerState.setPlaylist(null);
-                  }
+  // ── Delete playlist ─────────────────────────────────────────────────────────
+  const confirmDeletePlaylist = (pl: Playlist) => {
+    Alert.alert('Delete Playlist', `Delete "${pl.name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          try {
+            await deletePlaylist(pl.id);
+            setPlaylists(prev => {
+              const updated = prev.filter(p => p.id !== pl.id);
+              const ps = usePlayerStore.getState();
+              if (ps.playlist?.id === pl.id) {
+                if (updated.length > 0) {
+                  ps.setPlaylist(updated[0]); ps.setChannels(updated[0].channels);
+                  ps.setChannel(updated[0].channels[0] ?? null);
+                } else {
+                  ps.setChannel(null); ps.setChannels([]); ps.setPlaylist(null);
                 }
-
-                return updated;
-              });
-
-              setTimeout(() => showSuccess(`Deleted ${playlist.name}`), 100);
-            } catch (error) {
-              console.error('Error deleting playlist:', error);
-              setTimeout(() => showError('Failed to delete the playlist.', String(error)), 100);
-            }
-          },
+              }
+              return updated;
+            });
+            setTimeout(() => showSuccess(`Deleted "${pl.name}"`), 100);
+          } catch (err) {
+            setTimeout(() => showError('Failed to delete.', String(err)), 100);
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  const renderPlaylistItem = ({ item }: { item: Playlist }) => (
-    <View className="bg-card mb-3 rounded-lg">
-      <View className="flex-row justify-between items-center p-5 gap-4">
-        <View className="flex-1">
-          <Text className="text-white text-xl font-semibold mb-1">{item.name}</Text>
-          <Text className="text-text-muted text-sm">{item.channels.length} channels</Text>
-        </View>
-        <FocusableItem
-          onPress={() => confirmDeletePlaylist(item)}
-          className="bg-[#d32f2f] px-4 py-2.5 rounded-lg min-w-[90px] items-center"
-        >
-          <Text className="text-white font-semibold">Delete</Text>
-        </FocusableItem>
+  // ── Manual refresh ──────────────────────────────────────────────────────────
+  const handleManualRefresh = async () => {
+    if (manualRefreshing) return;
+    setManualRefreshing(true);
+    try {
+      const ps = usePlayerStore.getState();
+      if (!playlists.length) { setTimeout(() => showError('No playlists.', 'Add a playlist first.'), 100); return; }
+      if (!ps.playlist) { ps.setPlaylist(playlists[0]); ps.setChannels(playlists[0].channels); ps.setChannel(playlists[0].channels[0] ?? null); }
+
+      const updated: Playlist[] = [];
+      const errors: string[] = [];
+
+      for (const pl of playlists) {
+        try {
+          let refreshed: Playlist | null = null;
+          if (pl.sourceType === 'm3u') {
+            const { channels, epgUrls } = await fetchM3UPlaylist(pl.url);
+            if (!channels.length) throw new Error('No channels.');
+            refreshed = { ...pl, channels, epgUrls, updatedAt: new Date() };
+          } else if (pl.sourceType === 'xtream' && pl.xtreamCredentials) {
+            const { channels, epgUrls } = await fetchXtreamPlaylist(pl.xtreamCredentials);
+            if (!channels.length) throw new Error('No channels.');
+            refreshed = { ...pl, channels, epgUrls, updatedAt: new Date() };
+          }
+          if (!refreshed) throw new Error('Unsupported type.');
+          await savePlaylist(refreshed);
+          updated.push(refreshed);
+          if (ps.playlist?.id === refreshed.id) {
+            ps.setPlaylist(refreshed); ps.setChannels(refreshed.channels);
+            const match = refreshed.channels.find(c => c.id === ps.channel?.id);
+            ps.setChannel(match ?? refreshed.channels[0] ?? null);
+          }
+        } catch (err) {
+          errors.push(`${pl.name}: ${err instanceof Error ? err.message : 'Unknown'}`);
+          updated.push(pl);
+        }
+      }
+
+      setPlaylists(updated);
+      if (updated.some((u, i) => u !== playlists[i])) setTimeout(() => showSuccess('Playlists refreshed.'), 100);
+      if (errors.length) setTimeout(() => showError('Some playlists failed.', errors.join('\n')), 100);
+    } catch (err) {
+      setTimeout(() => showError('Refresh failed.', String(err)), 100);
+    } finally {
+      setManualRefreshing(false);
+    }
+  };
+
+  // ── Render playlist row ─────────────────────────────────────────────────────
+  const renderPlaylistItem = useCallback(({ item }: { item: Playlist }) => (
+    <View style={s.playlistRow}>
+      <View style={{ flex: 1 }}>
+        <Text style={s.playlistName} numberOfLines={1}>{item.name}</Text>
+        <Text style={s.playlistMeta}>{item.channels.length} channels · {item.sourceType.toUpperCase()}</Text>
       </View>
+      <FocusableItem
+        onPress={() => confirmDeletePlaylist(item)}
+        style={s.deleteBtn}
+        focusedStyle={DANGER_FOCUSED}
+      >
+        <Text style={s.deleteBtnTxt}>Delete</Text>
+      </FocusableItem>
     </View>
-  );
+  ), []);
+
+  const closeModal = () => {
+    setModalVisible(false);
+    setNewPlaylistName(''); setNewPlaylistUrl(''); setXtreamServerUrl('');
+    setXtreamUsername(''); setXtreamPassword(''); setSourceType('m3u');
+  };
 
   return (
-    <ScrollView className="flex-1 bg-dark" contentContainerStyle={{ paddingBottom: 40 }}>
-      <View className="mt-6 px-5">
-        <Text className="text-accent text-lg font-bold mb-4 uppercase">Playlists</Text>
+    <View style={s.root}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={s.scroll}>
+
+        {/* ── Back to player ───────────────────────────── */}
+        {hasPlayer && (
+          <FocusableItem
+            onPress={() => navigation.navigate('Player', {})}
+            style={s.backBtn}
+            focusedStyle={BTN_FOCUSED}
+          >
+            <Text style={s.backBtnTxt}>← Back to Player</Text>
+          </FocusableItem>
+        )}
+
+        {/* ══ PLAYLISTS ═══════════════════════════════════ */}
+        <SectionTitle label="Playlists" />
+
         {loadingPlaylists ? (
-          <View className="justify-center items-center py-8">
-            <ActivityIndicator size="large" color="#00aaff" />
-          </View>
+          <Card style={s.centered}>
+            <ActivityIndicator size="large" color="#555555" />
+          </Card>
         ) : playlists.length === 0 ? (
-          <View className="bg-card p-6 rounded-lg mb-3">
-            <Text className="text-white text-base mb-2">No playlists yet</Text>
-            <Text className="text-text-muted text-sm">
-              Add an M3U playlist or Xtream Codes account to get started
-            </Text>
-          </View>
+          <Card>
+            <Text style={s.emptyTitle}>No playlists yet</Text>
+            <Text style={s.emptyBody}>Add an M3U playlist or Xtream Codes account to get started.</Text>
+          </Card>
         ) : (
           <FlatList
             data={playlists}
             renderItem={renderPlaylistItem}
             keyExtractor={item => item.id}
             scrollEnabled={false}
-            className="mb-3"
+            style={{ marginBottom: 4 }}
           />
         )}
-        <FocusableItem 
-          onPress={() => setModalVisible(true)} 
-          className="bg-accent p-4 rounded-lg items-center mb-6"
-        >
-          <Text className="text-white text-lg font-bold">+ Add Playlist</Text>
+
+        <FocusableItem onPress={() => setModalVisible(true)} style={s.addBtn} focusedStyle={BTN_FOCUSED}>
+          <Text style={s.addBtnTxt}>+ Add Playlist</Text>
         </FocusableItem>
-      </View>
 
-      <View className="mt-6 px-5">
-        <Text className="text-accent text-lg font-bold mb-4 uppercase">Playback</Text>
-        <View className="flex-row justify-between items-center bg-card p-4 rounded-lg mb-3 gap-4">
-          <View className="flex-1 gap-1">
-            <Text className="text-white text-base font-semibold">Auto Play</Text>
-            <Text className="text-text-muted text-sm">
-              Automatically start playing when opening a channel
-            </Text>
-          </View>
-          <Switch
-            value={settings.autoPlay}
-            onValueChange={value => updateSetting('autoPlay', value)}
-            trackColor={{ false: '#3a3a3a', true: '#00aaff' }}
-            thumbColor="#fff"
-            disabled={loading}
-          />
-        </View>
-      </View>
+        <Divider />
 
-      <View className="mt-6 px-5">
-        <Text className="text-accent text-lg font-bold mb-4 uppercase">Display</Text>
-        <View className="flex-row justify-between items-center bg-card p-4 rounded-lg mb-3 gap-4">
-          <View className="flex-1 gap-1">
-            <Text className="text-white text-base font-semibold">Show EPG</Text>
-            <Text className="text-text-muted text-sm">
-              Display Electronic Program Guide when available
-            </Text>
+        {/* ══ PLAYBACK ════════════════════════════════════ */}
+        <SectionTitle label="Playback" />
+        <Card>
+          <View style={s.rowBetween}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.settingTitle}>Auto Play</Text>
+              <Text style={s.settingDesc}>Start playing automatically when opening a channel</Text>
+            </View>
+            <Switch
+              value={settings.autoPlay}
+              onValueChange={v => updateSetting('autoPlay', v)}
+              trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
+              thumbColor={settings.autoPlay ? '#0a0a0a' : '#555555'}
+              disabled={loading}
+            />
           </View>
-          <Switch
-            value={settings.showEPG}
-            onValueChange={value => updateSetting('showEPG', value)}
-            trackColor={{ false: '#3a3a3a', true: '#00aaff' }}
-            thumbColor="#fff"
-            disabled={loading}
-          />
-        </View>
+        </Card>
 
-        <View className="flex-row justify-between items-center bg-card p-4 rounded-lg mb-3 gap-4">
-          <View className="flex-1 gap-1">
-            <Text className="text-white text-base font-semibold">Theme</Text>
-            <Text className="text-text-muted text-sm">Choose the app theme</Text>
-          </View>
-          <View className="flex-row gap-2">
-            <FocusableItem
-              onPress={() => updateSetting('theme', 'dark')}
-              className={`px-5 py-2 rounded-md ${settings.theme === 'dark' ? 'bg-accent' : 'bg-subtle'}`}
-            >
-              <Text className={`text-sm font-semibold ${settings.theme === 'dark' ? 'text-white' : 'text-text-muted'}`}>
-                Dark
-              </Text>
-            </FocusableItem>
-            <FocusableItem
-              onPress={() => updateSetting('theme', 'light')}
-              className={`px-5 py-2 rounded-md ${settings.theme === 'light' ? 'bg-accent' : 'bg-subtle'}`}
-            >
-              <Text className={`text-sm font-semibold ${settings.theme === 'light' ? 'text-white' : 'text-text-muted'}`}>
-                Light
-              </Text>
-            </FocusableItem>
-          </View>
-        </View>
-      </View>
+        <Divider />
 
-      <View className="mt-6 px-5">
-        <Text className="text-accent text-lg font-bold mb-4 uppercase">Multi-Screen</Text>
-        <View className="flex-row justify-between items-center bg-card p-4 rounded-lg mb-3 gap-4">
-          <View className="flex-1 gap-1">
-            <Text className="text-white text-base font-semibold">Multi-Screen Mode</Text>
-            <Text className="text-text-muted text-sm">
-              Watch multiple channels simultaneously (up to 4 screens)
-            </Text>
+        {/* ══ DISPLAY ═════════════════════════════════════ */}
+        <SectionTitle label="Display" />
+        <Card>
+          <View style={s.rowBetween}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.settingTitle}>Show EPG</Text>
+              <Text style={s.settingDesc}>Display the program guide when available</Text>
+            </View>
+            <Switch
+              value={settings.showEPG}
+              onValueChange={v => updateSetting('showEPG', v)}
+              trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
+              thumbColor={settings.showEPG ? '#0a0a0a' : '#555555'}
+              disabled={loading}
+            />
           </View>
-          <Switch
-            value={settings.multiScreenEnabled}
-            onValueChange={value => updateSetting('multiScreenEnabled', value)}
-            trackColor={{ false: '#3a3a3a', true: '#00aaff' }}
-            thumbColor="#fff"
-            disabled={loading}
-          />
-        </View>
-        <View className="bg-card p-4 rounded-lg mb-3 gap-2">
-          <View className="flex-row justify-between items-center">
-            <Text className="text-white text-base font-semibold">Max Screens</Text>
-            <Text className="text-text-muted text-sm">{settings.maxMultiScreens}</Text>
+        </Card>
+
+        <Divider />
+
+        {/* ══ MULTI-SCREEN ════════════════════════════════ */}
+        <SectionTitle label="Multi-Screen" />
+        <Card>
+          <View style={s.rowBetween}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.settingTitle}>Multi-Screen Mode</Text>
+              <Text style={s.settingDesc}>Watch up to 4 channels at once</Text>
+            </View>
+            <Switch
+              value={settings.multiScreenEnabled}
+              onValueChange={v => updateSetting('multiScreenEnabled', v)}
+              trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
+              thumbColor={settings.multiScreenEnabled ? '#0a0a0a' : '#555555'}
+              disabled={loading}
+            />
           </View>
-          <View className="flex-row gap-2 mt-2">
-            {[2, 3, 4].map((num) => (
-              <FocusableItem
-                key={num}
-                onPress={() => updateSetting('maxMultiScreens', num)}
-                className={`px-4 py-2 rounded-md ${
-                  settings.maxMultiScreens === num ? 'bg-accent' : 'bg-subtle'
-                }`}
-              >
-                <Text
-                  className={`text-sm font-semibold ${
-                    settings.maxMultiScreens === num ? 'text-white' : 'text-text-muted'
-                  }`}
+          <View style={[s.rowBetween, { marginTop: 20, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#1a1a1a' }]}>
+            <Text style={s.settingTitle}>Max Screens</Text>
+            <View style={s.chipRow}>
+              {[2, 3, 4].map(n => (
+                <FocusableItem
+                  key={n}
+                  onPress={() => updateSetting('maxMultiScreens', n)}
+                  style={[s.chip, settings.maxMultiScreens === n && s.chipActive]}
+                  focusedStyle={BTN_FOCUSED}
                 >
-                  {num}
+                  <Text style={[s.chipTxt, settings.maxMultiScreens === n && s.chipTxtActive]}>{n}</Text>
+                </FocusableItem>
+              ))}
+            </View>
+          </View>
+        </Card>
+
+        <Divider />
+
+        {/* ══ DATA REFRESH ════════════════════════════════ */}
+        <SectionTitle label="Data Refresh" />
+
+        <Card style={{ marginBottom: 10 }}>
+          <View style={s.rowBetween}>
+            <Text style={s.settingTitle}>EPG Refresh</Text>
+            <Text style={s.valueLabel}>{settings.epgRefreshIntervalMinutes / 60}h</Text>
+          </View>
+          <Text style={[s.settingDesc, { marginBottom: 14 }]}>How often to refresh the program guide</Text>
+          <View style={s.chipRow}>
+            {[120, 180, 240, 360, 480].map(min => (
+              <FocusableItem
+                key={`epg-${min}`}
+                onPress={() => updateSetting('epgRefreshIntervalMinutes', min)}
+                style={[s.chip, settings.epgRefreshIntervalMinutes === min && s.chipActive]}
+                focusedStyle={BTN_FOCUSED}
+              >
+                <Text style={[s.chipTxt, settings.epgRefreshIntervalMinutes === min && s.chipTxtActive]}>
+                  {min / 60}h
                 </Text>
               </FocusableItem>
             ))}
           </View>
-        </View>
-      </View>
+        </Card>
 
-      <View className="mt-6 px-5">
-        <Text className="text-accent text-lg font-bold mb-4 uppercase">Data Refresh</Text>
-        <View className="bg-card p-4 rounded-lg mb-3 gap-3">
-          <View className="flex-row justify-between items-center">
-            <Text className="text-white text-base font-semibold">EPG Refresh Interval</Text>
-            <Text className="text-text-muted text-sm">{settings.epgRefreshIntervalMinutes} min</Text>
+        <Card style={{ marginBottom: 10 }}>
+          <View style={s.rowBetween}>
+            <Text style={s.settingTitle}>Channel Refresh</Text>
+            <Text style={s.valueLabel}>{settings.channelRefreshIntervalMinutes / 60}h</Text>
           </View>
-          <Text className="text-text-muted text-xs">
-            How often to refresh the Electronic Program Guide in the background
-          </Text>
-          <View className="flex-row gap-2 mt-3 flex-wrap">
-            {[120, 180, 240, 360, 480].map((minutes) => (
+          <Text style={[s.settingDesc, { marginBottom: 14 }]}>How often to refresh your channel lists</Text>
+          <View style={s.chipRow}>
+            {[120, 240, 360, 480].map(min => (
               <FocusableItem
-                key={`epg-${minutes}`}
-                onPress={() => updateSetting('epgRefreshIntervalMinutes', minutes)}
-                className={`px-4 py-2 rounded-md ${
-                  settings.epgRefreshIntervalMinutes === minutes ? 'bg-accent' : 'bg-subtle'
-                }`}
+                key={`ch-${min}`}
+                onPress={() => updateSetting('channelRefreshIntervalMinutes', min)}
+                style={[s.chip, settings.channelRefreshIntervalMinutes === min && s.chipActive]}
+                focusedStyle={BTN_FOCUSED}
               >
-                <Text
-                  className={`text-sm font-semibold ${
-                    settings.epgRefreshIntervalMinutes === minutes ? 'text-white' : 'text-text-muted'
-                  }`}
-                >
-                  {`${minutes / 60}h`}
+                <Text style={[s.chipTxt, settings.channelRefreshIntervalMinutes === min && s.chipTxtActive]}>
+                  {min / 60}h
                 </Text>
               </FocusableItem>
             ))}
           </View>
-        </View>
+        </Card>
 
-        <View className="bg-card p-4 rounded-lg mb-3 gap-3">
-          <View className="flex-row justify-between items-center">
-            <Text className="text-white text-base font-semibold">Channel Data Refresh</Text>
-            <Text className="text-text-muted text-sm">{settings.channelRefreshIntervalMinutes / 60} h</Text>
-          </View>
-          <Text className="text-text-muted text-xs">
-            How often to refresh channel lists from your playlists
-          </Text>
-          <View className="flex-row gap-2 mt-3 flex-wrap">
-            {[120, 240, 360, 480].map((minutes) => (
-              <FocusableItem
-                key={`channel-${minutes}`}
-                onPress={() => updateSetting('channelRefreshIntervalMinutes', minutes)}
-                className={`px-4 py-2 rounded-md ${
-                  settings.channelRefreshIntervalMinutes === minutes ? 'bg-accent' : 'bg-subtle'
-                }`}
-              >
-                <Text
-                  className={`text-sm font-semibold ${
-                    settings.channelRefreshIntervalMinutes === minutes ? 'text-white' : 'text-text-muted'
-                  }`}
-                >
-                  {`${minutes / 60}h`}
-                </Text>
-              </FocusableItem>
-            ))}
-          </View>
-        </View>
         <FocusableItem
-          onPress={async () => {
-            if (manualRefreshing) {
-              return;
-            }
-            try {
-              setManualRefreshing(true);
-              const playerState = usePlayerStore.getState();
-              let playlistsToRefresh = playlists;
-              if (playlistsToRefresh.length === 0) {
-                setTimeout(() => showError('No playlists available.', 'Add a playlist first.'), 100);
-                return;
-              }
-
-              // Ensure we have an active playlist to keep player state consistent
-              if (!playerState.playlist) {
-                const fallback = playlistsToRefresh[0];
-                playerState.setPlaylist(fallback);
-                playerState.setChannels(fallback.channels);
-                playerState.setChannel(fallback.channels[0] ?? null);
-              }
-
-              const updatedPlaylists: Playlist[] = [];
-              const errors: string[] = [];
-              let refreshedAny = false;
-
-              for (const playlist of playlistsToRefresh) {
-                try {
-                  let refreshed: Playlist | null = null;
-                  if (playlist.sourceType === 'm3u') {
-                    const { channels, epgUrls } = await fetchM3UPlaylist(playlist.url);
-                    if (!channels.length) {
-                      throw new Error('Playlist returned no channels.');
-                    }
-                    refreshed = {
-                      ...playlist,
-                      channels,
-                      epgUrls,
-                      updatedAt: new Date(),
-                    };
-                  } else if (playlist.sourceType === 'xtream' && playlist.xtreamCredentials) {
-                    const { channels, epgUrls } = await fetchXtreamPlaylist(playlist.xtreamCredentials);
-                    if (!channels.length) {
-                      throw new Error('Playlist returned no channels.');
-                    }
-                    refreshed = {
-                      ...playlist,
-                      channels,
-                      epgUrls,
-                      updatedAt: new Date(),
-                    };
-                  }
-
-                  if (!refreshed) {
-                    throw new Error('Unsupported playlist type.');
-                  }
-
-                  // Persist and update local state
-                  await savePlaylist(refreshed);
-                  updatedPlaylists.push(refreshed);
-                  refreshedAny = true;
-
-                  // Update player state if this playlist is active
-                  if (playerState.playlist?.id === refreshed.id) {
-                    const currentChannelId = playerState.channel?.id;
-                    playerState.setPlaylist(refreshed);
-                    playerState.setChannels(refreshed.channels);
-
-                    if (refreshed.channels.length > 0) {
-                      const matchingChannel = refreshed.channels.find((channel) => channel.id === currentChannelId);
-                      playerState.setChannel(matchingChannel ?? refreshed.channels[0]);
-                    } else {
-                      playerState.setChannel(null);
-                    }
-                  }
-                } catch (error) {
-                  console.error(`Manual refresh failed for ${playlist.name}:`, error);
-                  errors.push(`${playlist.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                  updatedPlaylists.push(playlist);
-                }
-              }
-
-              setPlaylists(updatedPlaylists);
-
-              if (refreshedAny) {
-                setTimeout(() => showSuccess('Playlists refreshed.'), 100);
-              }
-
-              if (errors.length > 0) {
-                setTimeout(() => showError('Some playlists failed to refresh.', errors.join('\n')), 100);
-              }
-            } catch (error) {
-              console.error('Manual refresh failed:', error);
-              setTimeout(() => showError('Manual refresh failed.', String(error)), 100);
-            } finally {
-              setManualRefreshing(false);
-            }
-          }}
-          className="mt-3 flex-row items-center justify-center gap-3"
-          style={{
-            backgroundColor: manualRefreshing ? '#3a3a3a' : '#00aaff',
-            borderRadius: 12,
-            paddingHorizontal: 16,
-            paddingVertical: 12,
-            opacity: manualRefreshing ? 0.8 : 1,
-          }}
+          onPress={handleManualRefresh}
+          style={[s.refreshBtn, manualRefreshing && s.refreshBtnDisabled]}
+          focusedStyle={BTN_FOCUSED}
           disabled={manualRefreshing}
         >
-          {manualRefreshing && <ActivityIndicator size="small" color="#fff" />}
-          <Text className="text-white text-base font-semibold">Refresh Now</Text>
+          {manualRefreshing
+            ? <ActivityIndicator size="small" color="#f5f5f5" style={{ marginRight: 10 }} />
+            : null}
+          <Text style={s.refreshBtnTxt}>{manualRefreshing ? 'Refreshing…' : 'Refresh Now'}</Text>
         </FocusableItem>
-      </View>
 
-      <View className="mt-6 px-5">
-        <Text className="text-accent text-lg font-bold mb-4 uppercase">Help</Text>
+        <Divider />
+
+        {/* ══ HELP ════════════════════════════════════════ */}
+        <SectionTitle label="Help" />
+
         <FocusableItem
-          onPress={() =>
-            Alert.alert(
-              'How to Add Playlists',
-              'M3U Playlists:\n'
-                + '1. Get an M3U playlist URL from your IPTV provider\n'
-                + '2. Go to Settings\n'
-                + '3. Select "Add Playlist"\n'
-                + '4. Choose "M3U" as source type\n'
-                + '5. Enter a name and paste the URL\n'
-                + '6. Wait for the channels to load\n\n'
-                + 'Xtream Codes:\n'
-                + '1. Get your Xtream Codes credentials from your provider\n'
-                + '2. Select "Xtream Codes" as source type\n'
-                + '3. Enter server URL, username, and password\n'
-                + '4. Wait for the channels to load'
-            )
-          }
-          className="bg-card p-4 rounded-lg mb-3"
+          onPress={() => Alert.alert(
+            'How to Add Playlists',
+            'M3U Playlists:\n1. Get an M3U URL from your IPTV provider\n2. Tap "Add Playlist"\n3. Choose M3U, enter a name and paste the URL\n\nXtream Codes:\n1. Choose "Xtream Codes"\n2. Enter server URL, username, and password',
+          )}
+          style={[s.card, s.helpBtn]}
+          focusedStyle={BTN_FOCUSED}
         >
-          <Text className="text-accent text-base font-semibold">How to Add Playlists</Text>
+          <Text style={s.helpTitle}>How to Add Playlists</Text>
+          <Text style={s.helpArrow}>›</Text>
         </FocusableItem>
 
         <FocusableItem
-          onPress={() =>
-            Alert.alert(
-              'TV Remote Controls',
-              'Navigation:\n'
-                + '• D-Pad: Navigate between items\n'
-                + '• Center/OK: Select item\n'
-                + '• Back: Go to previous screen\n\n'
-                + 'Video Player:\n'
-                + '• Center/OK: Play/Pause\n'
-                + '• Back: Exit player\n'
-                + '• D-Pad Up: Show controls'
-            )
-          }
-          className="bg-card p-4 rounded-lg mb-3"
+          onPress={() => Alert.alert(
+            'TV Remote Controls',
+            'Navigation:\n• D-Pad: Move between items\n• Center/OK: Select\n• Back: Previous screen\n\nPlayer:\n• Center/OK: Play / Pause\n• D-Pad Up/Down: Switch channel\n• D-Pad Left: Open channel list\n• Back: Open program guide',
+          )}
+          style={[s.card, s.helpBtn]}
+          focusedStyle={BTN_FOCUSED}
         >
-          <Text className="text-accent text-base font-semibold">TV Remote Controls</Text>
+          <Text style={s.helpTitle}>TV Remote Controls</Text>
+          <Text style={s.helpArrow}>›</Text>
         </FocusableItem>
-      </View>
 
-      <View className="mt-6 px-5">
-        <Text className="text-accent text-lg font-bold mb-4 uppercase">About</Text>
-        <View className="bg-card p-4 rounded-lg mb-3 gap-1">
-          <Text className="text-text-muted text-xs">Version</Text>
-          <Text className="text-white text-base">1.0.0</Text>
-        </View>
-        <View className="bg-card p-4 rounded-lg mb-3 gap-1">
-          <Text className="text-text-muted text-xs">App Name</Text>
-          <Text className="text-white text-base">chuchPlayer</Text>
-        </View>
-        <View className="bg-card p-4 rounded-lg mb-3 gap-1">
-          <Text className="text-text-muted text-xs">Description</Text>
-          <Text className="text-white text-base">IPTV Player for Android TV</Text>
-        </View>
-      </View>
+        <Divider />
 
+        {/* ══ ABOUT ═══════════════════════════════════════ */}
+        <SectionTitle label="About" />
+        <Card>
+          {[
+            { label: 'App', value: 'ChuchPlayer' },
+            { label: 'Version', value: '1.0.0' },
+            { label: 'Platform', value: 'Android TV / IPTV' },
+          ].map((row, i, arr) => (
+            <View key={row.label} style={[
+              s.aboutRow,
+              i < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+            ]}>
+              <Text style={s.aboutLabel}>{row.label}</Text>
+              <Text style={s.aboutValue}>{row.value}</Text>
+            </View>
+          ))}
+        </Card>
+
+        <View style={{ height: 60 }} />
+      </ScrollView>
+
+      {/* ══ ADD PLAYLIST MODAL ══════════════════════════ */}
       <Modal visible={modalVisible} transparent animationType="fade">
-        <View className="flex-1 bg-black/80 justify-center items-center p-4">
-          <View className="bg-card rounded-xl p-6 w-[80%] max-w-[500px] gap-4">
-            <Text className="text-white text-2xl font-bold">Add New Playlist</Text>
+        <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={closeModal}>
+          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={s.modalBox}>
+            <Text style={s.modalTitle}>Add Playlist</Text>
 
-            {/* Source Type Selection */}
-            <View className="gap-2">
-              <Text className="text-text-muted text-sm mb-2">Source Type</Text>
-              <View className="flex-row gap-2">
+            {/* Source type tabs */}
+            <View style={s.tabRow}>
+              {(['m3u', 'xtream'] as PlaylistSourceType[]).map(t => (
                 <FocusableItem
-                  onPress={() => setSourceType('m3u')}
-                  className={`flex-1 py-3 rounded-lg items-center ${
-                    sourceType === 'm3u' ? 'bg-accent' : 'bg-subtle'
-                  }`}
+                  key={t}
+                  onPress={() => setSourceType(t)}
+                  style={[s.tab, sourceType === t && s.tabActive]}
+                  focusedStyle={BTN_FOCUSED}
                 >
-                  <Text
-                    className={`text-base font-semibold ${
-                      sourceType === 'm3u' ? 'text-white' : 'text-text-muted'
-                    }`}
-                  >
-                    M3U
+                  <Text style={[s.tabTxt, sourceType === t && s.tabTxtActive]}>
+                    {t === 'm3u' ? 'M3U' : 'Xtream Codes'}
                   </Text>
                 </FocusableItem>
-                <FocusableItem
-                  onPress={() => setSourceType('xtream')}
-                  className={`flex-1 py-3 rounded-lg items-center ${
-                    sourceType === 'xtream' ? 'bg-accent' : 'bg-subtle'
-                  }`}
-                >
-                  <Text
-                    className={`text-base font-semibold ${
-                      sourceType === 'xtream' ? 'text-white' : 'text-text-muted'
-                    }`}
-                  >
-                    Xtream Codes
-                  </Text>
-                </FocusableItem>
-              </View>
+              ))}
             </View>
 
             <TextInput
-              className="bg-subtle text-white rounded-lg p-3 text-base"
-              placeholder="Playlist Name"
-              placeholderTextColor="#666"
+              style={s.input}
+              placeholder="Playlist name"
+              placeholderTextColor="#3d3d3d"
               value={newPlaylistName}
               onChangeText={setNewPlaylistName}
             />
 
             {sourceType === 'm3u' ? (
               <TextInput
-                className="bg-subtle text-white rounded-lg p-3 text-base"
-                placeholder="M3U Playlist URL"
-                placeholderTextColor="#666"
+                style={s.input}
+                placeholder="M3U URL"
+                placeholderTextColor="#3d3d3d"
                 value={newPlaylistUrl}
                 onChangeText={setNewPlaylistUrl}
                 autoCapitalize="none"
@@ -699,69 +554,186 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               />
             ) : (
               <>
-                <TextInput
-                  className="bg-subtle text-white rounded-lg p-3 text-base"
-                  placeholder="Server URL (e.g., https://example.com:8080)"
-                  placeholderTextColor="#666"
-                  value={xtreamServerUrl}
-                  onChangeText={setXtreamServerUrl}
-                  autoCapitalize="none"
-                  keyboardType="url"
-                />
-                <TextInput
-                  className="bg-subtle text-white rounded-lg p-3 text-base"
-                  placeholder="Username"
-                  placeholderTextColor="#666"
-                  value={xtreamUsername}
-                  onChangeText={setXtreamUsername}
-                  autoCapitalize="none"
-                />
-                <TextInput
-                  className="bg-subtle text-white rounded-lg p-3 text-base"
-                  placeholder="Password"
-                  placeholderTextColor="#666"
-                  value={xtreamPassword}
-                  onChangeText={setXtreamPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                />
+                <TextInput style={s.input} placeholder="Server URL (https://...)" placeholderTextColor="#3d3d3d"
+                  value={xtreamServerUrl} onChangeText={setXtreamServerUrl} autoCapitalize="none" keyboardType="url" />
+                <TextInput style={s.input} placeholder="Username" placeholderTextColor="#3d3d3d"
+                  value={xtreamUsername} onChangeText={setXtreamUsername} autoCapitalize="none" />
+                <TextInput style={s.input} placeholder="Password" placeholderTextColor="#3d3d3d"
+                  value={xtreamPassword} onChangeText={setXtreamPassword} secureTextEntry autoCapitalize="none" />
               </>
             )}
 
-            <View className="flex-row justify-end gap-3">
-              <FocusableItem
-                onPress={() => {
-                  setModalVisible(false);
-                  setNewPlaylistName('');
-                  setNewPlaylistUrl('');
-                  setXtreamServerUrl('');
-                  setXtreamUsername('');
-                  setXtreamPassword('');
-                  setSourceType('m3u');
-                }}
-                className="px-4 py-3 rounded-lg min-w-[110px] items-center bg-[#4a4a4a]"
-                disabled={addingPlaylist}
-              >
-                <Text className="text-white text-base font-semibold">Cancel</Text>
+            <View style={s.modalActions}>
+              <FocusableItem onPress={closeModal} style={s.cancelBtn} focusedStyle={BTN_FOCUSED} disabled={addingPlaylist}>
+                <Text style={s.cancelBtnTxt}>Cancel</Text>
               </FocusableItem>
-              <FocusableItem
-                onPress={handleAddPlaylist}
-                className="px-4 py-3 rounded-lg min-w-[110px] items-center bg-accent"
-                disabled={addingPlaylist}
-              >
-                {addingPlaylist ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text className="text-white text-base font-semibold">Add</Text>
-                )}
+              <FocusableItem onPress={handleAddPlaylist} style={s.confirmBtn} focusedStyle={BTN_FOCUSED} disabled={addingPlaylist}>
+                {addingPlaylist
+                  ? <ActivityIndicator color="#0a0a0a" size="small" />
+                  : <Text style={s.confirmBtnTxt}>Add</Text>}
               </FocusableItem>
             </View>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
-    </ScrollView>
+    </View>
   );
 };
 
 export default SettingsScreen;
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#0a0a0a' },
+  scroll: { paddingHorizontal: TV ? 48 : 24, paddingTop: TV ? 32 : 24 },
+
+  backBtn: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: TV ? 20 : 16,
+    paddingVertical: TV ? 12 : 9,
+    borderRadius: 10,
+    backgroundColor: '#161616',
+    borderWidth: 1,
+    borderColor: '#222222',
+    marginBottom: TV ? 32 : 24,
+  },
+  backBtnTxt: { color: '#8a8a8a', fontSize: TV ? 16 : 14, fontWeight: '600' },
+
+  sectionTitle: {
+    color: '#3d3d3d',
+    fontSize: TV ? 11 : 10,
+    fontWeight: '800',
+    letterSpacing: 2.5,
+    marginBottom: TV ? 14 : 10,
+    marginTop: 4,
+  },
+
+  card: {
+    backgroundColor: '#111111',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
+    padding: TV ? 24 : 18,
+    marginBottom: 10,
+  },
+  centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: 32 },
+
+  divider: { height: 1, backgroundColor: '#141414', marginVertical: TV ? 28 : 22 },
+
+  // Playlist rows
+  playlistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#111111',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1a1a1a',
+    padding: TV ? 22 : 16,
+    marginBottom: 8,
+    gap: 16,
+  },
+  playlistName: { color: '#f5f5f5', fontSize: TV ? 19 : 16, fontWeight: '700', marginBottom: 4 },
+  playlistMeta: { color: '#3d3d3d', fontSize: TV ? 14 : 12, fontWeight: '500' },
+  deleteBtn: {
+    paddingHorizontal: TV ? 20 : 16, paddingVertical: TV ? 12 : 9,
+    borderRadius: 10,
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
+  },
+  deleteBtnTxt: { color: '#f87171', fontSize: TV ? 14 : 13, fontWeight: '700' },
+
+  addBtn: {
+    alignItems: 'center',
+    paddingVertical: TV ? 18 : 14,
+    borderRadius: 14,
+    backgroundColor: '#161616',
+    borderWidth: 1, borderColor: '#2a2a2a',
+    marginBottom: 4,
+  },
+  addBtnTxt: { color: '#f5f5f5', fontSize: TV ? 17 : 15, fontWeight: '700' },
+
+  emptyTitle: { color: '#f5f5f5', fontSize: TV ? 18 : 15, fontWeight: '700', marginBottom: 6 },
+  emptyBody:  { color: '#3d3d3d', fontSize: TV ? 14 : 12, lineHeight: TV ? 22 : 18 },
+
+  // Setting rows
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 20 },
+  settingTitle: { color: '#e5e5e5', fontSize: TV ? 17 : 15, fontWeight: '700', marginBottom: 4 },
+  settingDesc:  { color: '#3d3d3d', fontSize: TV ? 13 : 11, lineHeight: TV ? 20 : 17 },
+  valueLabel:   { color: '#555555', fontSize: TV ? 15 : 13, fontWeight: '600' },
+
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    paddingHorizontal: TV ? 20 : 14, paddingVertical: TV ? 10 : 7,
+    borderRadius: 10,
+    backgroundColor: '#161616',
+    borderWidth: 1, borderColor: '#222222',
+  },
+  chipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
+  chipTxt:       { color: '#555555', fontSize: TV ? 14 : 12, fontWeight: '700' },
+  chipTxtActive: { color: '#0a0a0a' },
+
+  refreshBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: TV ? 18 : 14, borderRadius: 14,
+    backgroundColor: '#161616', borderWidth: 1, borderColor: '#2a2a2a',
+  },
+  refreshBtnDisabled: { opacity: 0.5 },
+  refreshBtnTxt: { color: '#f5f5f5', fontSize: TV ? 17 : 15, fontWeight: '700' },
+
+  helpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  helpTitle: { color: '#8a8a8a', fontSize: TV ? 16 : 14, fontWeight: '600' },
+  helpArrow: { color: '#3d3d3d', fontSize: TV ? 22 : 18, fontWeight: '300' },
+
+  aboutRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14 },
+  aboutLabel: { color: '#3d3d3d', fontSize: TV ? 14 : 12, fontWeight: '500' },
+  aboutValue: { color: '#8a8a8a', fontSize: TV ? 15 : 13, fontWeight: '600' },
+
+  // Modal
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center', alignItems: 'center', padding: TV ? 40 : 24,
+  },
+  modalBox: {
+    backgroundColor: '#111111',
+    borderRadius: 20,
+    borderWidth: 1, borderColor: '#1e1e1e',
+    padding: TV ? 36 : 24,
+    width: '100%', maxWidth: 680,
+    gap: 14,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.8, shadowRadius: 40, elevation: 30,
+  },
+  modalTitle: { color: '#f5f5f5', fontSize: TV ? 24 : 20, fontWeight: '800', marginBottom: 4 },
+  tabRow: { flexDirection: 'row', gap: 10 },
+  tab: {
+    flex: 1, paddingVertical: TV ? 14 : 10, borderRadius: 12,
+    backgroundColor: '#161616', borderWidth: 1, borderColor: '#222222',
+    alignItems: 'center',
+  },
+  tabActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
+  tabTxt:       { color: '#555555', fontSize: TV ? 15 : 13, fontWeight: '700' },
+  tabTxtActive: { color: '#0a0a0a' },
+  input: {
+    backgroundColor: '#161616',
+    color: '#f5f5f5',
+    borderRadius: 12, borderWidth: 1, borderColor: '#222222',
+    paddingHorizontal: TV ? 18 : 14, paddingVertical: TV ? 16 : 12,
+    fontSize: TV ? 16 : 14,
+  },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 4 },
+  cancelBtn: {
+    paddingHorizontal: TV ? 24 : 18, paddingVertical: TV ? 14 : 10,
+    borderRadius: 12, backgroundColor: '#161616',
+    borderWidth: 1, borderColor: '#222222', alignItems: 'center', minWidth: 110,
+  },
+  cancelBtnTxt: { color: '#555555', fontSize: TV ? 15 : 13, fontWeight: '700' },
+  confirmBtn: {
+    paddingHorizontal: TV ? 24 : 18, paddingVertical: TV ? 14 : 10,
+    borderRadius: 12, backgroundColor: '#f5f5f5',
+    alignItems: 'center', minWidth: 110,
+  },
+  confirmBtnTxt: { color: '#0a0a0a', fontSize: TV ? 15 : 13, fontWeight: '800' },
+});

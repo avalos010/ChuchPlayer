@@ -1,4 +1,4 @@
-import React, { useState, forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { useState, forwardRef, useImperativeHandle, useRef, useCallback, useMemo } from 'react';
 import {
   Pressable,
   StyleProp,
@@ -35,15 +35,15 @@ const FocusableItem = forwardRef<any, FocusableItemProps>(({
   const [isFocused, setIsFocused] = useState(false);
   const pressableRef = useRef<any>(null);
 
-  const handleFocus = () => {
+  const handleFocus = useCallback(() => {
     setIsFocused(true);
     onFocus?.();
-  };
+  }, [onFocus]);
 
-  const handleBlur = () => {
+  const handleBlur = useCallback(() => {
     setIsFocused(false);
     onBlur?.();
-  };
+  }, [onBlur]);
 
   // Convert className to style object to avoid NativeWind's CssInterop.Pressable
   // This prevents navigation context errors
@@ -141,8 +141,12 @@ const FocusableItem = forwardRef<any, FocusableItemProps>(({
     return styles;
   };
 
-  const classNameStyles = getStyleFromClassName(className);
-  const focusedClassNameStyles = isFocused ? getStyleFromClassName('scale-105 border-[3px] border-accent shadow-lg') : {};
+  // Memoize parsed className styles — only re-compute when className string changes
+  const classNameStyles = useMemo(() => getStyleFromClassName(className), [className]);
+  const focusedClassNameStyles = useMemo(
+    () => isFocused ? getStyleFromClassName('scale-105 border-[3px] border-accent shadow-lg') : {},
+    [isFocused],
+  );
 
   // Check if focusedStyle explicitly hides borders/elevation (indicates invisible focus)
   // Handle both object and array styles

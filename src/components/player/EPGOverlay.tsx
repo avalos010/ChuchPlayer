@@ -1,5 +1,14 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Image,
+  StyleSheet,
+  Platform,
+} from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
 import { ResizeMode } from 'expo-av';
@@ -17,6 +26,61 @@ interface EPGOverlayProps {
   epgError?: string | null;
 }
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const TV = Platform.OS === 'android';
+const TS = TV ? 1.15 : 1;
+
+const BTN_FOCUSED = {
+  backgroundColor: '#ffffff',
+  borderColor: '#ffffff',
+  borderWidth: 2,
+  transform: [] as any[],
+  elevation: 8,
+  shadowColor: '#ffffff',
+  shadowOffset: { width: 0, height: 0 },
+  shadowOpacity: 0.25,
+  shadowRadius: 10,
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const fmtTime = (d?: Date | null): string => {
+  if (!d) return '';
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const progressPct = (start?: Date | null, end?: Date | null): number => {
+  if (!start || !end) return 0;
+  const now = Date.now();
+  const s = (start instanceof Date ? start : new Date(start)).getTime();
+  const e = (end instanceof Date ? end : new Date(end)).getTime();
+  if (now < s || now > e) return 0;
+  return Math.min(100, ((now - s) / (e - s)) * 100);
+};
+
+// ─── Small sub-component ─────────────────────────────────────────────────────
+
+const ActionBtn: React.FC<{
+  onPress: () => void;
+  icon: string;
+  label: string;
+  active?: boolean;
+}> = ({ onPress, icon, label, active }) => (
+  <FocusableItem
+    onPress={onPress}
+    style={[s.actionBtn, active ? s.actionBtnActive : null]}
+    focusedStyle={BTN_FOCUSED}
+  >
+    <Text style={s.actionIcon}>{icon}</Text>
+    <Text style={s.actionLabel}>{label}</Text>
+  </FocusableItem>
+);
+
+// ─── Main component ──────────────────────────────────────────────────────────
+
 const EPGOverlay: React.FC<EPGOverlayProps> = ({
   onTogglePlayback,
   onBack,
@@ -25,274 +89,286 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
   epgLoading = false,
   epgError = null,
 }) => {
-  
-  const channel = usePlayerStore((state) => state.channel);
-  const isPlaying = usePlayerStore((state) => state.isPlaying);
-  const resizeMode = usePlayerStore((state) => state.resizeMode);
-  const error = usePlayerStore((state) => state.error);
-  const cycleResizeMode = usePlayerStore((state) => state.cycleResizeMode);
-  
-  // UI state
-  const showEPG = useUIStore((state) => state.showEPG);
-  const setShowEPG = useUIStore((state) => state.setShowEPG);
-  
-  // EPG state
-  const currentProgram = useEPGStore((state) => state.currentProgram);
+  const channel        = usePlayerStore((st) => st.channel);
+  const isPlaying      = usePlayerStore((st) => st.isPlaying);
+  const resizeMode     = usePlayerStore((st) => st.resizeMode);
+  const error          = usePlayerStore((st) => st.error);
+  const cycleResizeMode = usePlayerStore((st) => st.cycleResizeMode);
+  const showEPG        = useUIStore((st) => st.showEPG);
+  const setShowEPG     = useUIStore((st) => st.setShowEPG);
+  const currentProgram = useEPGStore((st) => st.currentProgram);
 
-  const formatTime = (date?: Date | null) => {
-    if (!date) return '';
-    const resolvedDate = date instanceof Date ? date : new Date(date);
-    if (Number.isNaN(resolvedDate.getTime())) return '';
-    return resolvedDate.toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const [imgErr, setImgErr] = useState(false);
 
-  const safeDescription = (value: unknown): string | null => {
-    if (typeof value !== 'string') return null;
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  };
-  
-  const [imageError, setImageError] = useState(false);
+  const close    = useCallback(() => setShowEPG(false), [setShowEPG]);
+  const settings = useCallback(() => {
+    setShowEPG(false);
+    try { navigation?.navigate('Settings'); } catch {}
+  }, [setShowEPG, navigation]);
 
-  const upcomingPrograms = useMemo(() => {
-    if (!programs || programs.length === 0) return [];
+  const upcoming = useMemo(() => {
+    if (!programs.length) return [];
     const now = new Date();
     return programs
-      .filter(program => program.end > now)
-      .filter(program => !currentProgram || program.id !== currentProgram.id)
+      .filter(p => p.end > now && (!currentProgram || p.id !== currentProgram.id))
       .sort((a, b) => a.start.getTime() - b.start.getTime())
-      .slice(0, 6);
+      .slice(0, 5);
   }, [programs, currentProgram]);
+
+  const progress = useMemo(
+    () => progressPct(currentProgram?.start, currentProgram?.end),
+    [currentProgram],
+  );
 
   if (!showEPG || error || !channel) return null;
 
+  const logoSz = TV ? 96 : 80;
+
   return (
-    <TouchableOpacity 
-      className="absolute inset-0 z-[5] bg-transparent" 
-      style={{
-        elevation: 5,
-      }}
-      activeOpacity={1} 
-      onPress={() => setShowEPG(false)}
-    >
-      <ScrollView 
-        className="flex-1 pt-8 pb-12 px-8"
-        contentContainerStyle={{ justifyContent: 'space-between', flexGrow: 1 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Top Card - Channel Info - TiviMate Style */}
-        <TouchableOpacity 
-        className="rounded-2xl border border-border bg-card shadow-lg"
-        style={{
-          elevation: 12,
-        }}
-        activeOpacity={1} 
-        onPress={() => {}}
-      >
-        <View className="flex-row items-center p-6 gap-5">
-          {channel.logo && !imageError ? (
-            <Image
-              source={{ uri: channel.logo }}
-              className="w-[140px] h-[140px] rounded-2xl bg-subtle border border-border"
-              resizeMode="contain"
-              onError={() => setImageError(true)}
-            />
+    // Dark backdrop — tap outside panel to dismiss
+    <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={close}>
+      {/* Panel absorbs taps so backdrop doesn't fire inside */}
+      <TouchableOpacity activeOpacity={1} onPress={() => {}} style={s.panel}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
+
+          {/* ── Channel header ─────────────────────── */}
+          <View style={s.chRow}>
+            {channel.logo && !imgErr ? (
+              <Image
+                source={{ uri: channel.logo }}
+                style={{ width: logoSz, height: logoSz, borderRadius: 12, backgroundColor: '#1a1a1a' }}
+                resizeMode="contain"
+                onError={() => setImgErr(true)}
+              />
+            ) : (
+              <View style={[s.logoFallback, { width: logoSz, height: logoSz }]}>
+                <Text style={s.logoInitials}>
+                  {channel.name.substring(0, 2).toUpperCase()}
+                </Text>
+              </View>
+            )}
+
+            <View style={s.chMeta}>
+              <Text style={s.chName} numberOfLines={2}>{channel.name}</Text>
+              {channel.group ? (
+                <Text style={s.chGroup} numberOfLines={1}>{channel.group}</Text>
+              ) : null}
+            </View>
+
+            <FocusableItem onPress={close} style={s.closeBtn} focusedStyle={BTN_FOCUSED}>
+              <Text style={s.closeBtnTxt}>✕</Text>
+            </FocusableItem>
+          </View>
+
+          <View style={s.divider} />
+
+          {/* ── Now Playing ────────────────────────── */}
+          {currentProgram ? (
+            <View style={{ gap: 8 }}>
+              <Text style={s.sectionLabel}>NOW PLAYING</Text>
+              <Text style={s.progTitle} numberOfLines={2}>{currentProgram.title}</Text>
+
+              {(() => {
+                const ts = fmtTime(currentProgram.start);
+                const te = fmtTime(currentProgram.end);
+                return ts && te ? (
+                  <Text style={s.progTime}>{ts} – {te}</Text>
+                ) : null;
+              })()}
+
+              {progress > 0 && (
+                <View style={s.progressTrack}>
+                  <View style={[s.progressFill, { width: `${progress}%` as any }]} />
+                </View>
+              )}
+
+              {typeof currentProgram.description === 'string' &&
+               currentProgram.description.trim().length > 0 && (
+                <Text style={s.progDesc} numberOfLines={3}>
+                  {currentProgram.description.trim()}
+                </Text>
+              )}
+            </View>
+          ) : epgLoading ? (
+            <View style={s.statusRow}>
+              <ActivityIndicator size="small" color="#555555" />
+              <Text style={s.statusTxt}>Loading guide…</Text>
+            </View>
+          ) : epgError ? (
+            <View style={s.errBox}>
+              <Text style={s.errTitle}>Guide unavailable</Text>
+              <Text style={s.errDesc} numberOfLines={2}>{epgError}</Text>
+            </View>
           ) : (
-            <View className="w-[140px] h-[140px] rounded-2xl bg-subtle border border-border justify-center items-center">
-              <Text className="text-text-primary text-[40px] font-bold tracking-wide">
-                {channel.name.substring(0, 2).toUpperCase()}
-              </Text>
+            <View style={s.statusRow}>
+              <Text style={s.statusTxt}>No program info available</Text>
             </View>
           )}
-          <View className="flex-1 gap-2">
-            <Text className="text-text-primary text-[32px] font-bold tracking-tight" numberOfLines={1}>
-              {channel.name}
-            </Text>
-            {channel.group && (
-              <Text className="text-text-muted text-base font-medium">{channel.group}</Text>
-            )}
-            {currentProgram && (
-              <View className="mt-3 pt-3 border-t border-border">
-                <Text className="text-accent text-xl font-semibold mb-1" numberOfLines={2}>
-                  {currentProgram.title}
-                </Text>
-                {(() => {
-                  const start = formatTime(currentProgram.start);
-                  const end = formatTime(currentProgram.end);
-                  if (!start || !end) return null;
-                  return (
-                    <Text className="text-text-muted text-sm">
-                      {start} - {end}
-                    </Text>
-                  );
-                })()}
-                {safeDescription(currentProgram.description) && (
-                  <Text className="text-text-muted text-xs mt-2" numberOfLines={3}>
-                    {safeDescription(currentProgram.description)}
-                  </Text>
-                )}
-              </View>
-            )}
 
-            {epgLoading && (
-              <View className="mt-4 flex-row items-center gap-3">
-                <ActivityIndicator size="small" color="#22d3ee" />
-                <Text className="text-text-muted text-sm font-medium">
-                  Loading program guide…
-                </Text>
-              </View>
-            )}
+          {/* ── Upcoming ───────────────────────────── */}
+          {upcoming.length > 0 && (
+            <>
+              <View style={s.divider} />
+              <Text style={s.sectionLabel}>UP NEXT</Text>
+              {upcoming.map(p => {
+                const ts = fmtTime(p.start);
+                const te = fmtTime(p.end);
+                return (
+                  <View key={p.id} style={s.upRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.upTitle} numberOfLines={1}>{p.title}</Text>
+                      {typeof p.description === 'string' && p.description.trim() ? (
+                        <Text style={s.upDesc} numberOfLines={1}>{p.description.trim()}</Text>
+                      ) : null}
+                    </View>
+                    {ts && te ? (
+                      <Text style={s.upTime}>{ts}–{te}</Text>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </>
+          )}
 
-            {!epgLoading && epgError && (
-              <View
-                className="mt-4 p-4 rounded-xl border"
-                style={{
-                  borderColor: 'rgba(248, 113, 113, 0.45)',
-                  backgroundColor: 'rgba(248, 113, 113, 0.12)',
-                }}
-              >
-                <Text className="text-red-200 text-sm font-semibold">Unable to update program guide</Text>
-                <Text
-                  className="text-red-200 text-xs mt-1"
-                  style={{ opacity: 0.85 }}
-                  numberOfLines={3}
-                >
-                  {epgError}
-                </Text>
-              </View>
-            )}
+          <View style={s.divider} />
 
-            {!epgLoading && !epgError && upcomingPrograms.length > 0 && (
-              <View className="mt-4 pt-4 border-t border-border">
-                <Text className="text-text-primary text-base font-semibold uppercase tracking-wide mb-3">
-                  Upcoming Shows
-                </Text>
-                <View className="gap-3">
-                  {upcomingPrograms.map(program => {
-                    const start = formatTime(program.start);
-                    const end = formatTime(program.end);
-                    const timeWindow = start && end ? `${start} - ${end}` : '';
-                    const description = safeDescription(program.description);
-                    return (
-                      <View
-                        key={program.id}
-                        className="flex-row items-start justify-between border border-border rounded-xl px-4 py-3"
-                        style={{ backgroundColor: 'rgba(30, 41, 59, 0.6)' }}
-                      >
-                        <View className="flex-1 pr-3">
-                          <Text className="text-text-primary font-semibold text-base" numberOfLines={2}>
-                            {program.title}
-                          </Text>
-                          {description && (
-                            <Text className="text-text-muted text-xs mt-1" numberOfLines={2}>
-                              {description}
-                            </Text>
-                          )}
-                        </View>
-                        {timeWindow ? (
-                          <Text className="text-accent font-semibold text-sm pl-3 min-w-[84px]" numberOfLines={1}>
-                            {timeWindow}
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-
-            {!epgLoading && !epgError && upcomingPrograms.length === 0 && (
-              <View className="mt-4 pt-4 border-t border-border">
-                <Text className="text-text-muted text-sm">
-                  Program schedule will appear once your provider shares guide data.
-                </Text>
-              </View>
-            )}
-          </View>
-          <FocusableItem 
-            onPress={() => setShowEPG(false)} 
-            className="w-12 h-12 rounded-full bg-subtle border border-border justify-center items-center"
-          >
-            <Text className="text-text-secondary text-xl font-bold">✕</Text>
-          </FocusableItem>
-        </View>
-      </TouchableOpacity>
-
-      {/* Bottom Card - Options - TiviMate Style */}
-      <TouchableOpacity 
-        className="rounded-2xl border border-border bg-card shadow-lg"
-        style={{
-          elevation: 12,
-        }}
-        activeOpacity={1} 
-        onPress={() => {}}
-      >
-        <View className="flex-row justify-around p-6 gap-3">
-          <FocusableItem 
-            onPress={onTogglePlayback} 
-            className={`flex-1 items-center py-5 px-4 rounded-xl border min-w-[110px] ${isPlaying ? 'bg-accent/15 border-accent' : 'bg-accent/10 border-border'}`}
-          >
-            <Text className="text-accent text-[36px] mb-2">{isPlaying ? '❚❚' : '▶'}</Text>
-            <Text className="text-text-primary text-sm font-semibold">{isPlaying ? 'Pause' : 'Play'}</Text>
-          </FocusableItem>
-
-          <FocusableItem
-            onPress={cycleResizeMode}
-            className="flex-1 items-center py-5 px-4 rounded-xl border border-border bg-accent/10 min-w-[110px]"
-          >
-            <Text className="text-accent text-[36px] mb-2">▦</Text>
-            <Text className="text-text-primary text-sm font-semibold">
-              {resizeMode === ResizeMode.COVER
-                ? 'Cover'
-                : resizeMode === ResizeMode.CONTAIN
-                ? 'Fit'
-                : 'Stretch'}
-            </Text>
-          </FocusableItem>
-
-          <FocusableItem
-            onPress={() => {
-              // TODO: Implement captions/subtitles toggle
-              console.log('Captions feature coming soon');
-            }}
-            className="flex-1 items-center py-5 px-4 rounded-xl border border-border bg-accent/10 min-w-[110px]"
-          >
-            <Text className="text-accent text-[36px] mb-2">CC</Text>
-            <Text className="text-text-primary text-sm font-semibold">Captions</Text>
-          </FocusableItem>
-
-          <FocusableItem 
-            onPress={() => setShowEPG(false)} 
-            className="flex-1 items-center py-5 px-4 rounded-xl border border-border bg-accent/10 min-w-[110px]"
-          >
-            <Text className="text-accent text-[36px] mb-2">←</Text>
-            <Text className="text-text-primary text-sm font-semibold">Back</Text>
-          </FocusableItem>
-
-          <FocusableItem 
-            onPress={() => {
-              setShowEPG(false);
-              if (navigation) {
-                try {
-                  navigation.navigate('Settings');
-                } catch (error) {
-                  console.log('Navigation not ready:', error);
-                }
+          {/* ── Action buttons ─────────────────────── */}
+          <View style={s.actions}>
+            <ActionBtn
+              onPress={onTogglePlayback}
+              icon={isPlaying ? '⏸' : '▶'}
+              label={isPlaying ? 'Pause' : 'Play'}
+              active={isPlaying}
+            />
+            <ActionBtn
+              onPress={cycleResizeMode}
+              icon="▦"
+              label={
+                resizeMode === ResizeMode.COVER ? 'Cover'
+                  : resizeMode === ResizeMode.CONTAIN ? 'Fit'
+                  : 'Stretch'
               }
-            }} 
-            className="flex-1 items-center py-5 px-4 rounded-xl border border-border bg-accent/10 min-w-[110px]"
-          >
-            <Text className="text-accent text-[36px] mb-2">⚙️</Text>
-            <Text className="text-text-primary text-sm font-semibold">Settings</Text>
-          </FocusableItem>
-        </View>
+            />
+            <ActionBtn onPress={settings} icon="⚙" label="Settings" />
+            <ActionBtn onPress={close}    icon="←" label="Close" />
+          </View>
+
+        </ScrollView>
       </TouchableOpacity>
-      </ScrollView>
     </TouchableOpacity>
   );
 };
 
 export default EPGOverlay;
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    zIndex: 5,
+    elevation: 5,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  panel: {
+    width: TV ? 560 : 460,
+    backgroundColor: '#111111',
+    borderLeftWidth: 1,
+    borderLeftColor: '#1f1f1f',
+    shadowColor: '#000',
+    shadowOffset: { width: -16, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 40,
+    elevation: 20,
+  },
+  scroll: {
+    padding: TV ? 32 : 24,
+    paddingBottom: 52,
+  },
+
+  // Channel header
+  chRow: { flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 4 },
+  logoFallback: {
+    borderRadius: 12,
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#272727',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoInitials: { color: '#f5f5f5', fontSize: TV ? 26 : 22, fontWeight: '800' },
+  chMeta: { flex: 1 },
+  chName: {
+    color: '#f5f5f5',
+    fontSize: TV ? 26 : 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    lineHeight: TV ? 32 : 28,
+    marginBottom: 4,
+  },
+  chGroup: { color: '#4a4a4a', fontSize: TV ? 14 : 12, fontWeight: '500' },
+  closeBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#272727',
+    justifyContent: 'center', alignItems: 'center', alignSelf: 'flex-start',
+  },
+  closeBtnTxt: { color: '#4a4a4a', fontSize: 16, fontWeight: '700' },
+
+  divider: { height: 1, backgroundColor: '#1a1a1a', marginVertical: 20 },
+
+  // Now playing
+  sectionLabel: {
+    color: '#3d3d3d',
+    fontSize: TV ? 11 : 10,
+    fontWeight: '700',
+    letterSpacing: 2.5,
+    marginBottom: 10,
+  },
+  progTitle: {
+    color: '#f5f5f5',
+    fontSize: TV ? 22 : 18,
+    fontWeight: '700',
+    lineHeight: TV ? 28 : 24,
+    marginBottom: 4,
+  },
+  progTime: { color: '#4a4a4a', fontSize: TV ? 14 : 12, fontWeight: '500', marginBottom: 4 },
+  progressTrack: {
+    height: 3, backgroundColor: '#1f1f1f', borderRadius: 2, overflow: 'hidden', marginBottom: 4,
+  },
+  progressFill: { height: '100%', backgroundColor: '#e5e5e5', borderRadius: 2 },
+  progDesc: { color: '#4a4a4a', fontSize: TV ? 13 : 11, lineHeight: TV ? 19 : 17 },
+
+  // Status / error
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  statusTxt: { color: '#3d3d3d', fontSize: TV ? 14 : 12 },
+  errBox: {
+    backgroundColor: 'rgba(239,68,68,0.07)',
+    borderWidth: 1, borderColor: 'rgba(239,68,68,0.18)',
+    borderRadius: 10, padding: 14,
+  },
+  errTitle: { color: '#f87171', fontSize: TV ? 14 : 12, fontWeight: '600', marginBottom: 4 },
+  errDesc:  { color: '#f87171', fontSize: TV ? 12 : 11, opacity: 0.7 },
+
+  // Upcoming
+  upRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#191919', gap: 12,
+  },
+  upTitle: { color: '#8a8a8a', fontSize: TV ? 15 : 13, fontWeight: '600' },
+  upDesc:  { color: '#3d3d3d', fontSize: TV ? 12 : 10, marginTop: 2 },
+  upTime:  { color: '#555555', fontSize: TV ? 13 : 11, fontWeight: '600', minWidth: 90, textAlign: 'right' },
+
+  // Actions
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  actionBtn: {
+    flex: 1, minWidth: 80, alignItems: 'center',
+    paddingVertical: TV ? 16 : 12, paddingHorizontal: 8,
+    borderRadius: 12, backgroundColor: '#161616',
+    borderWidth: 1, borderColor: '#222222', gap: 5,
+  },
+  actionBtnActive: { backgroundColor: '#1c1c1c', borderColor: '#303030' },
+  actionIcon:  { color: '#f5f5f5', fontSize: TV ? 22 : 18 },
+  actionLabel: { color: '#555555', fontSize: TV ? 13 : 11, fontWeight: '600' },
+});

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Animated,
-  AppState,
   Dimensions,
   FlatList,
   Platform,
@@ -44,6 +43,56 @@ interface PlayerScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Player'>;
   route: RouteProp<RootStackParamList, 'Player'>;
 }
+
+// Static styles defined outside component — never recreated on re-render
+const TRANSPARENT_FLEX = { flex: 1, backgroundColor: 'transparent' as const };
+const DPAD_INVISIBLE_FOCUSED_STYLE = {
+  backgroundColor: 'transparent' as const,
+  borderWidth: 0,
+  borderColor: 'transparent' as const,
+  transform: [] as any[],
+  elevation: 0,
+  shadowColor: 'transparent' as const,
+  shadowOffset: { width: 0, height: 0 },
+  shadowOpacity: 0,
+  shadowRadius: 0,
+};
+const DPAD_CENTER_STYLE = {
+  position: 'absolute' as const,
+  top: '25%' as any,
+  left: '25%' as any,
+  right: '25%' as any,
+  bottom: '25%' as any,
+  zIndex: 2,
+  backgroundColor: 'transparent' as const,
+};
+const DPAD_LEFT_STYLE = {
+  position: 'absolute' as const,
+  top: 0,
+  left: 0,
+  width: 100,
+  bottom: 0,
+  zIndex: 2,
+  backgroundColor: 'transparent' as const,
+};
+const DPAD_TOP_STYLE = {
+  position: 'absolute' as const,
+  top: 0,
+  left: 100,
+  right: 100,
+  height: 100,
+  zIndex: 2,
+  backgroundColor: 'transparent' as const,
+};
+const DPAD_BOTTOM_STYLE = {
+  position: 'absolute' as const,
+  bottom: 0,
+  left: 100,
+  right: 100,
+  height: 100,
+  zIndex: 2,
+  backgroundColor: 'transparent' as const,
+};
 
 const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const { channel: initialChannel } = route.params || {};
@@ -150,13 +199,17 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   // EPG auto-hide
   useEPGAutoHide();
 
+  // Stable wrappers that bundle exitPIP so useKeyboardNavigation doesn't need it directly
+  const handleUpDpadWithPIP = useCallback(() => handleUpDpad(exitPIP), [handleUpDpad, exitPIP]);
+  const handleDownDpadWithPIP = useCallback(() => handleDownDpad(exitPIP), [handleDownDpad, exitPIP]);
+
   // Keyboard navigation
   useKeyboardNavigation({
     videoRef,
     navigation,
     handleChannelSelect,
-    handleUpDpad: () => handleUpDpad(exitPIP),
-    handleDownDpad: () => handleDownDpad(exitPIP),
+    handleUpDpad: handleUpDpadWithPIP,
+    handleDownDpad: handleDownDpadWithPIP,
     handleLeftDpad,
     handleCenterPress,
     handleBack,
@@ -189,7 +242,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       }, 350);
     } else {
       Animated.timing(channelListSlideAnim, {
-        toValue: -420, // Slide out to left (match panel width)
+        toValue: -500,
         duration: 300,
         useNativeDriver: true,
       }).start();
@@ -200,9 +253,49 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     setShowMultiScreenControls(true);
   }, []);
 
-  const { width: windowWidth } = Dimensions.get('window');
-  const pipPreviewWidth = Math.min(windowWidth * 0.34, 560);
-  const pipPreviewHeight = pipPreviewWidth * (9 / 16);
+  const handleMultiScreenClose = useCallback(() => setShowMultiScreenControls(false), []);
+
+  const handleEPGInfoPress = useCallback(() => {
+    useUIStore.getState().setShowEPG(true);
+  }, []);
+
+  const handleEPGOverlayBack = useCallback(() => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.navigate('Settings');
+  }, [navigation]);
+
+  const handleManualEpgRefresh = useCallback(() => {
+    useUIStore.getState().setShowEPGGrid(false);
+    useUIStore.getState().setShowEPGGrid(true);
+  }, []);
+
+  const handleChannelInfoHide = useCallback(() => setShowChannelInfoCard(false), [setShowChannelInfoCard]);
+
+  const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
+    const { width } = Dimensions.get('window');
+    const w = Math.min(width * 0.34, 560);
+    return { pipPreviewWidth: w, pipPreviewHeight: w * (9 / 16) };
+  }, []);
+
+  const handleUpDpadPress = useCallback(() => {
+    handleUpDpad(exitPIP);
+    setTimeout(() => centerZoneRef.current?.focus?.(), 50);
+  }, [handleUpDpad, exitPIP]);
+
+  const handleUpDpadFocus = useCallback(() => {
+    handleUpDpad(exitPIP);
+    setTimeout(() => centerZoneRef.current?.focus?.(), 10);
+  }, [handleUpDpad, exitPIP]);
+
+  const handleDownDpadPress = useCallback(() => {
+    handleDownDpad(exitPIP);
+    setTimeout(() => centerZoneRef.current?.focus?.(), 50);
+  }, [handleDownDpad, exitPIP]);
+
+  const handleDownDpadFocus = useCallback(() => {
+    handleDownDpad(exitPIP);
+    setTimeout(() => centerZoneRef.current?.focus?.(), 10);
+  }, [handleDownDpad, exitPIP]);
 
   // If in multi-screen mode, show multi-screen view
   if (isMultiScreenMode && screens.length > 0) {
@@ -224,7 +317,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           channels={channels}
           onChannelSelect={handleChannelSelect}
           isVisible={showMultiScreenControls}
-          onClose={() => setShowMultiScreenControls(false)}
+          onClose={handleMultiScreenClose}
         />
       </View>
     );
@@ -238,10 +331,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       {/* Floating Buttons */}
       <FloatingButtons
         onBack={handleBack}
-        onEPGInfo={() => {
-          const setShowEPG = useUIStore.getState().setShowEPG;
-          setShowEPG(true);
-        }}
+        onEPGInfo={handleEPGInfoPress}
       />
 
       {/* Invisible D-pad navigation zones for Android TV */}
@@ -250,155 +340,46 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           {/* Central focusable zone - default focus */}
           <FocusableItem
             ref={centerZoneRef}
-            onPress={() => {
-              console.log('Center zone pressed');
-              handleCenterPress();
-            }}
+            onPress={handleCenterPress}
             hasTVPreferredFocus={true}
             className=""
-            style={{
-              position: 'absolute',
-              top: '25%',
-              left: '25%',
-              right: '25%',
-              bottom: '25%',
-              zIndex: 2,
-              backgroundColor: 'transparent',
-            }}
-            focusedStyle={{
-              backgroundColor: 'transparent',
-              borderWidth: 0,
-              borderColor: 'transparent',
-              transform: [],
-              elevation: 0,
-              shadowColor: 'transparent',
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0,
-              shadowRadius: 0,
-            }}
+            style={DPAD_CENTER_STYLE}
+            focusedStyle={DPAD_INVISIBLE_FOCUSED_STYLE}
           >
-            <View style={{ flex: 1, backgroundColor: 'transparent' }} />
+            <View style={TRANSPARENT_FLEX} />
           </FocusableItem>
 
           {/* Left edge - opens channel list */}
           <FocusableItem
-            onPress={() => {
-              console.log('Left zone pressed - opening channel list');
-              handleLeftDpad();
-            }}
-            onFocus={() => {
-              console.log('Left zone focused - opening channel list');
-              handleLeftDpad();
-            }}
+            onPress={handleLeftDpad}
+            onFocus={handleLeftDpad}
             className=""
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: 100,
-              bottom: 0,
-              zIndex: 2,
-              backgroundColor: 'transparent',
-            }}
-            focusedStyle={{
-              backgroundColor: 'transparent',
-              borderWidth: 0,
-              borderColor: 'transparent',
-              transform: [],
-              elevation: 0,
-              shadowColor: 'transparent',
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0,
-              shadowRadius: 0,
-            }}
+            style={DPAD_LEFT_STYLE}
+            focusedStyle={DPAD_INVISIBLE_FOCUSED_STYLE}
           >
-            <View style={{ flex: 1, backgroundColor: 'transparent' }} />
+            <View style={TRANSPARENT_FLEX} />
           </FocusableItem>
 
           {/* Top edge - previous channel */}
           <FocusableItem
-            onPress={() => {
-              console.log('Top zone pressed - previous channel');
-              handleUpDpad(exitPIP);
-              // Immediately return focus to center zone
-              setTimeout(() => {
-                centerZoneRef.current?.focus?.();
-              }, 50);
-            }}
-            onFocus={() => {
-              console.log('Top zone focused - switching to previous channel');
-              handleUpDpad(exitPIP);
-              // Immediately return focus to center zone to prevent border from showing
-              setTimeout(() => {
-                centerZoneRef.current?.focus?.();
-              }, 10);
-            }}
+            onPress={handleUpDpadPress}
+            onFocus={handleUpDpadFocus}
             className=""
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 100,
-              right: 100,
-              height: 100,
-              zIndex: 2,
-              backgroundColor: 'transparent',
-            }}
-            focusedStyle={{
-              backgroundColor: 'transparent',
-              borderWidth: 0,
-              borderColor: 'transparent',
-              transform: [],
-              elevation: 0,
-              shadowColor: 'transparent',
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0,
-              shadowRadius: 0,
-            }}
+            style={DPAD_TOP_STYLE}
+            focusedStyle={DPAD_INVISIBLE_FOCUSED_STYLE}
           >
-            <View style={{ flex: 1, backgroundColor: 'transparent' }} />
+            <View style={TRANSPARENT_FLEX} />
           </FocusableItem>
 
           {/* Bottom edge - next channel */}
           <FocusableItem
-            onPress={() => {
-              console.log('Bottom zone pressed - next channel');
-              handleDownDpad(exitPIP);
-              // Immediately return focus to center zone
-              setTimeout(() => {
-                centerZoneRef.current?.focus?.();
-              }, 50);
-            }}
-            onFocus={() => {
-              console.log('Bottom zone focused - switching to next channel');
-              handleDownDpad(exitPIP);
-              // Immediately return focus to center zone to prevent border from showing
-              setTimeout(() => {
-                centerZoneRef.current?.focus?.();
-              }, 10);
-            }}
+            onPress={handleDownDpadPress}
+            onFocus={handleDownDpadFocus}
             className=""
-            style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 100,
-              right: 100,
-              height: 100,
-              zIndex: 2,
-              backgroundColor: 'transparent',
-            }}
-            focusedStyle={{
-              backgroundColor: 'transparent',
-              borderWidth: 0,
-              borderColor: 'transparent',
-              transform: [],
-              elevation: 0,
-              shadowColor: 'transparent',
-              shadowOffset: { width: 0, height: 0 },
-              shadowOpacity: 0,
-              shadowRadius: 0,
-            }}
+            style={DPAD_BOTTOM_STYLE}
+            focusedStyle={DPAD_INVISIBLE_FOCUSED_STYLE}
           >
-            <View style={{ flex: 1, backgroundColor: 'transparent' }} />
+            <View style={TRANSPARENT_FLEX} />
           </FocusableItem>
         </>
       )}
@@ -575,20 +556,14 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
         channels={channels}
         onChannelSelect={handleChannelSelect}
         isVisible={showMultiScreenControls}
-        onClose={() => setShowMultiScreenControls(false)}
+        onClose={handleMultiScreenClose}
       />
 
       {/* EPG Overlay - Only render when visible and navigation is ready */}
       {showEPG && (
         <EPGOverlay
           onTogglePlayback={handleTogglePlayback}
-          onBack={() => {
-            if (navigation.canGoBack()) {
-              navigation.goBack();
-            } else {
-              navigation.navigate('Settings');
-            }
-          }}
+          onBack={handleEPGOverlayBack}
           navigation={navigation}
           programs={currentChannelPrograms}
           epgLoading={epgLoading}
@@ -607,10 +582,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           navigation={navigation}
           epgLoading={epgLoading}
           epgError={epgError}
-          handleManualEpgRefresh={() => {
-            useUIStore.getState().setShowEPGGrid(false);
-            useUIStore.getState().setShowEPGGrid(true);
-          }}
+          handleManualEpgRefresh={handleManualEpgRefresh}
         />
       )}
 
@@ -631,7 +603,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           channel={channel}
           program={currentProgram}
           visible={showChannelInfoCard}
-          onHide={() => setShowChannelInfoCard(false)}
+          onHide={handleChannelInfoHide}
         />
       )}
 

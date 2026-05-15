@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import FocusableItem from '../FocusableItem';
 import ChannelListItem from '../ChannelListItem';
@@ -11,25 +11,30 @@ interface ChannelListPanelProps {
   onChannelSelect: (channel: Channel) => void;
 }
 
-const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
-  onChannelSelect,
-}) => {
-  const showGroupsPlaylists = useUIStore((state) => state.showGroupsPlaylists);
-  const setShowGroupsPlaylists = useUIStore((state) => state.setShowGroupsPlaylists);
-  const selectedGroup = useUIStore((state) => state.selectedGroup);
-  
-  // UI state
-  const showChannelList = useUIStore((state) => state.showChannelList);
-  const setShowChannelList = useUIStore((state) => state.setShowChannelList);
-  const channels = usePlayerStore((state) => state.channels);
-  const channel = usePlayerStore((state) => state.channel);
-  const playlist = usePlayerStore((state) => state.playlist);
+const TV = Platform.OS === 'android';
 
-  const currentChannelId = channel?.id || '';
-  
-  const channelListRef = useRef<FlashList<Channel>>(null);
+const BTN_FOCUSED = {
+  backgroundColor: '#ffffff',
+  borderColor: '#ffffff',
+  borderWidth: 2,
+  transform: [] as any[],
+  elevation: 6,
+};
+
+const ChannelListPanel: React.FC<ChannelListPanelProps> = ({ onChannelSelect }) => {
+  const showGroupsPlaylists    = useUIStore((s) => s.showGroupsPlaylists);
+  const setShowGroupsPlaylists = useUIStore((s) => s.setShowGroupsPlaylists);
+  const selectedGroup          = useUIStore((s) => s.selectedGroup);
+  const showChannelList        = useUIStore((s) => s.showChannelList);
+  const setShowChannelList     = useUIStore((s) => s.setShowChannelList);
+  const channels               = usePlayerStore((s) => s.channels);
+  const channel                = usePlayerStore((s) => s.channel);
+  const playlist               = usePlayerStore((s) => s.playlist);
+
+  const currentChannelId = channel?.id ?? '';
+  const listRef = useRef<FlashList<Channel>>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [preferredFocusChannelId, setPreferredFocusChannelId] = useState<string | null>(null);
+  const [preferredFocusId, setPreferredFocusId] = useState<string | null>(null);
 
   const filteredChannels = useMemo(() => {
     let base: Channel[];
@@ -38,192 +43,134 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
     } else {
       base = channels;
     }
-
     if (channel && !base.some((ch) => ch.id === channel.id)) {
       return [channel, ...base];
     }
-
     return base;
   }, [channels, selectedGroup, channel]);
 
   useEffect(() => {
     if (!showChannelList) {
       setIsLoading(true);
-      setPreferredFocusChannelId(null);
+      setPreferredFocusId(null);
       return;
     }
-
     setIsLoading(false);
     const hasCurrent = filteredChannels.some((ch) => ch.id === currentChannelId);
     const defaultId = hasCurrent ? currentChannelId : filteredChannels[0]?.id ?? null;
-    setPreferredFocusChannelId((prev) => prev ?? defaultId);
+    setPreferredFocusId((prev) => prev ?? defaultId);
   }, [showChannelList, filteredChannels, currentChannelId]);
 
-  // Handle focus change for navigation
   const handleChannelFocus = useCallback((channelId: string) => {
-    if (preferredFocusChannelId) {
-      setPreferredFocusChannelId(null);
-      return; // Only auto-center on initial focus
-    }
-  }, [preferredFocusChannelId]);
+    if (preferredFocusId) setPreferredFocusId(null);
+  }, [preferredFocusId]);
 
   const initialScrollIndex = useMemo(() => {
     if (!showChannelList) return undefined;
-    const idx = filteredChannels.findIndex(c => c.id === currentChannelId);
+    const idx = filteredChannels.findIndex((c) => c.id === currentChannelId);
     return idx >= 0 ? idx : undefined;
   }, [showChannelList, filteredChannels, currentChannelId]);
 
   const renderChannelItem = useCallback(
-    ({ item }: { item: Channel }) => {
-      const isCurrentChannel = item.id === currentChannelId;
-      const hasTVPreferredFocus = preferredFocusChannelId === item.id;
- 
-      return (
-        <View className="mx-2 my-1 rounded-xl">
-          <ChannelListItem
-            channel={item}
-            onPress={onChannelSelect}
-            onFocus={handleChannelFocus}
-            hasTVPreferredFocus={hasTVPreferredFocus}
-            isCurrentChannel={isCurrentChannel}
-          />
-        </View>
-      );
-    },
-    [currentChannelId, preferredFocusChannelId, onChannelSelect, handleChannelFocus]
+    ({ item }: { item: Channel }) => (
+      <ChannelListItem
+        channel={item}
+        onPress={onChannelSelect}
+        onFocus={handleChannelFocus}
+        hasTVPreferredFocus={preferredFocusId === item.id}
+        isCurrentChannel={item.id === currentChannelId}
+      />
+    ),
+    [currentChannelId, preferredFocusId, onChannelSelect, handleChannelFocus],
   );
 
   const keyExtractor = useCallback((item: Channel) => item.id, []);
 
-  // Don't render anything when hidden to avoid blocking video
-  if (!showChannelList) {
-    return null;
-  }
+  if (!showChannelList) return null;
 
-  // Skeleton loader component
-  const SkeletonItem = () => (
-    <View className="mx-4 my-2 p-4 rounded-xl bg-subtle border border-border">
-      <View className="flex-row items-center gap-3">
-        <View className="w-16 h-16 rounded-lg bg-dark" />
-        <View className="flex-1">
-          <View className="h-5 bg-dark rounded mb-2" style={{ width: '70%' }} />
-          <View className="h-4 bg-dark rounded" style={{ width: '40%' }} />
-        </View>
-      </View>
-    </View>
-  );
+  const groupLabel = selectedGroup && selectedGroup !== 'All Channels'
+    ? selectedGroup
+    : 'All Channels';
 
   return (
     <>
-      {/* Dark overlay - TiviMate Style */}
+      {/* Dim backdrop */}
       <TouchableOpacity
-        className="absolute inset-0 bg-darker/85 z-[15]"
-        style={{ 
-          elevation: 15,
-          zIndex: 15,
-        }}
+        style={s.backdrop}
         activeOpacity={1}
         onPress={() => setShowChannelList(false)}
       />
 
-      {/* Panel - TiviMate Style */}
-      <View
-        className="absolute top-0 left-0 bottom-0 w-[420px] border-r border-border bg-card shadow-xl z-[20]"
-        style={{
-          elevation: 20,
-          zIndex: 20,
-          backgroundColor: '#161b22',
-        }}
-      >
-        {/* Header - TiviMate Style */}
-        <View className="flex-row justify-between items-center px-6 py-5 border-b border-border bg-dark">
-          <View>
-            <Text className="text-text-primary text-[24px] font-bold tracking-tight">
-              {selectedGroup && selectedGroup !== 'All Channels' ? selectedGroup : 'All Channels'}
-            </Text>
-            <Text className="text-text-muted text-sm mt-1">
+      {/* Panel */}
+      <View style={s.panel}>
+        {/* Header */}
+        <View style={s.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.headerTitle} numberOfLines={1}>{groupLabel}</Text>
+            <Text style={s.headerSub}>
               {filteredChannels.length} channel{filteredChannels.length !== 1 ? 's' : ''}
             </Text>
           </View>
-          <View className="flex-row gap-2">
-            <FocusableItem 
-              onPress={() => {
-                setShowChannelList(false);
-                setShowGroupsPlaylists(true);
-              }} 
-              className="w-11 h-11 rounded-full bg-subtle border border-border justify-center items-center"
+          <View style={s.headerBtns}>
+            <FocusableItem
+              onPress={() => { setShowChannelList(false); setShowGroupsPlaylists(true); }}
+              style={s.hBtn}
+              focusedStyle={BTN_FOCUSED}
             >
-              <Text className="text-text-secondary text-base font-bold">
-                ☰
-              </Text>
+              <Text style={s.hBtnIcon}>☰</Text>
             </FocusableItem>
-            <FocusableItem 
-              onPress={() => setShowChannelList(false)} 
-              className="w-11 h-11 rounded-full bg-subtle border border-border justify-center items-center"
+            <FocusableItem
+              onPress={() => setShowChannelList(false)}
+              style={s.hBtn}
+              focusedStyle={BTN_FOCUSED}
             >
-              <Text className="text-text-secondary text-lg font-bold">
-                ✕
-              </Text>
+              <Text style={s.hBtnIcon}>✕</Text>
             </FocusableItem>
           </View>
         </View>
 
-        {/* Channel List */}
-        {isLoading || filteredChannels.length === 0 ? (
-          <View className="flex-1 p-2">
-            {isLoading ? (
-              // Show skeleton loaders while loading
-              <>
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <SkeletonItem key={i} />
-                ))}
-              </>
-            ) : (
-              <View className="flex-1 justify-center items-center p-5">
-                <Text className="text-text-muted text-base">
-                  {selectedGroup && selectedGroup !== 'All Channels'
-                    ? `No channels under ${selectedGroup}`
-                    : 'No channels available'}
-                </Text>
+        {/* Content */}
+        {isLoading ? (
+          <View style={s.skeletonWrap}>
+            {Array.from({ length: 7 }).map((_, i) => (
+              <View key={i} style={s.skeletonItem}>
+                <View style={s.skeletonLogo} />
+                <View style={{ flex: 1, gap: 8 }}>
+                  <View style={[s.skeletonLine, { width: '65%' }]} />
+                  <View style={[s.skeletonLine, { width: '40%' }]} />
+                </View>
               </View>
-            )}
+            ))}
+          </View>
+        ) : filteredChannels.length === 0 ? (
+          <View style={s.emptyWrap}>
+            <Text style={s.emptyTxt}>
+              {selectedGroup && selectedGroup !== 'All Channels'
+                ? `No channels in "${selectedGroup}"`
+                : 'No channels available'}
+            </Text>
           </View>
         ) : (
           <View style={{ flex: 1 }}>
+            {/* Hidden left-edge zone to trigger groups panel */}
             {!showGroupsPlaylists && (
               <FocusableItem
-                onFocus={() => {
-                  if (showChannelList && !showGroupsPlaylists) {
-                    setShowGroupsPlaylists(true);
-                  }
-                }}
-                onPress={() => {
-                  if (!showGroupsPlaylists) {
-                    setShowGroupsPlaylists(true);
-                  }
-                }}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  bottom: 0,
-                  left: -20,
-                  width: 20,
-                  backgroundColor: 'transparent',
-                  zIndex: 1,
-                }}
+                onFocus={() => { if (showChannelList) setShowGroupsPlaylists(true); }}
+                onPress={() => { if (!showGroupsPlaylists) setShowGroupsPlaylists(true); }}
+                style={s.leftEdgeZone}
                 focusedStyle={{ backgroundColor: 'transparent' }}
               >
-                <View className="flex-1" />
+                <View style={{ flex: 1 }} />
               </FocusableItem>
             )}
             <FlashList
-              ref={channelListRef}
+              ref={listRef}
               data={filteredChannels}
               keyExtractor={keyExtractor}
               renderItem={renderChannelItem}
               initialScrollIndex={initialScrollIndex}
-              estimatedItemSize={120}
-              contentContainerStyle={{ paddingVertical: 12 }}
+              estimatedItemSize={TV ? 100 : 86}
+              contentContainerStyle={{ paddingVertical: 8 }}
               keyboardShouldPersistTaps="handled"
             />
           </View>
@@ -234,3 +181,91 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
 };
 
 export default ChannelListPanel;
+
+const s = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    zIndex: 15,
+    elevation: 15,
+  },
+  panel: {
+    position: 'absolute',
+    top: 0, left: 0, bottom: 0,
+    width: TV ? 480 : 400,
+    backgroundColor: '#0d0d0d',
+    borderRightWidth: 1,
+    borderRightColor: '#1a1a1a',
+    zIndex: 20,
+    elevation: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 8, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 24,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: TV ? 24 : 18,
+    paddingVertical: TV ? 20 : 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1a1a1a',
+    backgroundColor: '#0a0a0a',
+    gap: 12,
+  },
+  headerTitle: {
+    color: '#f5f5f5',
+    fontSize: TV ? 24 : 20,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  headerSub: {
+    color: '#3d3d3d',
+    fontSize: TV ? 13 : 11,
+    fontWeight: '500',
+    marginTop: 3,
+  },
+  headerBtns: { flexDirection: 'row', gap: 8 },
+  hBtn: {
+    width: TV ? 46 : 40,
+    height: TV ? 46 : 40,
+    borderRadius: TV ? 12 : 10,
+    backgroundColor: '#161616',
+    borderWidth: 1,
+    borderColor: '#222222',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  hBtnIcon: { color: '#555555', fontSize: TV ? 18 : 16, fontWeight: '700' },
+
+  skeletonWrap: { padding: 12, gap: 8 },
+  skeletonItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#111111',
+  },
+  skeletonLogo: {
+    width: TV ? 64 : 52,
+    height: TV ? 64 : 52,
+    borderRadius: 10,
+    backgroundColor: '#181818',
+  },
+  skeletonLine: {
+    height: TV ? 14 : 12,
+    borderRadius: 6,
+    backgroundColor: '#181818',
+  },
+
+  emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  emptyTxt: { color: '#333333', fontSize: TV ? 15 : 13, fontWeight: '500', textAlign: 'center' },
+
+  leftEdgeZone: {
+    position: 'absolute',
+    top: 0, bottom: 0, left: -20, width: 20,
+    backgroundColor: 'transparent',
+    zIndex: 1,
+  },
+});

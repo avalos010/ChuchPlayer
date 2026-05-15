@@ -4,7 +4,7 @@ import { useUIStore } from '../store/useUIStore';
 export const useEPGAutoHide = () => {
   const showEPG = useUIStore((state) => state.showEPG);
   const setShowEPG = useUIStore((state) => state.setShowEPG);
-  const epgAutoHideTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const epgAutoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Function to reset the EPG auto-hide timer
   const resetEPGAutoHideTimer = useCallback(() => {

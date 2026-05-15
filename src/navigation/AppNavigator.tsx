@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useColorScheme, View, ActivityIndicator } from 'react-native';
+import { useColorScheme, View, ActivityIndicator, Platform } from 'react-native';
 import { RootStackParamList } from '../types';
 import { getLastChannel, getPlaylists } from '../utils/storage';
 
 import PlayerScreen from '../screens/PlayerScreen';
+import WebPlayerScreen from '../screens/WebPlayerScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+
+const ActivePlayerScreen = Platform.OS === 'web' ? WebPlayerScreen : PlayerScreen;
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -59,7 +62,7 @@ const AppNavigator = () => {
     // Show loading screen while determining initial route
     return (
       <View style={{ flex: 1, backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#00aaff" />
+        <ActivityIndicator size="large" color="#f5f5f5" />
       </View>
     );
   }
@@ -81,7 +84,7 @@ const AppNavigator = () => {
       >
         <Stack.Screen
           name="Player"
-          component={PlayerScreen}
+          component={ActivePlayerScreen}
           options={{ headerShown: false }}
           initialParams={initialChannel ? { channel: initialChannel } : { channel: undefined }}
         />

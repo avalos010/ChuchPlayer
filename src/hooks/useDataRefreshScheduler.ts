@@ -28,8 +28,8 @@ export const useDataRefreshScheduler = () => {
   useEffect(() => {
     isMountedRef.current = true;
 
-    let channelTimer: NodeJS.Timeout | null = null;
-    let epgTimer: NodeJS.Timeout | null = null;
+    let channelTimer: ReturnType<typeof setInterval> | null = null;
+    let epgTimer: ReturnType<typeof setInterval> | null = null;
     const channelRefreshInFlight = { current: false };
     const epgRefreshInFlight = { current: false };
 
