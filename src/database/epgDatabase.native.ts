@@ -1,5 +1,16 @@
-import Realm from 'realm';
+import { Platform } from 'react-native';
 import { EPGProgram } from '../types';
+
+let Realm: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    Realm = require('realm').default;
+  } catch (e) {
+    console.warn('Failed to load Realm module:', e);
+    Realm = null;
+  }
+}
 
 export type InsertableProgram = {
   playlistId: string;
@@ -17,7 +28,7 @@ export type MetadataRow = {
   sourceSignature?: string | null;
 };
 
-type ProgramObject = Realm.Object & {
+type ProgramObject = {
   id: string;
   playlistId: string;
   channelId: string;
@@ -29,13 +40,13 @@ type ProgramObject = Realm.Object & {
   createdAt: Date;
 };
 
-type MetadataObject = Realm.Object & {
+type MetadataObject = {
   playlistId: string;
   lastUpdated: Date;
   sourceSignature?: string | null;
 };
 
-const ProgramSchema: Realm.ObjectSchema = {
+const ProgramSchema: any = {
   name: 'Program',
   primaryKey: 'id',
   properties: {
@@ -51,7 +62,7 @@ const ProgramSchema: Realm.ObjectSchema = {
   },
 };
 
-const MetadataSchema: Realm.ObjectSchema = {
+const MetadataSchema: any = {
   name: 'Metadata',
   primaryKey: 'playlistId',
   properties: {
@@ -61,10 +72,14 @@ const MetadataSchema: Realm.ObjectSchema = {
   },
 };
 
-let realmPromise: Promise<Realm> | null = null;
+let realmPromise: Promise<any> | null = null;
 let operationChain: Promise<void> = Promise.resolve();
 
-const getRealmInstance = async (): Promise<Realm> => {
+const getRealmInstance = async (): Promise<any> => {
+  if (!Realm) {
+    throw new Error('Realm database is not available on this platform. EPG features require a native build.');
+  }
+
   if (!realmPromise) {
     realmPromise = Realm.open({
       schema: [ProgramSchema, MetadataSchema],
@@ -75,7 +90,7 @@ const getRealmInstance = async (): Promise<Realm> => {
 };
 
 const enqueueRealmOperation = <T>(
-  operation: (realm: Realm) => Promise<T> | T
+  operation: (realm: any) => Promise<T> | T
 ): Promise<T> => {
   const nextOperation = operationChain.then(async () => {
     const realm = await getRealmInstance();
@@ -101,7 +116,7 @@ const mapProgramObject = (program: ProgramObject): EPGProgram => ({
 const buildProgramPrimaryKey = (program: InsertableProgram): string =>
   `${program.playlistId}|${program.channelId}|${program.start}|${program.end}|${program.title ?? ''}`;
 
-export const ensureEpgDatabase = async (): Promise<Realm> => getRealmInstance();
+export const ensureEpgDatabase = async (): Promise<any> => getRealmInstance();
 
 export const clearProgramsForPlaylist = async (playlistId: string): Promise<void> =>
   enqueueRealmOperation(async (realm) => {
@@ -132,7 +147,7 @@ export const setPlaylistMetadata = async (
           lastUpdated: new Date(lastUpdated),
           sourceSignature: sourceSignature ?? null,
         },
-        Realm.UpdateMode.Modified
+        'modified'
       );
     });
   });
