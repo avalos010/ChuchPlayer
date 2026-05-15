@@ -211,56 +211,44 @@ export const useEPGManagement = () => {
 
     const playlistId = playlist.id;
     let cancelled = false;
-    loadedChannelsRef.current.clear();
-    pendingChannelLoadsRef.current.clear();
-    setProgramsByChannel({});
-    setEpgStatus({ loading: true, error: null });
 
     const loadEpg = async () => {
-      // Update last fetch time immediately to prevent concurrent fetches
       lastFetchTimeRef.current = Date.now();
-      
       const errors: string[] = [];
 
       try {
         await ensureEpgDatabase();
 
         const existingMetadata = await getPlaylistMetadata(playlistId);
-
-        // Debug: check database state before processing
-        console.log('[EPG] Checking database state before processing...');
-        await debugDatabaseContents(playlistId);
-
-        if (
+        const hasCachedData =
           existingMetadata?.sourceSignature === datasetSignature &&
-          existingMetadata?.lastUpdated
-        ) {
+          !!existingMetadata?.lastUpdated;
+
+        if (hasCachedData) {
+          // Serve cached programs immediately — no loading overlay needed.
           const initialChannelIds = channels
             .slice(0, INITIAL_PREFETCH_COUNT)
             .map((channel) => channel.id);
-
           await loadProgramsForChannels(initialChannelIds, { force: true });
-
-          if (cancelled) {
-            return;
-          }
+          if (cancelled) return;
 
           loadedSignatureRef.current = datasetSignature;
           setEpgLastUpdated(existingMetadata.lastUpdated);
           setEpgStatus({ loading: false, error: null });
-          console.log('[EPG] Using cached programs for playlist', playlistId);
-          // Respect refresh interval: skip re-ingest if data is recent
-          const now = Date.now();
-          const timeSinceLastUpdate = now - existingMetadata.lastUpdated;
+
+          const timeSinceLastUpdate = Date.now() - existingMetadata.lastUpdated;
           if (timeSinceLastUpdate < DEFAULT_REFRESH_INTERVAL_MS) {
-            console.log('[EPG] Cached data is still fresh (updated', 
-              Math.round(timeSinceLastUpdate / 1000 / 60), 'minutes ago), skipping ingestion');
-            // Mark as loaded to prevent re-triggering
-            loadedSignatureRef.current = datasetSignature;
+            console.log('[EPG] Cache fresh, skipping re-ingest');
             return;
           }
-          console.log('[EPG] Cached data expired (updated', 
-            Math.round(timeSinceLastUpdate / 1000 / 60), 'minutes ago), continuing with ingestion');
+          console.log('[EPG] Cache stale, re-ingesting in background');
+          // Fall through to re-ingest without showing the overlay.
+        } else {
+          // No usable cache — clear stale data and show loading overlay.
+          loadedChannelsRef.current.clear();
+          pendingChannelLoadsRef.current.clear();
+          setProgramsByChannel({});
+          setEpgStatus({ loading: true, error: null });
         }
 
         const cutoff = Date.now() - PRUNE_LOWER_BOUND_HOURS * 60 * 60 * 1000;
@@ -334,22 +322,14 @@ export const useEPGManagement = () => {
           return;
         }
 
-        const initialChannelIds = channels
-          .slice(0, INITIAL_PREFETCH_COUNT)
-          .map((channel) => channel.id);
-        console.log('[EPG] Forcing initial channel load with cached metadata:', initialChannelIds);
+        if (cancelled) return;
 
-        await loadProgramsForChannels(initialChannelIds, { force: true });
         const postIngestChannelIds = channels
           .slice(0, INITIAL_PREFETCH_COUNT)
           .map((channel) => channel.id);
-        console.log('[EPG] Forcing initial channel load after ingest:', postIngestChannelIds);
-
         await loadProgramsForChannels(postIngestChannelIds, { force: true });
 
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         loadedSignatureRef.current = datasetSignature;
         setEpgLastUpdated(timestamp);

@@ -1,8 +1,13 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "kotlin-kapt"
 apply plugin: "com.facebook.react"
+apply plugin: "realm-android"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
+
+// pnpm doesn't expose react-native-worklets to global require; point Reanimated directly to it
+ext.REACT_NATIVE_WORKLETS_NODE_MODULES_DIR = new File(projectRoot, "node_modules/.pnpm/react-native-worklets@0.8.3_@babel+core@7.28.5_@react-native+metro-config@0.85.3_@babel_3fe0cb9cd653cb223deabba78697323c/node_modules/react-native-worklets").getAbsolutePath()
 
 /**
  * This is the configuration block to customize your React Native Android app.
@@ -87,13 +92,19 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.chuchplayer'
+    namespace "com.chuchplayer"
+
+    sourceSets {
+        main {
+            java.srcDirs += ["${projectRoot}/native/android/src/main/java"]
+        }
+    }
     defaultConfig {
-        applicationId 'com.chuchplayer'
+        applicationId "com.chuchplayer"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0.0"
+        versionName "1.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
@@ -125,12 +136,6 @@ android {
         jniLibs {
             def enableLegacyPackaging = findProperty('expo.useLegacyPackaging') ?: 'false'
             useLegacyPackaging enableLegacyPackaging.toBoolean()
-            pickFirsts += [
-                "lib/arm64-v8a/libworklets.so",
-                "lib/armeabi-v7a/libworklets.so",
-                "lib/x86/libworklets.so",
-                "lib/x86_64/libworklets.so"
-            ]
         }
     }
     androidResources {
@@ -162,6 +167,11 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
+    // Native EPG ingestion module dependencies
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
     def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";
@@ -185,8 +195,4 @@ dependencies {
     } else {
         implementation jscFlavor
     }
-    
-    // EPG Ingestion native module dependencies
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 }

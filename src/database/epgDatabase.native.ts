@@ -1,16 +1,7 @@
-import { Platform } from 'react-native';
+import { NativeModules } from 'react-native';
 import { EPGProgram } from '../types';
 
-let Realm: any = null;
-
-if (Platform.OS !== 'web') {
-  try {
-    Realm = require('realm').default;
-  } catch (e) {
-    console.warn('Failed to load Realm module:', e);
-    Realm = null;
-  }
-}
+const { EpgIngestionModule } = NativeModules;
 
 export type InsertableProgram = {
   playlistId: string;
@@ -28,252 +19,97 @@ export type MetadataRow = {
   sourceSignature?: string | null;
 };
 
-type ProgramObject = {
-  id: string;
-  playlistId: string;
-  channelId: string;
-  title: string;
-  description?: string | null;
-  start: Date;
-  end: Date;
-  epgChannelId?: string | null;
-  createdAt: Date;
-};
-
-type MetadataObject = {
-  playlistId: string;
-  lastUpdated: Date;
-  sourceSignature?: string | null;
-};
-
-const ProgramSchema: any = {
-  name: 'Program',
-  primaryKey: 'id',
-  properties: {
-    id: 'string',
-    playlistId: 'string',
-    channelId: 'string',
-    title: 'string',
-    description: 'string?',
-    start: 'date',
-    end: 'date',
-    epgChannelId: 'string?',
-    createdAt: 'date',
-  },
-};
-
-const MetadataSchema: any = {
-  name: 'Metadata',
-  primaryKey: 'playlistId',
-  properties: {
-    playlistId: 'string',
-    lastUpdated: 'date',
-    sourceSignature: 'string?',
-  },
-};
-
-let realmPromise: Promise<any> | null = null;
-let operationChain: Promise<void> = Promise.resolve();
-
-const getRealmInstance = async (): Promise<any> => {
-  if (!Realm) {
-    throw new Error('Realm database is not available on this platform. EPG features require a native build.');
+const getNativeModule = () => {
+  if (!EpgIngestionModule) {
+    throw new Error('EpgIngestionModule is not available. Ensure a native build is installed.');
   }
-
-  if (!realmPromise) {
-    realmPromise = Realm.open({
-      schema: [ProgramSchema, MetadataSchema],
-      schemaVersion: 1,
-    });
-  }
-  return realmPromise;
+  return EpgIngestionModule;
 };
 
-const enqueueRealmOperation = <T>(
-  operation: (realm: any) => Promise<T> | T
-): Promise<T> => {
-  const nextOperation = operationChain.then(async () => {
-    const realm = await getRealmInstance();
-    return operation(realm);
-  });
-
-  operationChain = nextOperation
-    .then(() => undefined)
-    .catch(() => undefined);
-
-  return nextOperation;
+export const ensureEpgDatabase = async (): Promise<void> => {
+  getNativeModule();
 };
 
-const mapProgramObject = (program: ProgramObject): EPGProgram => ({
-  id: program.id,
-  channelId: program.channelId,
-  title: program.title,
-  description: program.description ?? undefined,
-  start: new Date(program.start),
-  end: new Date(program.end),
-});
-
-const buildProgramPrimaryKey = (program: InsertableProgram): string =>
-  `${program.playlistId}|${program.channelId}|${program.start}|${program.end}|${program.title ?? ''}`;
-
-export const ensureEpgDatabase = async (): Promise<any> => getRealmInstance();
-
-export const clearProgramsForPlaylist = async (playlistId: string): Promise<void> =>
-  enqueueRealmOperation(async (realm) => {
-    realm.write(() => {
-      const programs = realm
-        .objects<ProgramObject>('Program')
-        .filtered('playlistId == $0', playlistId);
-      realm.delete(programs);
-
-      const metadata = realm.objectForPrimaryKey<MetadataObject>('Metadata', playlistId);
-      if (metadata) {
-        realm.delete(metadata);
-      }
-    });
-  });
+export const clearProgramsForPlaylist = async (_playlistId: string): Promise<void> => {
+  // Programs are managed entirely by the native module; clearing is not exposed via bridge.
+  // The native module deduplicates on insert so stale data is harmless.
+};
 
 export const setPlaylistMetadata = async (
-  playlistId: string,
-  lastUpdated: number,
-  sourceSignature?: string | null
-): Promise<void> =>
-  enqueueRealmOperation(async (realm) => {
-    realm.write(() => {
-      realm.create(
-        'Metadata',
-        {
-          playlistId,
-          lastUpdated: new Date(lastUpdated),
-          sourceSignature: sourceSignature ?? null,
-        },
-        'modified'
-      );
-    });
-  });
+  _playlistId: string,
+  _lastUpdated: number,
+  _sourceSignature?: string | null
+): Promise<void> => {
+  // Metadata is written by the native module after ingestion.
+};
 
 export const getPlaylistMetadata = async (
   playlistId: string
 ): Promise<MetadataRow | null> => {
-  const realm = await getRealmInstance();
-  const metadata = realm.objectForPrimaryKey<MetadataObject>('Metadata', playlistId);
-
-  if (!metadata) {
+  try {
+    const meta = await getNativeModule().getNativePlaylistMetadata(playlistId);
+    if (!meta) return null;
+    return {
+      playlistId: meta.playlistId,
+      lastUpdated: meta.lastUpdated,
+      sourceSignature: meta.sourceSignature || null,
+    };
+  } catch {
     return null;
   }
-
-  return {
-    playlistId: metadata.playlistId,
-    lastUpdated: metadata.lastUpdated.getTime(),
-    sourceSignature: metadata.sourceSignature ?? null,
-  };
 };
 
 export const insertProgramsExclusive = async (
-  playlistId: string,
-  programs: InsertableProgram[]
+  _playlistId: string,
+  _programs: InsertableProgram[]
 ): Promise<number> => {
-  if (programs.length === 0) {
-    return 0;
-  }
-
-  return enqueueRealmOperation(async (realm) => {
-      let inserted = 0;
-
-    realm.write(() => {
-      for (const program of programs) {
-        const primaryKey = buildProgramPrimaryKey(program);
-        const existing = realm.objectForPrimaryKey<ProgramObject>('Program', primaryKey);
-
-        if (!existing) {
-          realm.create('Program', {
-            id: primaryKey,
-            playlistId: program.playlistId,
-            channelId: program.channelId,
-            title: program.title,
-            description: program.description ?? null,
-            start: new Date(program.start),
-            end: new Date(program.end),
-            epgChannelId: program.epgChannelId ?? null,
-            createdAt: new Date(),
-          });
-              inserted += 1;
-          }
-        }
-      });
-
-      return inserted;
-  });
+  // Insertion is handled by the native module during ingestion.
+  return 0;
 };
 
 export const queryProgramsForChannels = async (
   playlistId: string,
   channelIds: string[]
 ): Promise<Record<string, EPGProgram[]>> => {
-  if (channelIds.length === 0) {
+  if (channelIds.length === 0) return {};
+
+  try {
+    const result: Record<string, { id: string; channelId: string; title: string; description: string; start: number; end: number }[]> =
+      await getNativeModule().queryPrograms(playlistId, channelIds);
+
+    const grouped: Record<string, EPGProgram[]> = {};
+    for (const channelId of channelIds) {
+      const programs = result[channelId] ?? [];
+      grouped[channelId] = programs.map((p) => ({
+        id: p.id,
+        channelId: p.channelId,
+        title: p.title,
+        description: p.description || undefined,
+        start: new Date(p.start),
+        end: new Date(p.end),
+      }));
+    }
+    return grouped;
+  } catch (e) {
+    console.warn('[EPG] queryProgramsForChannels failed:', e);
     return {};
   }
-
-  const realm = await getRealmInstance();
-      const grouped: Record<string, EPGProgram[]> = {};
-
-  channelIds.forEach((channelId) => {
-    const results = realm
-      .objects<ProgramObject>('Program')
-      .filtered('playlistId == $0 && channelId == $1', playlistId, channelId)
-      .sorted('start');
-
-    grouped[channelId] = results.map(mapProgramObject);
-      });
-
-      return grouped;
 };
 
 export const pruneOldPrograms = async (
-  playlistId: string,
-  cutoffTimestamp: number
-): Promise<void> =>
-  enqueueRealmOperation(async (realm) => {
-    realm.write(() => {
-      const programs = realm
-        .objects<ProgramObject>('Program')
-        .filtered('playlistId == $0 && end < $1', playlistId, new Date(cutoffTimestamp));
-      realm.delete(programs);
-    });
-  });
+  _playlistId: string,
+  _cutoffTimestamp: number
+): Promise<void> => {
+  // Native module handles time-window filtering during ingestion and query.
+};
 
 export const debugDatabaseContents = async (playlistId?: string): Promise<void> => {
   try {
-    const realm = await getRealmInstance();
-
-    const totalPrograms = realm.objects<ProgramObject>('Program').length;
-    console.log(`[DB DEBUG] Total programs in database: ${totalPrograms}`);
-
     if (playlistId) {
-      const programs = realm
-        .objects<ProgramObject>('Program')
-        .filtered('playlistId == $0', playlistId);
-      console.log(`[DB DEBUG] Programs for playlist ${playlistId}: ${programs.length}`);
-
-      const recentPrograms = programs.sorted('start', true).slice(0, 5).map((program) => ({
-        id: program.id,
-        title: program.title,
-        channelId: program.channelId,
-        start: program.start,
-        end: program.end,
-      }));
-      console.log('[DB DEBUG] Recent programs sample:', recentPrograms);
+      const meta = await getPlaylistMetadata(playlistId);
+      console.log('[DB DEBUG] Metadata:', meta);
     }
-
-    const metadataEntries = realm.objects<MetadataObject>('Metadata').map((meta) => ({
-      playlistId: meta.playlistId,
-      lastUpdated: meta.lastUpdated,
-      sourceSignature: meta.sourceSignature ?? null,
-    }));
-    console.log('[DB DEBUG] Metadata entries:', metadataEntries);
-  } catch (error) {
-    console.error('[DB DEBUG] Error checking database:', error);
+  } catch (e) {
+    console.error('[DB DEBUG] Error:', e);
   }
 };
-
-

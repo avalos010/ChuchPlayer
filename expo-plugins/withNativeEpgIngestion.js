@@ -17,7 +17,7 @@ const withNativeEpgIngestion = (config) => {
         // Find the dependencies block by looking for the closing brace
         // We'll insert before the last closing brace of the dependencies block
         const dependenciesMatch = buildGradle.match(/dependencies\s*\{/);
-        if (dependenciesMatch) {çç
+        if (dependenciesMatch) {
           let braceCount = 0;
           let inDependencies = false;
           let insertIndex = -1;
