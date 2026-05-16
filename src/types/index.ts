@@ -16,6 +16,8 @@ export interface EPGProgram {
   start: Date;
   end: Date;
   icon?: string;
+  catchupAvailable?: boolean;
+  catchupUrl?: string;
 }
 
 export type PlaylistSourceType = 'm3u' | 'xtream';
@@ -46,6 +48,15 @@ export interface Settings {
   maxMultiScreens: number;
   epgRefreshIntervalMinutes: number;
   channelRefreshIntervalMinutes: number;
+  // New settings
+  bufferMode?: 'low_latency' | 'balanced' | 'smooth';
+  hardwareDecoder?: boolean;
+  infoBarTimeoutSeconds?: number;
+  showChannelNumbers?: boolean;
+  clockFormat?: '12h' | '24h';
+  parentalPinEnabled?: boolean;
+  parentalPinHash?: string;
+  sleepTimerMinutes?: number;
 }
 
 export type RootStackParamList = {

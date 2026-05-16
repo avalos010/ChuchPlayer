@@ -22,6 +22,7 @@ import { fetchM3UPlaylist } from '../utils/m3uParser';
 import { fetchXtreamPlaylist } from '../utils/xtreamParser';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
+import { useSleepTimer } from '../hooks/useSleepTimer';
 
 interface SettingsScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Settings'>;
@@ -29,7 +30,6 @@ interface SettingsScreenProps {
 
 const TV = Platform.OS === 'android';
 
-// ─── Focused state (static) ───────────────────────────────────────────────────
 const BTN_FOCUSED = {
   backgroundColor: '#ffffff',
   borderColor: '#ffffff',
@@ -50,7 +50,7 @@ const DANGER_FOCUSED = {
   elevation: 6,
 };
 
-// ─── Small reusable pieces ────────────────────────────────────────────────────
+// ─── Reusable components ──────────────────────────────────────────────────────
 
 const SectionTitle: React.FC<{ label: string }> = ({ label }) => (
   <Text style={s.sectionTitle}>{label}</Text>
@@ -61,6 +61,25 @@ const Card: React.FC<{ children: React.ReactNode; style?: any }> = ({ children, 
 );
 
 const Divider = () => <View style={s.divider} />;
+
+const RowBetween: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <View style={s.rowBetween}>{children}</View>
+);
+
+const SettingRow: React.FC<{
+  title: string;
+  desc?: string;
+  right: React.ReactNode;
+  top?: boolean;
+}> = ({ title, desc, right, top }) => (
+  <View style={[s.settingRow, top && s.settingRowTop]}>
+    <View style={{ flex: 1 }}>
+      <Text style={s.settingTitle}>{title}</Text>
+      {desc && <Text style={s.settingDesc}>{desc}</Text>}
+    </View>
+    {right}
+  </View>
+);
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
@@ -73,6 +92,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
     maxMultiScreens: 4,
     epgRefreshIntervalMinutes: 60,
     channelRefreshIntervalMinutes: 15,
+    bufferMode: 'balanced',
+    hardwareDecoder: true,
+    infoBarTimeoutSeconds: 6,
+    showChannelNumbers: false,
+    clockFormat: '24h',
+    parentalPinEnabled: false,
+    parentalPinHash: '',
   });
   const [loading,            setLoading]            = useState(true);
   const [playlists,          setPlaylists]          = useState<Playlist[]>([]);
@@ -86,7 +112,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [xtreamPassword,     setXtreamPassword]    = useState('');
   const [addingPlaylist,     setAddingPlaylist]     = useState(false);
   const [manualRefreshing,   setManualRefreshing]   = useState(false);
+  const [pinModalVisible,    setPinModalVisible]    = useState(false);
+  const [pinInput,           setPinInput]           = useState('');
+  const [pinConfirm,         setPinConfirm]         = useState('');
 
+  const { setTimer: setSleepTimer } = useSleepTimer();
   const hasPlayer = !!usePlayerStore.getState().channel;
 
   const loadPlaylists = useCallback(async () => {
@@ -260,6 +290,23 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
     }
   };
 
+  // ── PIN modal ────────────────────────────────────────────────────────────────
+  const handleSavePin = () => {
+    if (pinInput.length !== 4 || !/^\d{4}$/.test(pinInput)) {
+      setTimeout(() => showError('PIN must be exactly 4 digits.'), 100); return;
+    }
+    if (pinInput !== pinConfirm) {
+      setTimeout(() => showError('PINs do not match.'), 100); return;
+    }
+    // Simple hash: just store as-is for now (in production use crypto hash)
+    updateSetting('parentalPinHash', pinInput);
+    updateSetting('parentalPinEnabled', true);
+    setPinModalVisible(false);
+    setPinInput('');
+    setPinConfirm('');
+    setTimeout(() => showSuccess('Parental PIN set.'), 100);
+  };
+
   // ── Render playlist row ─────────────────────────────────────────────────────
   const renderPlaylistItem = useCallback(({ item }: { item: Playlist }) => (
     <View style={s.playlistRow}>
@@ -283,6 +330,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
     setXtreamUsername(''); setXtreamPassword(''); setSourceType('m3u');
   };
 
+  const infoBarOptions: { label: string; value: number }[] = [
+    { label: '3s', value: 3 },
+    { label: '6s', value: 6 },
+    { label: '10s', value: 10 },
+    { label: 'Never', value: 0 },
+  ];
+
   return (
     <View style={s.root}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={s.scroll}>
@@ -291,6 +345,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         {hasPlayer && (
           <FocusableItem
             onPress={() => navigation.navigate('Player', {})}
+            hasTVPreferredFocus={TV && hasPlayer && !modalVisible}
             style={s.backBtn}
             focusedStyle={BTN_FOCUSED}
           >
@@ -320,7 +375,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           />
         )}
 
-        <FocusableItem onPress={() => setModalVisible(true)} style={s.addBtn} focusedStyle={BTN_FOCUSED}>
+        <FocusableItem
+          onPress={() => setModalVisible(true)}
+          hasTVPreferredFocus={TV && !hasPlayer && !modalVisible}
+          style={s.addBtn}
+          focusedStyle={BTN_FOCUSED}
+        >
           <Text style={s.addBtnTxt}>+ Add Playlist</Text>
         </FocusableItem>
 
@@ -329,38 +389,161 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         {/* ══ PLAYBACK ════════════════════════════════════ */}
         <SectionTitle label="Playback" />
         <Card>
-          <View style={s.rowBetween}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.settingTitle}>Auto Play</Text>
-              <Text style={s.settingDesc}>Start playing automatically when opening a channel</Text>
+          <SettingRow
+            title="Auto Play"
+            desc="Start playing automatically when opening a channel"
+            right={
+              <Switch
+                value={settings.autoPlay}
+                onValueChange={v => updateSetting('autoPlay', v)}
+                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
+                thumbColor={settings.autoPlay ? '#0a0a0a' : '#555555'}
+                disabled={loading}
+              />
+            }
+          />
+          <SettingRow
+            title="Hardware Decoder"
+            desc="Use device GPU for video decoding (recommended for 4K)"
+            top
+            right={
+              <Switch
+                value={settings.hardwareDecoder ?? true}
+                onValueChange={v => updateSetting('hardwareDecoder', v)}
+                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
+                thumbColor={(settings.hardwareDecoder ?? true) ? '#0a0a0a' : '#555555'}
+                disabled={loading}
+              />
+            }
+          />
+          <View style={s.settingRowTop}>
+            <Text style={s.settingTitle}>Buffer Mode</Text>
+            <Text style={[s.settingDesc, { marginBottom: 14 }]}>
+              Low Latency = fastest start · Smooth = most stable
+            </Text>
+            <View style={s.chipRow}>
+              {([
+                { id: 'low', label: 'Low Latency' },
+                { id: 'balanced', label: 'Balanced' },
+                { id: 'smooth', label: 'Smooth' },
+              ] as { id: Settings['bufferMode']; label: string }[]).map(opt => (
+                <FocusableItem
+                  key={opt.id}
+                  onPress={() => updateSetting('bufferMode', opt.id)}
+                  style={[s.chip, settings.bufferMode === opt.id && s.chipActive]}
+                  focusedStyle={BTN_FOCUSED}
+                >
+                  <Text style={[s.chipTxt, settings.bufferMode === opt.id && s.chipTxtActive]}>
+                    {opt.label}
+                  </Text>
+                </FocusableItem>
+              ))}
             </View>
-            <Switch
-              value={settings.autoPlay}
-              onValueChange={v => updateSetting('autoPlay', v)}
-              trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
-              thumbColor={settings.autoPlay ? '#0a0a0a' : '#555555'}
-              disabled={loading}
-            />
           </View>
         </Card>
 
         <Divider />
 
-        {/* ══ DISPLAY ═════════════════════════════════════ */}
-        <SectionTitle label="Display" />
+        {/* ══ INTERFACE ═══════════════════════════════════ */}
+        <SectionTitle label="Interface" />
         <Card>
-          <View style={s.rowBetween}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.settingTitle}>Show EPG</Text>
-              <Text style={s.settingDesc}>Display the program guide when available</Text>
+          <View>
+            <Text style={s.settingTitle}>Info Bar Timeout</Text>
+            <Text style={[s.settingDesc, { marginBottom: 14 }]}>
+              How long the channel info bar stays visible
+            </Text>
+            <View style={s.chipRow}>
+              {infoBarOptions.map(opt => (
+                <FocusableItem
+                  key={opt.value}
+                  onPress={() => updateSetting('infoBarTimeoutSeconds', opt.value)}
+                  style={[s.chip, (settings.infoBarTimeoutSeconds ?? 6) === opt.value && s.chipActive]}
+                  focusedStyle={BTN_FOCUSED}
+                >
+                  <Text style={[s.chipTxt, (settings.infoBarTimeoutSeconds ?? 6) === opt.value && s.chipTxtActive]}>
+                    {opt.label}
+                  </Text>
+                </FocusableItem>
+              ))}
             </View>
-            <Switch
-              value={settings.showEPG}
-              onValueChange={v => updateSetting('showEPG', v)}
-              trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
-              thumbColor={settings.showEPG ? '#0a0a0a' : '#555555'}
-              disabled={loading}
-            />
+          </View>
+          <SettingRow
+            title="Show Channel Numbers"
+            desc="Display channel numbers in the sidebar"
+            top
+            right={
+              <Switch
+                value={settings.showChannelNumbers ?? false}
+                onValueChange={v => updateSetting('showChannelNumbers', v)}
+                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
+                thumbColor={(settings.showChannelNumbers) ? '#0a0a0a' : '#555555'}
+                disabled={loading}
+              />
+            }
+          />
+          <View style={s.settingRowTop}>
+            <Text style={s.settingTitle}>Clock Format</Text>
+            <View style={[s.chipRow, { marginTop: 10 }]}>
+              {(['12h', '24h'] as const).map(fmt => (
+                <FocusableItem
+                  key={fmt}
+                  onPress={() => updateSetting('clockFormat', fmt)}
+                  style={[s.chip, (settings.clockFormat ?? '24h') === fmt && s.chipActive]}
+                  focusedStyle={BTN_FOCUSED}
+                >
+                  <Text style={[s.chipTxt, (settings.clockFormat ?? '24h') === fmt && s.chipTxtActive]}>
+                    {fmt}
+                  </Text>
+                </FocusableItem>
+              ))}
+            </View>
+          </View>
+          <SettingRow
+            title="Show EPG Guide"
+            desc="Display the program guide when available"
+            top
+            right={
+              <Switch
+                value={settings.showEPG}
+                onValueChange={v => updateSetting('showEPG', v)}
+                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
+                thumbColor={settings.showEPG ? '#0a0a0a' : '#555555'}
+                disabled={loading}
+              />
+            }
+          />
+        </Card>
+
+        <Divider />
+
+        {/* ══ SLEEP TIMER ══════════════════════════════════ */}
+        <SectionTitle label="Sleep Timer" />
+        <Card>
+          <Text style={s.settingDesc} numberOfLines={2}>
+            Playback will automatically stop after the selected duration.
+          </Text>
+          <View style={[s.chipRow, { marginTop: 14 }]}>
+            {[
+              { label: 'Off', min: 0 },
+              { label: '15 min', min: 15 },
+              { label: '30 min', min: 30 },
+              { label: '45 min', min: 45 },
+              { label: '1 hour', min: 60 },
+              { label: '90 min', min: 90 },
+            ].map(opt => (
+              <FocusableItem
+                key={opt.min}
+                onPress={() => {
+                  setSleepTimer(opt.min);
+                  if (hasPlayer) navigation.navigate('Player', {});
+                  setTimeout(() => showSuccess(opt.min === 0 ? 'Sleep timer off.' : `Sleep timer set: ${opt.label}`), 100);
+                }}
+                style={s.chip}
+                focusedStyle={BTN_FOCUSED}
+              >
+                <Text style={s.chipTxt}>{opt.label}</Text>
+              </FocusableItem>
+            ))}
           </View>
         </Card>
 
@@ -369,22 +552,22 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         {/* ══ MULTI-SCREEN ════════════════════════════════ */}
         <SectionTitle label="Multi-Screen" />
         <Card>
-          <View style={s.rowBetween}>
-            <View style={{ flex: 1 }}>
-              <Text style={s.settingTitle}>Multi-Screen Mode</Text>
-              <Text style={s.settingDesc}>Watch up to 4 channels at once</Text>
-            </View>
-            <Switch
-              value={settings.multiScreenEnabled}
-              onValueChange={v => updateSetting('multiScreenEnabled', v)}
-              trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
-              thumbColor={settings.multiScreenEnabled ? '#0a0a0a' : '#555555'}
-              disabled={loading}
-            />
-          </View>
-          <View style={[s.rowBetween, { marginTop: 20, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#1a1a1a' }]}>
+          <SettingRow
+            title="Multi-Screen Mode"
+            desc="Watch up to 4 channels at once"
+            right={
+              <Switch
+                value={settings.multiScreenEnabled}
+                onValueChange={v => updateSetting('multiScreenEnabled', v)}
+                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
+                thumbColor={settings.multiScreenEnabled ? '#0a0a0a' : '#555555'}
+                disabled={loading}
+              />
+            }
+          />
+          <View style={s.settingRowTop}>
             <Text style={s.settingTitle}>Max Screens</Text>
-            <View style={s.chipRow}>
+            <View style={[s.chipRow, { marginTop: 10 }]}>
               {[2, 3, 4].map(n => (
                 <FocusableItem
                   key={n}
@@ -401,14 +584,14 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 
         <Divider />
 
-        {/* ══ DATA REFRESH ════════════════════════════════ */}
-        <SectionTitle label="Data Refresh" />
+        {/* ══ EPG ═════════════════════════════════════════ */}
+        <SectionTitle label="EPG" />
 
         <Card style={{ marginBottom: 10 }}>
-          <View style={s.rowBetween}>
+          <RowBetween>
             <Text style={s.settingTitle}>EPG Refresh</Text>
             <Text style={s.valueLabel}>{settings.epgRefreshIntervalMinutes / 60}h</Text>
-          </View>
+          </RowBetween>
           <Text style={[s.settingDesc, { marginBottom: 14 }]}>How often to refresh the program guide</Text>
           <View style={s.chipRow}>
             {[120, 180, 240, 360, 480].map(min => (
@@ -427,10 +610,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         </Card>
 
         <Card style={{ marginBottom: 10 }}>
-          <View style={s.rowBetween}>
+          <RowBetween>
             <Text style={s.settingTitle}>Channel Refresh</Text>
             <Text style={s.valueLabel}>{settings.channelRefreshIntervalMinutes / 60}h</Text>
-          </View>
+          </RowBetween>
           <Text style={[s.settingDesc, { marginBottom: 14 }]}>How often to refresh your channel lists</Text>
           <View style={s.chipRow}>
             {[120, 240, 360, 480].map(min => (
@@ -462,6 +645,45 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 
         <Divider />
 
+        {/* ══ PARENTAL LOCK ════════════════════════════════ */}
+        <SectionTitle label="Parental Lock" />
+        <Card>
+          <SettingRow
+            title="Enable Parental PIN"
+            desc="Require a 4-digit PIN to access protected content"
+            right={
+              <Switch
+                value={settings.parentalPinEnabled ?? false}
+                onValueChange={v => {
+                  if (v) {
+                    setPinModalVisible(true);
+                  } else {
+                    updateSetting('parentalPinEnabled', false);
+                    updateSetting('parentalPinHash', '');
+                    setTimeout(() => showSuccess('Parental lock disabled.'), 100);
+                  }
+                }}
+                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
+                thumbColor={(settings.parentalPinEnabled) ? '#0a0a0a' : '#555555'}
+                disabled={loading}
+              />
+            }
+          />
+          {settings.parentalPinEnabled && (
+            <View style={s.settingRowTop}>
+              <FocusableItem
+                onPress={() => setPinModalVisible(true)}
+                style={s.changePinBtn}
+                focusedStyle={BTN_FOCUSED}
+              >
+                <Text style={s.changePinTxt}>Change PIN</Text>
+              </FocusableItem>
+            </View>
+          )}
+        </Card>
+
+        <Divider />
+
         {/* ══ HELP ════════════════════════════════════════ */}
         <SectionTitle label="Help" />
 
@@ -480,7 +702,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         <FocusableItem
           onPress={() => Alert.alert(
             'TV Remote Controls',
-            'Navigation:\n• D-Pad: Move between items\n• Center/OK: Select\n• Back: Previous screen\n\nPlayer:\n• Center/OK: Play / Pause\n• D-Pad Up/Down: Switch channel\n• D-Pad Left: Open channel list\n• Back: Open program guide',
+            'Navigation:\n• D-Pad: Move between items\n• Center/OK: Select\n• Back: Previous screen\n\nPlayer:\n• Center/OK: Play / Pause\n• D-Pad Up/Down: Switch channel\n• D-Pad Left: Open channel list\n• INFO key: Program details\n• Long press EPG block: Program details\n• Back: Open program guide',
           )}
           style={[s.card, s.helpBtn]}
           focusedStyle={BTN_FOCUSED}
@@ -498,6 +720,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             { label: 'App', value: 'ChuchPlayer' },
             { label: 'Version', value: '1.0.0' },
             { label: 'Platform', value: 'Android TV / IPTV' },
+            { label: 'EPG', value: 'XMLTV + Xtream' },
           ].map((row, i, arr) => (
             <View key={row.label} style={[
               s.aboutRow,
@@ -514,16 +737,16 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 
       {/* ══ ADD PLAYLIST MODAL ══════════════════════════ */}
       <Modal visible={modalVisible} transparent animationType="fade">
-        <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={closeModal}>
-          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={s.modalBox}>
+        <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={closeModal} focusable={false}>
+          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={s.modalBox} focusable={false}>
             <Text style={s.modalTitle}>Add Playlist</Text>
 
-            {/* Source type tabs */}
             <View style={s.tabRow}>
-              {(['m3u', 'xtream'] as PlaylistSourceType[]).map(t => (
+              {(['m3u', 'xtream'] as PlaylistSourceType[]).map((t, idx) => (
                 <FocusableItem
                   key={t}
                   onPress={() => setSourceType(t)}
+                  hasTVPreferredFocus={modalVisible && idx === 0}
                   style={[s.tab, sourceType === t && s.tabActive]}
                   focusedStyle={BTN_FOCUSED}
                 >
@@ -576,6 +799,53 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      {/* ══ PIN MODAL ════════════════════════════════════ */}
+      <Modal visible={pinModalVisible} transparent animationType="fade">
+        <TouchableOpacity
+          style={s.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => { setPinModalVisible(false); setPinInput(''); setPinConfirm(''); }}
+          focusable={false}
+        >
+          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={[s.modalBox, { maxWidth: 400 }]} focusable={false}>
+            <Text style={s.modalTitle}>Set PIN</Text>
+            <Text style={s.settingDesc}>Enter a 4-digit PIN to protect content.</Text>
+            <TextInput
+              style={s.input}
+              placeholder="New 4-digit PIN"
+              placeholderTextColor="#3d3d3d"
+              value={pinInput}
+              onChangeText={t => setPinInput(t.replace(/\D/g, '').slice(0, 4))}
+              keyboardType="numeric"
+              secureTextEntry
+              maxLength={4}
+            />
+            <TextInput
+              style={s.input}
+              placeholder="Confirm PIN"
+              placeholderTextColor="#3d3d3d"
+              value={pinConfirm}
+              onChangeText={t => setPinConfirm(t.replace(/\D/g, '').slice(0, 4))}
+              keyboardType="numeric"
+              secureTextEntry
+              maxLength={4}
+            />
+            <View style={s.modalActions}>
+              <FocusableItem
+                onPress={() => { setPinModalVisible(false); setPinInput(''); setPinConfirm(''); }}
+                style={s.cancelBtn}
+                focusedStyle={BTN_FOCUSED}
+              >
+                <Text style={s.cancelBtnTxt}>Cancel</Text>
+              </FocusableItem>
+              <FocusableItem onPress={handleSavePin} style={s.confirmBtn} focusedStyle={BTN_FOCUSED}>
+                <Text style={s.confirmBtnTxt}>Save</Text>
+              </FocusableItem>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -623,6 +893,24 @@ const s = StyleSheet.create({
 
   divider: { height: 1, backgroundColor: '#141414', marginVertical: TV ? 28 : 22 },
 
+  settingRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  settingRowTop: { paddingTop: 18, marginTop: 18, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 20 },
+  settingTitle: { color: '#e5e5e5', fontSize: TV ? 17 : 15, fontWeight: '700', marginBottom: 4 },
+  settingDesc: { color: '#3d3d3d', fontSize: TV ? 13 : 11, lineHeight: TV ? 20 : 17 },
+  valueLabel: { color: '#555555', fontSize: TV ? 15 : 13, fontWeight: '600' },
+
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    paddingHorizontal: TV ? 20 : 14, paddingVertical: TV ? 10 : 7,
+    borderRadius: 10,
+    backgroundColor: '#161616',
+    borderWidth: 1, borderColor: '#222222',
+  },
+  chipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
+  chipTxt: { color: '#555555', fontSize: TV ? 14 : 12, fontWeight: '700' },
+  chipTxtActive: { color: '#0a0a0a' },
+
   // Playlist rows
   playlistRow: {
     flexDirection: 'row',
@@ -656,24 +944,7 @@ const s = StyleSheet.create({
   addBtnTxt: { color: '#f5f5f5', fontSize: TV ? 17 : 15, fontWeight: '700' },
 
   emptyTitle: { color: '#f5f5f5', fontSize: TV ? 18 : 15, fontWeight: '700', marginBottom: 6 },
-  emptyBody:  { color: '#3d3d3d', fontSize: TV ? 14 : 12, lineHeight: TV ? 22 : 18 },
-
-  // Setting rows
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 20 },
-  settingTitle: { color: '#e5e5e5', fontSize: TV ? 17 : 15, fontWeight: '700', marginBottom: 4 },
-  settingDesc:  { color: '#3d3d3d', fontSize: TV ? 13 : 11, lineHeight: TV ? 20 : 17 },
-  valueLabel:   { color: '#555555', fontSize: TV ? 15 : 13, fontWeight: '600' },
-
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    paddingHorizontal: TV ? 20 : 14, paddingVertical: TV ? 10 : 7,
-    borderRadius: 10,
-    backgroundColor: '#161616',
-    borderWidth: 1, borderColor: '#222222',
-  },
-  chipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  chipTxt:       { color: '#555555', fontSize: TV ? 14 : 12, fontWeight: '700' },
-  chipTxtActive: { color: '#0a0a0a' },
+  emptyBody: { color: '#3d3d3d', fontSize: TV ? 14 : 12, lineHeight: TV ? 22 : 18 },
 
   refreshBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -682,6 +953,17 @@ const s = StyleSheet.create({
   },
   refreshBtnDisabled: { opacity: 0.5 },
   refreshBtnTxt: { color: '#f5f5f5', fontSize: TV ? 17 : 15, fontWeight: '700' },
+
+  changePinBtn: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: TV ? 20 : 16,
+    paddingVertical: TV ? 12 : 9,
+    borderRadius: 10,
+    backgroundColor: '#161616',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  changePinTxt: { color: '#8a8a8a', fontSize: TV ? 14 : 13, fontWeight: '600' },
 
   helpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   helpTitle: { color: '#8a8a8a', fontSize: TV ? 16 : 14, fontWeight: '600' },
@@ -714,7 +996,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   tabActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  tabTxt:       { color: '#555555', fontSize: TV ? 15 : 13, fontWeight: '700' },
+  tabTxt: { color: '#555555', fontSize: TV ? 15 : 13, fontWeight: '700' },
   tabTxtActive: { color: '#0a0a0a' },
   input: {
     backgroundColor: '#161616',

@@ -23,6 +23,9 @@ import { RootStackParamList } from '../../types';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { groupChannelsByCategory } from '../../utils/m3uParser';
+import NativeEpgGrid from './NativeEpgGrid';
+
+const USE_NATIVE_GRID = Platform.OS === 'android';
 
 interface EPGGridViewProps {
   getCurrentProgram: (channelId: string) => EPGProgram | null;
@@ -45,11 +48,11 @@ interface ChannelRowData {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const TV = Platform.OS === 'android';
-const CH_COL  = TV ? 300 : 240;  // channel column px
-const SLOT_W  = TV ? 180 : 140;  // 1-hour slot px
-const ROW_H   = TV ? 110 : 90;   // unfocused row height
-const ROW_H_F = TV ? 168 : 145;  // focused row height
-const HDR_H   = TV ? 68 : 54;    // time header height
+const CH_COL  = TV ? 320 : 240;  // channel column px
+const SLOT_W  = TV ? 200 : 140;  // 1-hour slot px
+const ROW_H   = TV ? 140 : 90;   // unfocused row height (spacious)
+const ROW_H_F = TV ? 220 : 145;  // focused row height (expanded)
+const HDR_H   = TV ? 76 : 54;    // time header height
 
 const HDR_BTN_FOCUSED = {
   backgroundColor: '#ffffff',
@@ -97,7 +100,7 @@ const ChannelRow = memo<{
   const handlePress = useCallback(() => onChannelSelect(channel), [channel, onChannelSelect]);
   const handleFocus = useCallback(() => onFocus?.(channel.id), [channel.id, onFocus]);
   const rowH = isFocused ? ROW_H_F : ROW_H;
-  const logoSz = TV ? 56 : 44;
+  const logoSz = TV ? 68 : 44;
 
   const nowProgram = useMemo(() => {
     const now = new Date();
@@ -371,18 +374,6 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   const filteredChannelsRef = useRef(filteredChannels);
   filteredChannelsRef.current = filteredChannels;
 
-  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: any[] }) => {
-    const visIds: string[] = viewableItems.map((i: any) => i.item.channel.id);
-    loadEpgFor(visIds);
-    visIds.forEach(vid => {
-      const idx = channelIndexMap.get(vid);
-      if (idx !== undefined) {
-        const allIds = filteredChannelsRef.current.map(c => c.id);
-        loadEpgFor(allIds.slice(Math.max(0, idx - 5), idx + 6));
-      }
-    });
-  }, [loadEpgFor, channelIndexMap]);
-
   const channelData = useMemo<ChannelRowData[]>(() =>
     filteredChannels.map(ch => ({
       channel: ch,
@@ -400,6 +391,18 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     channelData.forEach((row, i) => m.set(row.channel.id, i));
     return m;
   }, [channelData]);
+
+  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: any[] }) => {
+    const visIds: string[] = viewableItems.map((i: any) => i.item.channel.id);
+    loadEpgFor(visIds);
+    visIds.forEach(vid => {
+      const idx = channelIndexMap.get(vid);
+      if (idx !== undefined) {
+        const allIds = filteredChannelsRef.current.map(c => c.id);
+        loadEpgFor(allIds.slice(Math.max(0, idx - 5), idx + 6));
+      }
+    });
+  }, [loadEpgFor, channelIndexMap]);
 
   // Keep a ref to the latest channel data so effects/callbacks can read it
   // without taking it as a dep — which would re-fire them on every lazy-load.
@@ -536,31 +539,44 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
       )}
 
       {/* ── Grid ─────────────────────────────────── */}
-      <ScrollView
-        ref={hScrollRef}
-        style={{ flex: 1 }}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        scrollEventThrottle={32}
-      >
-        <View style={{ flex: 1 }}>
-          <TimeHeader currentTimePosition={timePos} />
+      {USE_NATIVE_GRID && playlist ? (
+        <NativeEpgGrid
+          style={{ flex: 1 }}
+          playlistId={playlist.id}
+          channels={filteredChannels}
+          currentChannelId={channel?.id}
+          onChannelSelect={(channelId) => {
+            const ch = channels.find((c) => c.id === channelId);
+            if (ch) onChannelSelect(ch);
+          }}
+        />
+      ) : (
+        <ScrollView
+          ref={hScrollRef}
+          style={{ flex: 1 }}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={32}
+        >
           <View style={{ flex: 1 }}>
-            <FlashList
-              ref={flashRef}
-              data={channelData}
-              renderItem={renderItem}
-              keyExtractor={keyExtractor}
-              estimatedItemSize={ROW_H}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled={TV}
-              onViewableItemsChanged={onViewableItemsChanged}
-              viewabilityConfig={{ itemVisiblePercentThreshold: 40, minimumViewTime: 250 }}
-            />
+            <TimeHeader currentTimePosition={timePos} />
+            <View style={{ flex: 1 }}>
+              <FlashList
+                ref={flashRef}
+                data={channelData}
+                renderItem={renderItem}
+                keyExtractor={keyExtractor}
+                estimatedItemSize={ROW_H}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled={TV}
+                onViewableItemsChanged={onViewableItemsChanged}
+                viewabilityConfig={{ itemVisiblePercentThreshold: 40, minimumViewTime: 250 }}
+              />
+            </View>
           </View>
-        </View>
-      </ScrollView>
+        </ScrollView>
+      )}
     </View>
   );
 };
@@ -693,12 +709,12 @@ const s = StyleSheet.create({
   // Program blocks
   block: {
     position: 'absolute', borderRadius: 8, borderWidth: 1,
-    paddingHorizontal: 10, paddingVertical: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
     justifyContent: 'center', overflow: 'hidden',
   },
-  blockTitle: { fontSize: TV ? 14 : 12, fontWeight: '700', lineHeight: TV ? 19 : 16 },
-  blockTime:  { fontSize: TV ? 11 : 10, fontWeight: '500', marginTop: 2 },
-  blockDesc:  { color: '#5a5a5a', fontSize: TV ? 11 : 9, marginTop: 4, lineHeight: TV ? 16 : 13 },
+  blockTitle: { fontSize: TV ? 15 : 12, fontWeight: '700', lineHeight: TV ? 21 : 16 },
+  blockTime:  { fontSize: TV ? 12 : 10, fontWeight: '500', marginTop: 3 },
+  blockDesc:  { color: '#5a5a5a', fontSize: TV ? 12 : 9, marginTop: 5, lineHeight: TV ? 17 : 13 },
   noData: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   noDataText: { color: '#252525', fontSize: TV ? 12 : 10, fontWeight: '600' },
 
@@ -718,20 +734,20 @@ const s = StyleSheet.create({
     position: 'absolute', left: 0, top: 0, bottom: 0, width: CH_COL,
     borderRightWidth: 1, borderRightColor: '#181818',
     zIndex: 6, flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: TV ? 14 : 10, gap: 10,
+    paddingHorizontal: TV ? 16 : 10, gap: 12,
     shadowColor: '#000', shadowOffset: { width: 4, height: 0 },
     shadowOpacity: 0.6, shadowRadius: 10, elevation: 6,
   },
   chMeta: { flex: 1 },
   chName: {
     color: '#8a8a8a',
-    fontSize: TV ? 15 : 12,
+    fontSize: TV ? 16 : 12,
     fontWeight: '700',
-    lineHeight: TV ? 20 : 17,
-    marginBottom: 3,
+    lineHeight: TV ? 22 : 17,
+    marginBottom: 4,
   },
-  chNow:  { color: '#3d3d3d', fontSize: TV ? 11 : 9, fontWeight: '500' },
-  chGroup:{ color: '#252525', fontSize: TV ? 10 : 8, fontWeight: '500', marginTop: 2 },
+  chNow:  { color: '#3d3d3d', fontSize: TV ? 12 : 9, fontWeight: '500' },
+  chGroup:{ color: '#252525', fontSize: TV ? 11 : 8, fontWeight: '500', marginTop: 2 },
   logoFallback: {
     borderRadius: 8, backgroundColor: '#141414',
     borderWidth: 1, borderColor: '#1f1f1f',

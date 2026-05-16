@@ -5,6 +5,7 @@ const PLAYLISTS_KEY = '@chuchPlayer:playlists';
 const SETTINGS_KEY = '@chuchPlayer:settings';
 const FAVORITES_KEY = '@chuchPlayer:favorites';
 const LAST_CHANNEL_KEY = '@chuchPlayer:lastChannel';
+const RECENT_CHANNELS_KEY = '@chuchPlayer:recentChannels';
 
 type StoredPlaylist = Omit<Playlist, 'createdAt' | 'updatedAt'> & {
   createdAt: string;
@@ -152,6 +153,21 @@ export const removeFromFavorites = async (channelId: string): Promise<void> => {
     console.error('Error removing from favorites:', error);
     throw error;
   }
+};
+
+export const getRecentChannels = async (): Promise<string[]> => {
+  try {
+    const data = await AsyncStorage.getItem(RECENT_CHANNELS_KEY);
+    return data ? (JSON.parse(data) as string[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveRecentChannels = async (ids: string[]): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(RECENT_CHANNELS_KEY, JSON.stringify(ids));
+  } catch {}
 };
 
 export const saveLastChannel = async (channel: Channel): Promise<void> => {

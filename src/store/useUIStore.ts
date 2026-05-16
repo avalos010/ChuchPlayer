@@ -8,6 +8,12 @@
  */
 
 import { create } from 'zustand';
+import { Channel, EPGProgram } from '../types';
+
+export interface ProgramInfoData {
+  channel: Channel;
+  program: EPGProgram;
+}
 
 interface UIState {
   // Overlay visibility
@@ -19,8 +25,12 @@ interface UIState {
   showVolumeIndicator: boolean;
   showControls: boolean;
   showFloatingButtons: boolean;
+  showInfoBar: boolean;
+  showProgramInfo: boolean;
+  showSleepTimer: boolean;
 
   selectedGroup: string | null;
+  programInfoData: ProgramInfoData | null;
 
   // Actions
   setShowEPG: (show: boolean) => void;
@@ -31,6 +41,9 @@ interface UIState {
   setShowVolumeIndicator: (show: boolean) => void;
   setShowControls: (show: boolean) => void;
   setShowFloatingButtons: (show: boolean) => void;
+  setShowInfoBar: (show: boolean) => void;
+  setShowProgramInfo: (show: boolean, data?: ProgramInfoData | null) => void;
+  setShowSleepTimer: (show: boolean) => void;
   setSelectedGroup: (group: string | null) => void;
 
   // Helper actions
@@ -39,7 +52,7 @@ interface UIState {
   toggleControls: () => void;
 }
 
-export const useUIStore = create<UIState>((set, get) => ({
+export const useUIStore = create<UIState>((set) => ({
   // Initial state
   showEPG: false,
   showEPGGrid: false,
@@ -49,7 +62,11 @@ export const useUIStore = create<UIState>((set, get) => ({
   showVolumeIndicator: false,
   showControls: true,
   showFloatingButtons: false,
+  showInfoBar: false,
+  showProgramInfo: false,
+  showSleepTimer: false,
   selectedGroup: null,
+  programInfoData: null,
 
   // Actions
   setShowEPG: (show) => set({ showEPG: show }),
@@ -60,6 +77,9 @@ export const useUIStore = create<UIState>((set, get) => ({
   setShowVolumeIndicator: (show) => set({ showVolumeIndicator: show }),
   setShowControls: (show) => set({ showControls: show }),
   setShowFloatingButtons: (show) => set({ showFloatingButtons: show }),
+  setShowInfoBar: (show) => set({ showInfoBar: show }),
+  setShowProgramInfo: (show, data) => set({ showProgramInfo: show, programInfoData: data ?? null }),
+  setShowSleepTimer: (show) => set({ showSleepTimer: show }),
   setSelectedGroup: (group) => set({ selectedGroup: group }),
 
   // Helper actions
@@ -69,6 +89,8 @@ export const useUIStore = create<UIState>((set, get) => ({
     showChannelList: false,
     showGroupsPlaylists: false,
     showChannelNumberPad: false,
+    showProgramInfo: false,
+    showSleepTimer: false,
     selectedGroup: null,
   }),
   toggleEPG: () => set((state) => ({ showEPG: !state.showEPG })),

@@ -11,7 +11,7 @@ class EpgIngestionPackage : ReactPackage {
     }
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
-        return emptyList()
+        return listOf(EpgGridViewManager(reactContext))
     }
 }
 

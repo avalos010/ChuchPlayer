@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Animated,
+  DeviceEventEmitter,
   Dimensions,
   FlatList,
   Platform,
@@ -23,7 +24,9 @@ import VideoControls from '../components/player/VideoControls';
 import FloatingButtons from '../components/player/FloatingButtons';
 import MultiScreenView from '../components/player/MultiScreenView';
 import MultiScreenControls from '../components/player/MultiScreenControls';
-import ChannelInfoCard from '../components/player/ChannelInfoCard';
+import ChannelInfoBar from '../components/player/ChannelInfoBar';
+import ProgramInfoModal from '../components/player/ProgramInfoModal';
+import SleepTimerModal from '../components/player/SleepTimerModal';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
 import { useEPGStore } from '../store/useEPGStore';
@@ -37,6 +40,9 @@ import { usePIPMode } from '../hooks/usePIPMode';
 import { useEPGAutoHide } from '../hooks/useEPGAutoHide';
 import { usePlayerHandlers } from '../hooks/usePlayerHandlers';
 import { useEPGManagement } from '../hooks/useEPGManagement';
+import { useFavorites } from '../hooks/useFavorites';
+import { useRecentChannels } from '../hooks/useRecentChannels';
+import { useSleepTimer } from '../hooks/useSleepTimer';
 
 
 interface PlayerScreenProps {
@@ -137,7 +143,10 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     prefetchProgramsForChannels,
   } = useEPGManagement();
   const { pipAnim, pipScale, enterPIP, exitPIP } = usePIPMode();
-  const { showChannelInfoCard, setShowChannelInfoCard } = useChannelInfo({ showOnInitialLoad: true });
+  const { setShowChannelInfoCard } = useChannelInfo({ showOnInitialLoad: true });
+  const { toggleFavorite, isFavorite } = useFavorites(channels);
+  const { addRecent } = useRecentChannels(channels);
+  const { label: sleepLabel } = useSleepTimer();
   const {
     hasUserInteracted,
     setHasUserInteracted,
@@ -171,6 +180,35 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     initialChannel,
     getCurrentProgram,
   });
+
+  // Show info bar when channel changes; track recents
+  useEffect(() => {
+    if (!channel) return;
+    useUIStore.getState().setShowInfoBar(true);
+    addRecent(channel.id);
+  }, [channel?.id]);
+
+  // Listen for EPG_PROGRAM_INFO events from native long-press
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('EPG_PROGRAM_INFO', (data) => {
+      const ch = channels.find((c) => c.id === data.channelId);
+      if (!ch) return;
+      useUIStore.getState().setShowProgramInfo(true, {
+        channel: ch,
+        program: {
+          id: data.programId ?? '',
+          channelId: data.channelId ?? '',
+          title: data.title ?? '',
+          description: data.description ?? '',
+          start: new Date(data.startMs),
+          end: new Date(data.endMs),
+          catchupAvailable: data.catchupAvailable ?? false,
+          catchupUrl: data.catchupUrl,
+        },
+      });
+    });
+    return () => sub.remove();
+  }, [channels]);
 
   // Ensure a focus target is available on Android TV when overlays are closed
   useEffect(() => {
@@ -269,9 +307,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     useUIStore.getState().setShowEPGGrid(true);
   }, []);
 
-  const handleChannelInfoHide = useCallback(() => setShowChannelInfoCard(false), [setShowChannelInfoCard]);
-
-  const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
+const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     const { width } = Dimensions.get('window');
     const w = Math.min(width * 0.34, 560);
     return { pipPreviewWidth: w, pipPreviewHeight: w * (9 / 16) };
@@ -428,8 +464,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
           style={{
             flex: showEPGGrid ? undefined : 1,
             position: showEPGGrid ? 'absolute' : 'relative',
-            top: showEPGGrid ? undefined : undefined,
-            bottom: showEPGGrid ? 48 : undefined,
+            top: showEPGGrid ? 48 : undefined,
             right: showEPGGrid ? 48 : undefined,
             width: showEPGGrid ? pipPreviewWidth : undefined,
             height: showEPGGrid ? pipPreviewHeight : undefined,
@@ -598,15 +633,24 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       {/* Volume Indicator */}
       <VolumeIndicator />
 
-      {/* Channel Info Card */}
+      {/* Channel Info Bar */}
       {!showEPGGrid && !showEPG && !showChannelList && !showGroupsPlaylists && (
-        <ChannelInfoCard
+        <ChannelInfoBar
           channel={channel}
-          program={currentProgram}
-          visible={showChannelInfoCard}
-          onHide={handleChannelInfoHide}
+          currentProgram={currentProgram}
+          isFavorite={channel ? isFavorite(channel.id) : false}
+          onToggleFavorite={() => channel && toggleFavorite(channel)}
+          onSleepTimer={() => useUIStore.getState().setShowSleepTimer(true)}
+          sleepLabel={sleepLabel}
+          navigation={navigation}
         />
       )}
+
+      {/* Program Info Modal */}
+      <ProgramInfoModal />
+
+      {/* Sleep Timer Modal */}
+      <SleepTimerModal />
 
       {/* Channel Number Pad */}
       <ChannelNumberPad />

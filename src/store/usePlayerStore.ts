@@ -187,7 +187,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const scaledWidth = width * scale;
     const scaledHeight = height * scale;
     const translateX = width / 2 - scaledWidth / 2 - margin;
-    const translateY = -height / 2 + scaledHeight / 2 + margin;
+    const translateY = -(height / 2 - scaledHeight / 2 - margin);
     
     Animated.parallel([
       Animated.timing(pipAnim, {

@@ -2,11 +2,11 @@ package com.chuchplayer.player
 
 import android.util.Log
 import androidx.media3.common.*
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
-import androidx.media3.exoplayer.source.hls.HlsMediaSource
-import androidx.media3.exoplayer.upstream.DefaultHttpDataSource
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import kotlinx.coroutines.*
@@ -40,8 +40,8 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
   }
 
   // TiviMate-style buffer config: 1s min, 30s max → fast start + reasonable buffering
-  private fun createLoadControl(): androidx.media3.exoplayer.LoadControl {
-    return androidx.media3.exoplayer.DefaultLoadControl.Builder()
+  private fun createLoadControl(): DefaultLoadControl {
+    return DefaultLoadControl.Builder()
       .setBufferDurationsMs(
         1_000,    // minBufferMs — start playing after just 1s buffered
         30_000,   // maxBufferMs — max 30s buffered
@@ -57,7 +57,7 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
       .setConnectTimeoutMs(30_000)
       .setReadTimeoutMs(120_000)
 
-    return DefaultMediaSourceFactory(reactApplicationContext, httpDataSourceFactory)
+    return DefaultMediaSourceFactory(httpDataSourceFactory)
   }
 
   private fun createPlayerListener() = object : Player.Listener {

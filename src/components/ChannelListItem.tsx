@@ -10,6 +10,8 @@ interface ChannelListItemProps {
   onFocus?: (channelId: string) => void;
   hasTVPreferredFocus?: boolean;
   isCurrentChannel?: boolean;
+  isFavorite?: boolean;
+  onToggleFavorite?: (channel: Channel) => void;
 }
 
 const TV = Platform.OS === 'android';
@@ -20,11 +22,14 @@ const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
   onFocus,
   hasTVPreferredFocus = false,
   isCurrentChannel = false,
+  isFavorite = false,
+  onToggleFavorite,
 }, ref) => {
   const [imgErr, setImgErr] = useState(false);
 
   const handlePress  = useCallback(() => onPress(channel), [channel, onPress]);
   const handleFocus  = useCallback(() => onFocus?.(channel.id), [channel.id, onFocus]);
+  const handleStar   = useCallback(() => onToggleFavorite?.(channel), [channel, onToggleFavorite]);
 
   const logoSz = TV ? 68 : 56;
   const initials = channel.name.substring(0, 2).toUpperCase();
@@ -85,6 +90,19 @@ const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
             <Text style={s.liveTxt}>LIVE</Text>
           </View>
         )}
+
+        {/* Favorite star */}
+        {onToggleFavorite && (
+          <FocusableItem
+            onPress={handleStar}
+            style={s.starBtn}
+            focusedStyle={STAR_FOCUSED_STYLE}
+          >
+            <Text style={[s.starIcon, isFavorite && s.starIconActive]}>
+              {isFavorite ? '★' : '☆'}
+            </Text>
+          </FocusableItem>
+        )}
       </View>
     </FocusableItem>
   );
@@ -99,13 +117,22 @@ const ChannelListItem = React.memo(ChannelListItemComponent, (prev, next) => {
     prev.channel.name === next.channel.name &&
     prev.channel.logo === next.channel.logo &&
     prev.isCurrentChannel === next.isCurrentChannel &&
-    prev.hasTVPreferredFocus === next.hasTVPreferredFocus
+    prev.hasTVPreferredFocus === next.hasTVPreferredFocus &&
+    prev.isFavorite === next.isFavorite
   );
 });
 
 export default ChannelListItem;
 
-// ─── Focused style (static) ───────────────────────────────────────────────────
+// ─── Focused styles (static) ─────────────────────────────────────────────────
+
+const STAR_FOCUSED_STYLE = {
+  backgroundColor: '#1c1c00',
+  borderColor: '#f5b942',
+  borderWidth: 1,
+  transform: [] as any[],
+  elevation: 4,
+};
 
 const FOCUSED_STYLE = {
   backgroundColor: '#1c1c1c',
@@ -182,6 +209,21 @@ const s = StyleSheet.create({
     fontWeight: '500',
   },
   groupCurrent: { color: '#555555' },
+
+  // Star
+  starBtn: {
+    width: TV ? 36 : 30,
+    height: TV ? 36 : 30,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  starIcon: { color: '#333', fontSize: TV ? 20 : 18 },
+  starIconActive: { color: '#f5b942' },
 
   // LIVE badge
   liveBadge: {
