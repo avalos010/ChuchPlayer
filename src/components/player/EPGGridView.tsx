@@ -12,9 +12,9 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
-  Image,
   StyleSheet,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { FlashList, ListRenderItemInfo } from '@shopify/flash-list';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
@@ -119,9 +119,12 @@ const ChannelRow = memo<{
       .filter(b => b.left >= -SLOT_W && b.left <= 48 * SLOT_W);
   }, [programs]);
 
-  // Row background: focused = near-white overlay, current channel = slightly lighter dark, else pure dark
-  const rowBg   = isFocused ? '#1c1c1c' : isCurrent ? '#161616' : '#0e0e0e';
-  const lBorder = isFocused ? '#ffffff' : isCurrent ? '#3d3d3d' : '#181818';
+  // Only the focused row should look highlighted. The current channel gets
+  // a very subtle left tick only, not a full background, so it can't be
+  // confused with focus. Native FocusableItem applies the focusedStyle on top
+  // when the row is actually focused — we no longer double-apply via isFocused.
+  const rowBg   = isCurrent ? '#121212' : '#0e0e0e';
+  const lBorder = isCurrent ? '#3d3d3d' : '#181818';
 
   return (
     <FocusableItem
@@ -194,7 +197,8 @@ const ChannelRow = memo<{
           <Image
             source={{ uri: channel.logo }}
             style={{ width: logoSz, height: logoSz, borderRadius: 8, backgroundColor: '#141414' }}
-            resizeMode="contain"
+            contentFit="contain"
+            cachePolicy="disk"
             onError={() => setImgErr(true)}
           />
         ) : (
@@ -307,7 +311,8 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   const [focusedId, setFocusedId]       = useState<string | null>(null);
   const [initFocusId, setInitFocusId]   = useState<string | null>(null);
   const [timePos, setTimePos]           = useState(0);
-  const [loadedIds, setLoadedIds]       = useState<Set<string>>(new Set());
+  const loadedIdsRef = useRef<Set<string>>(new Set());
+  const [epgVersion, setEpgVersion]     = useState(0);
 
   // Update current time position every 5 min
   useEffect(() => {
@@ -354,35 +359,57 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
 
   const loadEpgFor = useCallback((ids: string[]) => {
     if (!ids.length || !prefetchProgramsForChannels) return;
-    const toLoad = ids.filter(id => !loadedIds.has(id));
+    const toLoad = ids.filter(id => !loadedIdsRef.current.has(id));
     if (toLoad.length) {
       prefetchProgramsForChannels(toLoad);
-      setLoadedIds(prev => new Set([...prev, ...toLoad]));
+      toLoad.forEach(id => loadedIdsRef.current.add(id));
+      setEpgVersion(v => v + 1);
     }
-  }, [loadedIds, prefetchProgramsForChannels]);
+  }, [prefetchProgramsForChannels]);
+
+  // Stable ref to filtered channels for the viewability callback
+  const filteredChannelsRef = useRef(filteredChannels);
+  filteredChannelsRef.current = filteredChannels;
 
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: any[] }) => {
     const visIds: string[] = viewableItems.map((i: any) => i.item.channel.id);
     loadEpgFor(visIds);
-    const allIds = filteredChannels.map(c => c.id);
     visIds.forEach(vid => {
-      const idx = allIds.indexOf(vid);
-      if (idx !== -1) loadEpgFor(allIds.slice(Math.max(0, idx - 5), idx + 6));
+      const idx = channelIndexMap.get(vid);
+      if (idx !== undefined) {
+        const allIds = filteredChannelsRef.current.map(c => c.id);
+        loadEpgFor(allIds.slice(Math.max(0, idx - 5), idx + 6));
+      }
     });
-  }, [filteredChannels, loadEpgFor]);
+  }, [loadEpgFor, channelIndexMap]);
 
   const channelData = useMemo<ChannelRowData[]>(() =>
     filteredChannels.map(ch => ({
       channel: ch,
       isCurrent: ch.id === channel?.id,
-      programs: loadedIds.has(ch.id) && getProgramsForChannel
+      programs: loadedIdsRef.current.has(ch.id) && getProgramsForChannel
         ? getProgramsForChannel(ch.id)
         : [],
     })),
-    [filteredChannels, channel?.id, loadedIds, getProgramsForChannel],
+    [filteredChannels, channel?.id, epgVersion, getProgramsForChannel],
   );
 
-  useEffect(() => { setLoadedIds(new Set()); }, [selectedGroup]);
+  // O(1) map from channel ID to index for fast row lookups (vs O(n) findIndex)
+  const channelIndexMap = useMemo(() => {
+    const m = new Map<string, number>();
+    channelData.forEach((row, i) => m.set(row.channel.id, i));
+    return m;
+  }, [channelData]);
+
+  // Keep a ref to the latest channel data so effects/callbacks can read it
+  // without taking it as a dep — which would re-fire them on every lazy-load.
+  const channelDataRef = useRef(channelData);
+  channelDataRef.current = channelData;
+
+  useEffect(() => {
+    loadedIdsRef.current.clear();
+    setEpgVersion(v => v + 1);
+  }, [selectedGroup]);
 
   useEffect(() => {
     if (showEPGGrid && filteredChannels.length > 0) {
@@ -391,27 +418,32 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showEPGGrid, selectedGroup]);
 
+  // Focus/scroll reset — ONLY when the grid opens, the user selects a different
+  // channel, or the group filter changes. Lazy-load updates to `channelData`
+  // must NOT re-trigger this, or the list constantly jumps back to the top.
   useEffect(() => {
     if (!showEPGGrid) { setFocusedId(null); setInitFocusId(null); return; }
-    const fid = channel?.id ?? channelData[0]?.channel.id ?? null;
+    const data = channelDataRef.current;
+    const fid = channel?.id ?? data[0]?.channel.id ?? null;
     if (!fid) return;
     setFocusedId(fid);
     setInitFocusId(fid);
-    const idx = channelData.findIndex(d => d.channel.id === fid);
-    if (idx >= 0) {
+    const idx = channelIndexMap.get(fid);
+    if (idx !== undefined) {
       setTimeout(() => {
         flashRef.current?.scrollToIndex({ index: idx, animated: false, viewPosition: 0.3 });
       }, 150);
     }
-  }, [showEPGGrid, channel?.id, selectedGroup, channelData]);
+  }, [showEPGGrid, channel?.id, selectedGroup, channelIndexMap]);
 
   const handleRowFocus = useCallback((id: string) => {
     setFocusedId(id);
-    const idx = channelData.findIndex(d => d.channel.id === id);
-    if (idx >= 0) {
+    // Use O(1) map lookup instead of O(n) findIndex
+    const idx = channelIndexMap.get(id);
+    if (idx !== undefined) {
       flashRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
     }
-  }, [channelData]);
+  }, [channelIndexMap]);
 
   const renderItem = useCallback(({ item }: ListRenderItemInfo<ChannelRowData>) => (
     <ChannelRow
@@ -428,13 +460,26 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
 
   if (!showEPGGrid || !channels.length || !navigation) return null;
 
+  // Only show the blocking overlay when we genuinely have nothing to display.
+  // Once at least one channel has program data, fall back to a small badge so
+  // the user can interact with the grid while background ingestion continues.
+  const hasAnyData = loadedIdsRef.current.size > 0;
+
   return (
     <View style={s.root}>
-      {/* ── Loading overlay ───────────────────────── */}
-      {epgLoading && (
+      {/* ── Full-screen loading overlay (only when no data at all) ────── */}
+      {epgLoading && !hasAnyData && (
         <View pointerEvents="none" style={s.loadingOverlay}>
           <ActivityIndicator size="large" color="#555555" />
           <Text style={s.loadingTxt}>Loading program guide…</Text>
+        </View>
+      )}
+
+      {/* ── Inline loading badge (when data exists but more is loading) ─ */}
+      {epgLoading && hasAnyData && (
+        <View pointerEvents="none" style={s.loadingBadge}>
+          <ActivityIndicator size="small" color="#888" />
+          <Text style={s.loadingBadgeTxt}>Updating guide…</Text>
         </View>
       )}
 
@@ -540,6 +585,17 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', gap: 12,
   },
   loadingTxt: { color: '#555555', fontSize: TV ? 17 : 14, fontWeight: '600' },
+
+  loadingBadge: {
+    position: 'absolute',
+    top: TV ? 24 : 18, right: TV ? 24 : 18,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(20,20,20,0.92)',
+    borderWidth: 1, borderColor: '#2a2a2a',
+    borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6,
+    zIndex: 45, elevation: 45,
+  },
+  loadingBadgeTxt: { color: '#888', fontSize: TV ? 12 : 11, fontWeight: '600' },
 
   // Header
   header: {

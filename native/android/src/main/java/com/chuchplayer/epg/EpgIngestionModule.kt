@@ -257,10 +257,22 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
         channelsJson: String,
         datasetSignature: String?
     ) {
+        // WorkManager Data has a hard 10240-byte limit. Persist the (potentially
+        // huge) channels JSON to a file and pass only the path through the bundle.
+        val cacheDir = java.io.File(reactApplicationContext.cacheDir, "epg_sync")
+        cacheDir.mkdirs()
+        val channelsFile = java.io.File(cacheDir, "channels_${playlistId}_${epgUrl.hashCode()}.json")
+        try {
+            channelsFile.writeText(channelsJson)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to persist channelsJson for background sync", e)
+            return
+        }
+
         val input = workDataOf(
             "epgUrl"           to epgUrl,
             "playlistId"       to playlistId,
-            "channelsJson"     to channelsJson,
+            "channelsPath"     to channelsFile.absolutePath,
             "datasetSignature" to (datasetSignature ?: "")
         )
         val work = PeriodicWorkRequestBuilder<EpgSyncWorker>(SYNC_HOURS, TimeUnit.HOURS, 15, TimeUnit.MINUTES)

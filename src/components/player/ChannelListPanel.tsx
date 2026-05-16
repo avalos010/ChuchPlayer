@@ -35,6 +35,12 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({ onChannelSelect }) 
   const listRef = useRef<FlashList<Channel>>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [preferredFocusId, setPreferredFocusId] = useState<string | null>(null);
+  const preferredFocusIdRef = useRef(preferredFocusId);
+
+  // Keep ref in sync with state so renderChannelItem can read it without taking it as a dependency
+  useEffect(() => {
+    preferredFocusIdRef.current = preferredFocusId;
+  }, [preferredFocusId]);
 
   const filteredChannels = useMemo(() => {
     let base: Channel[];
@@ -77,11 +83,11 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({ onChannelSelect }) 
         channel={item}
         onPress={onChannelSelect}
         onFocus={handleChannelFocus}
-        hasTVPreferredFocus={preferredFocusId === item.id}
+        hasTVPreferredFocus={preferredFocusIdRef.current === item.id}
         isCurrentChannel={item.id === currentChannelId}
       />
     ),
-    [currentChannelId, preferredFocusId, onChannelSelect, handleChannelFocus],
+    [currentChannelId, onChannelSelect, handleChannelFocus],
   );
 
   const keyExtractor = useCallback((item: Channel) => item.id, []);

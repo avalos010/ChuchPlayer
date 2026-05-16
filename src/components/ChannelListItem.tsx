@@ -1,5 +1,6 @@
 import React, { useState, forwardRef, useCallback } from 'react';
-import { View, Text, Image, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
+import { Image } from 'expo-image';
 import FocusableItem from './FocusableItem';
 import { Channel } from '../types';
 
@@ -13,7 +14,7 @@ interface ChannelListItemProps {
 
 const TV = Platform.OS === 'android';
 
-const ChannelListItem = forwardRef<any, ChannelListItemProps>(({
+const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
   channel,
   onPress,
   onFocus,
@@ -46,7 +47,8 @@ const ChannelListItem = forwardRef<any, ChannelListItemProps>(({
           <Image
             source={{ uri: channel.logo }}
             style={[s.logo, { width: logoSz, height: logoSz }]}
-            resizeMode="contain"
+            contentFit="contain"
+            cachePolicy="disk"
             onError={() => setImgErr(true)}
           />
         ) : (
@@ -88,7 +90,19 @@ const ChannelListItem = forwardRef<any, ChannelListItemProps>(({
   );
 });
 
-ChannelListItem.displayName = 'ChannelListItem';
+ChannelListItemComponent.displayName = 'ChannelListItem';
+
+// Memoized with custom comparator to prevent re-renders on parent state change
+const ChannelListItem = React.memo(ChannelListItemComponent, (prev, next) => {
+  return (
+    prev.channel.id === next.channel.id &&
+    prev.channel.name === next.channel.name &&
+    prev.channel.logo === next.channel.logo &&
+    prev.isCurrentChannel === next.isCurrentChannel &&
+    prev.hasTVPreferredFocus === next.hasTVPreferredFocus
+  );
+});
+
 export default ChannelListItem;
 
 // ─── Focused style (static) ───────────────────────────────────────────────────

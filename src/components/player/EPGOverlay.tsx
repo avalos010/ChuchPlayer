@@ -5,10 +5,10 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Image,
   StyleSheet,
   Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
 import { ResizeMode } from 'expo-av';
@@ -137,7 +137,8 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
               <Image
                 source={{ uri: channel.logo }}
                 style={{ width: logoSz, height: logoSz, borderRadius: 12, backgroundColor: '#1a1a1a' }}
-                resizeMode="contain"
+                contentFit="contain"
+                cachePolicy="disk"
                 onError={() => setImgErr(true)}
               />
             ) : (

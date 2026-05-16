@@ -1,13 +1,14 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, AppState } from 'react-native';
 import { Video, AVPlaybackStatus } from 'expo-av';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
-import { getSettings } from '../utils/storage';
+import { getSettings, AppSettings } from '../utils/storage';
 import { showError } from '../utils/toast';
 
 export const useVideoPlayback = (videoRef: React.RefObject<Video | null>) => {
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
+  const settingsRef = useRef<AppSettings | null>(null);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const setIsPlaying = usePlayerStore((state) => state.setIsPlaying);
   const setLoading = usePlayerStore((state) => state.setLoading);
@@ -15,9 +16,16 @@ export const useVideoPlayback = (videoRef: React.RefObject<Video | null>) => {
   const channel = usePlayerStore((state) => state.channel);
   const handleVideoReady = usePlayerStore((state) => state.handleVideoReady);
   const handlePlaybackStatusUpdate = usePlayerStore((state) => state.handlePlaybackStatusUpdate);
-  
+
   // UI state
   const setShowEPG = useUIStore((state) => state.setShowEPG);
+
+  // Cache settings at mount to avoid AsyncStorage read on every video load
+  useEffect(() => {
+    getSettings().then(settings => {
+      settingsRef.current = settings;
+    });
+  }, []);
 
   const handleTogglePlayback = useCallback(async () => {
     try {
@@ -70,23 +78,10 @@ export const useVideoPlayback = (videoRef: React.RefObject<Video | null>) => {
       return;
     }
 
-    // Update playing state first
-    setIsPlaying(status.isPlaying);
-
-    // Clear loading immediately when video starts playing
-    // Don't show loading overlay once playback has started, even if buffering
-    if (status.isPlaying) {
-      setLoading(false);
-    } else if (!status.isBuffering) {
-      // Only clear loading if not buffering and not playing
-      setLoading(false);
-    }
-
-    if (status.didJustFinish) {
-      setIsPlaying(false);
-      setLoading(false);
-    }
-  }, [setLoading, setIsPlaying, setError]);
+    // Batch isPlaying and loading state updates into single Zustand call
+    const loading = status.didJustFinish ? false : (status.isPlaying || status.isBuffering ? (status.isPlaying ? false : true) : false);
+    usePlayerStore.setState({ isPlaying: status.isPlaying, loading });
+  }, [setError]);
 
   const handleVideoReadyWithPlayback = useCallback(async () => {
     console.log('Video onLoad callback - video is ready for channel:', channel?.name);
@@ -94,12 +89,15 @@ export const useVideoPlayback = (videoRef: React.RefObject<Video | null>) => {
     // Clear loading immediately when video is ready
     setLoading(false);
 
-    // Check if we should auto-play
+    // Check if we should auto-play (use cached settings, not fresh read)
     try {
-      const settings = await getSettings();
-      console.log('Auto-play setting:', settings.autoPlay);
+      const settings = settingsRef.current;
+      if (!settings) {
+        console.warn('Settings not yet loaded, will default to autoPlay=true');
+      }
+      console.log('Auto-play setting:', settings?.autoPlay ?? true);
       if (videoRef.current) {
-        if (settings.autoPlay) {
+        if (settings?.autoPlay ?? true) {
           // On web, only autoplay if user has interacted
           if (Platform.OS === 'web' && !hasUserInteracted) {
             console.log('Skipping autoplay on web - waiting for user interaction');

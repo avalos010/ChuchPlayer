@@ -143,10 +143,6 @@ const FocusableItem = forwardRef<any, FocusableItemProps>(({
 
   // Memoize parsed className styles — only re-compute when className string changes
   const classNameStyles = useMemo(() => getStyleFromClassName(className), [className]);
-  const focusedClassNameStyles = useMemo(
-    () => isFocused ? getStyleFromClassName('scale-105 border-[3px] border-accent shadow-lg') : {},
-    [isFocused],
-  );
 
   // Check if focusedStyle explicitly hides borders/elevation (indicates invisible focus)
   // Handle both object and array styles
@@ -186,13 +182,15 @@ const FocusableItem = forwardRef<any, FocusableItemProps>(({
   }
 
   // Filter out null/undefined styles from the array
-  const styleArray = [
-    classNameStyles,
-    !shouldHideFocusEffects && focusedClassNameStyles,
-    style,
-    isFocused && focusedStyle,
-    baseStyle,
-  ].filter((s): s is ViewStyle => s != null);
+  const styleArray = useMemo(
+    () => [
+      classNameStyles,
+      style,
+      isFocused && focusedStyle,
+      baseStyle,
+    ].filter((s): s is ViewStyle => s != null),
+    [classNameStyles, style, isFocused, focusedStyle, baseStyle]
+  );
 
   useImperativeHandle(ref, () => ({
     focus: () => {

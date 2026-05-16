@@ -475,6 +475,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
               onLoad={handleVideoReadyWithPlayback}
               onError={handleVideoError}
               onPlaybackStatusUpdate={handlePlaybackStatusUpdateWithError}
+              progressUpdateIntervalMillis={1000}
               useNativeControls={false}
               isLooping={false}
               volume={1.0}

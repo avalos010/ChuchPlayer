@@ -275,7 +275,7 @@ export const useEPGManagement = () => {
             const epgUrl = urlsToIngest[i];
             if (i > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
             try {
-              const INGESTION_TIMEOUT_MS = 5 * 60 * 1000;
+              const INGESTION_TIMEOUT_MS = 90 * 1000;
               const timeoutPromise = new Promise<never>((_, reject) =>
                 setTimeout(() => reject(new Error('EPG ingestion timed out after 5 minutes')), INGESTION_TIMEOUT_MS)
               );
@@ -361,6 +361,9 @@ export const useEPGManagement = () => {
       cancelled = true;
       clearTimeout(timeoutId);
       interactionHandle?.cancel();
+      // If loading was set to true by this effect and ingestion was cancelled
+      // before completion, reset it so the spinner doesn't get stuck.
+      setEpgStatus((prev) => (prev.loading ? { loading: false, error: null } : prev));
     };
     // datasetSignature already encodes activeEpgUrls.join('|'), so depending on
     // activeEpgUrls here would cause spurious re-runs every time the playlist

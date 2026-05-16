@@ -23,9 +23,21 @@ class EpgSyncWorker(context: Context, params: WorkerParameters) :
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         val epgUrl          = inputData.getString("epgUrl")          ?: return@withContext Result.failure()
         val playlistId      = inputData.getString("playlistId")      ?: return@withContext Result.failure()
-        val channelsJson    = inputData.getString("channelsJson")    ?: return@withContext Result.failure()
+        val channelsPath    = inputData.getString("channelsPath")    ?: return@withContext Result.failure()
         val sigRaw          = inputData.getString("datasetSignature")
         val datasetSig      = if (sigRaw.isNullOrEmpty()) null else sigRaw
+
+        val channelsFile = java.io.File(channelsPath)
+        if (!channelsFile.exists()) {
+            Log.e(TAG, "Channels file missing at $channelsPath")
+            return@withContext Result.failure()
+        }
+        val channelsJson = try {
+            channelsFile.readText()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read channels file", e)
+            return@withContext Result.failure()
+        }
 
         Log.d(TAG, "Background EPG sync: playlist=$playlistId url=$epgUrl")
 

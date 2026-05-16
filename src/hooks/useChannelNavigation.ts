@@ -48,7 +48,6 @@ export const useChannelNavigation = ({
       try {
         await videoRef.current.pauseAsync();
         await videoRef.current.unloadAsync();
-        await new Promise(resolve => setTimeout(resolve, 100));
       } catch {
         // ignore cleanup errors
       }
@@ -93,9 +92,8 @@ export const useChannelNavigation = ({
         try {
           await videoRef.current.pauseAsync();
           await videoRef.current.unloadAsync();
-          await new Promise(resolve => setTimeout(resolve, 100));
         } catch {
-          await new Promise(resolve => setTimeout(resolve, 50));
+          // ignore cleanup errors
         }
       }
 
@@ -118,7 +116,7 @@ export const useChannelNavigation = ({
       }
 
       if (centerZoneRef?.current) {
-        setTimeout(() => centerZoneRef.current?.focus?.(), 100);
+        centerZoneRef.current?.focus?.();
       }
     } catch {
       isSwitchingChannelRef.current = false;
