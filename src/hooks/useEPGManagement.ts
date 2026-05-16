@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { InteractionManager } from 'react-native';
-import { EPGProgram } from '../types';
-import { usePlayerStore } from '../store/usePlayerStore';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { InteractionManager } from "react-native";
+import { EPGProgram } from "../types";
+import { usePlayerStore } from "../store/usePlayerStore";
 import {
   queryProgramsForChannels,
   ensureEpgDatabase,
@@ -9,14 +9,14 @@ import {
   setPlaylistMetadata,
   pruneOldPrograms,
   debugDatabaseContents,
-} from '../database/epgDatabase';
-import { ingestXmltvToDatabase } from '../utils/epgParser';
+} from "../database/epgDatabase";
+import { ingestXmltvToDatabase } from "../utils/epgParser";
 import {
   isNativeIngestionAvailable,
   startNativeEpgIngestion,
   IngestionEventListener,
   IngestionProgress,
-} from '../services/nativeEpgIngestion';
+} from "../services/nativeEpgIngestion";
 
 type ProgramsByChannel = Record<string, EPGProgram[]>;
 
@@ -27,11 +27,11 @@ const DEFAULT_REFRESH_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
 const buildXtreamXmltvUrl = (
   serverUrl: string,
   username: string,
-  password: string
+  password: string,
 ): string => {
-  const baseUrl = serverUrl.replace(/\/$/, '');
+  const baseUrl = serverUrl.replace(/\/$/, "");
   return `${baseUrl}/xmltv.php?username=${encodeURIComponent(
-    username
+    username,
   )}&password=${encodeURIComponent(password)}`;
 };
 
@@ -39,8 +39,13 @@ export const useEPGManagement = () => {
   const channels = usePlayerStore((state) => state.channels);
   const playlist = usePlayerStore((state) => state.playlist);
 
-  const [programsByChannel, setProgramsByChannel] = useState<ProgramsByChannel>({});
-  const [epgStatus, setEpgStatus] = useState<{ loading: boolean; error: string | null }>({
+  const [programsByChannel, setProgramsByChannel] = useState<ProgramsByChannel>(
+    {},
+  );
+  const [epgStatus, setEpgStatus] = useState<{
+    loading: boolean;
+    error: string | null;
+  }>({
     loading: false,
     error: null,
   });
@@ -51,28 +56,28 @@ export const useEPGManagement = () => {
   const activeEpgUrlsRef = useRef<string[]>([]);
 
   const channelsSignature = useMemo(
-    () => channels.map((channel) => channel.id).join('|'),
-    [channels]
+    () => channels.map((channel) => channel.id).join("|"),
+    [channels],
   );
 
-  const channelIdSet = useMemo(() => new Set(channels.map((channel) => channel.id)), [channels]);
+  const channelIdSet = useMemo(
+    () => new Set(channels.map((channel) => channel.id)),
+    [channels],
+  );
 
   const activeEpgUrls = useMemo(() => {
     if (!playlist) return [];
-    const explicit = playlist.epgUrls && playlist.epgUrls.length > 0 ? playlist.epgUrls : [];
+    const explicit =
+      playlist.epgUrls && playlist.epgUrls.length > 0 ? playlist.epgUrls : [];
     if (explicit.length > 0) {
-      return Array.from(new Set(explicit.map((url) => url.trim()).filter(Boolean)));
+      return Array.from(
+        new Set(explicit.map((url) => url.trim()).filter(Boolean)),
+      );
     }
 
-    if (playlist.sourceType === 'xtream' && playlist.xtreamCredentials) {
+    if (playlist.sourceType === "xtream" && playlist.xtreamCredentials) {
       const { serverUrl, username, password } = playlist.xtreamCredentials;
-      return [
-        buildXtreamXmltvUrl(
-          serverUrl,
-          username,
-          password
-        ),
-      ];
+      return [buildXtreamXmltvUrl(serverUrl, username, password)];
     }
 
     return [];
@@ -90,26 +95,31 @@ export const useEPGManagement = () => {
     // object re-creation even when the content is identical, which would
     // cancel in-flight ingestion and restart the loading spinner endlessly).
     activeEpgUrlsRef.current = activeEpgUrls;
-    return `${playlist.id}:${updatedAt}:${channelsSignature}:${activeEpgUrls.join('|')}`;
+    return `${playlist.id}:${updatedAt}:${channelsSignature}:${activeEpgUrls.join("|")}`;
   }, [playlist, channelsSignature, activeEpgUrls]);
 
   const loadProgramsForChannels = useCallback(
-    async (channelIds: string[], options?: { force?: boolean }): Promise<boolean> => {
+    async (
+      channelIds: string[],
+      options?: { force?: boolean },
+    ): Promise<boolean> => {
       if (!playlist || channelIds.length === 0) {
         return false;
       }
 
       const uniqueIds = Array.from(new Set(channelIds)).filter((id) =>
-        channelIdSet.has(id)
+        channelIdSet.has(id),
       );
 
       const targetIds = uniqueIds.filter(
-        (id) => options?.force || !loadedChannelsRef.current.has(id)
+        (id) => options?.force || !loadedChannelsRef.current.has(id),
       );
 
-      const fetchIds = targetIds.filter((id) => !pendingChannelLoadsRef.current.has(id));
+      const fetchIds = targetIds.filter(
+        (id) => !pendingChannelLoadsRef.current.has(id),
+      );
       if (fetchIds.length > 0) {
-        console.log('[EPG] Loading programs for channels:', fetchIds);
+        console.log("[EPG] Loading programs for channels:", fetchIds);
       }
 
       if (fetchIds.length === 0) {
@@ -119,15 +129,19 @@ export const useEPGManagement = () => {
       fetchIds.forEach((id) => pendingChannelLoadsRef.current.add(id));
 
       try {
-        console.log(`[EPG] Loading programs for channels: ${fetchIds.join(', ')}`);
+        console.log(
+          `[EPG] Loading programs for channels: ${fetchIds.join(", ")}`,
+        );
         const result = await queryProgramsForChannels(playlist.id, fetchIds);
-        console.log('[EPG] Loaded programs for channels:', Object.keys(result));
+        console.log("[EPG] Loaded programs for channels:", Object.keys(result));
         let foundAny = false;
 
         // Debug: log what we found
         fetchIds.forEach((id) => {
           const programs = result[id] ?? [];
-          console.log(`[EPG] Found ${programs.length} programs for channel ${id}`);
+          console.log(
+            `[EPG] Found ${programs.length} programs for channel ${id}`,
+          );
           if (programs.length > 0 && !foundAny) {
             foundAny = true;
           }
@@ -146,14 +160,18 @@ export const useEPGManagement = () => {
 
         return foundAny;
       } catch (error) {
-        console.warn('[EPG] Failed to load programs for channels', fetchIds, error);
+        console.warn(
+          "[EPG] Failed to load programs for channels",
+          fetchIds,
+          error,
+        );
         fetchIds.forEach((id) => loadedChannelsRef.current.delete(id));
         return false;
       } finally {
         fetchIds.forEach((id) => pendingChannelLoadsRef.current.delete(id));
       }
     },
-    [playlist, channelIdSet]
+    [playlist, channelIdSet],
   );
 
   // Track last fetch time to prevent too frequent requests
@@ -177,8 +195,11 @@ export const useEPGManagement = () => {
     // Rate limiting: Don't fetch if we fetched recently (within 5 minutes)
     const now = Date.now();
     if (now - lastFetchTimeRef.current < MIN_TIME_BETWEEN_FETCHES_MS) {
-      console.log('[EPG] Rate limiting: Skipping fetch, last fetch was', 
-        Math.round((now - lastFetchTimeRef.current) / 1000), 'seconds ago');
+      console.log(
+        "[EPG] Rate limiting: Skipping fetch, last fetch was",
+        Math.round((now - lastFetchTimeRef.current) / 1000),
+        "seconds ago",
+      );
       // Mark as loaded to prevent re-triggering
       loadedSignatureRef.current = datasetSignature;
       return;
@@ -189,14 +210,14 @@ export const useEPGManagement = () => {
     }
 
     if (activeEpgUrlsRef.current.length === 0) {
-      console.log('[EPG] No active EPG URLs found. Playlist info:', {
+      console.log("[EPG] No active EPG URLs found. Playlist info:", {
         id: playlist?.id,
         name: playlist?.name,
         sourceType: playlist?.sourceType,
         hasEpgUrls: !!playlist?.epgUrls?.length,
         epgUrls: playlist?.epgUrls,
         hasXtreamCreds: !!playlist?.xtreamCredentials,
-        xtreamServer: playlist?.xtreamCredentials?.serverUrl
+        xtreamServer: playlist?.xtreamCredentials?.serverUrl,
       });
       loadedSignatureRef.current = datasetSignature;
       setProgramsByChannel({});
@@ -238,10 +259,10 @@ export const useEPGManagement = () => {
 
           const timeSinceLastUpdate = Date.now() - existingMetadata.lastUpdated;
           if (timeSinceLastUpdate < DEFAULT_REFRESH_INTERVAL_MS) {
-            console.log('[EPG] Cache fresh, skipping re-ingest');
+            console.log("[EPG] Cache fresh, skipping re-ingest");
             return;
           }
-          console.log('[EPG] Cache stale, re-ingesting in background');
+          console.log("[EPG] Cache stale, re-ingesting in background");
           // Fall through to re-ingest without showing the overlay.
         } else {
           // No usable cache — clear stale data and show loading overlay.
@@ -254,7 +275,7 @@ export const useEPGManagement = () => {
         const cutoff = Date.now() - PRUNE_LOWER_BOUND_HOURS * 60 * 60 * 1000;
         await pruneOldPrograms(playlistId, cutoff);
         const urlsToIngest = activeEpgUrlsRef.current;
-        console.log('[EPG] Active EPG URLs:', urlsToIngest);
+        console.log("[EPG] Active EPG URLs:", urlsToIngest);
 
         if (!isNativeIngestionAvailable()) {
           // Web / non-Android: fetch + JS parser → IndexedDB
@@ -266,42 +287,67 @@ export const useEPGManagement = () => {
               if (!response.ok) throw new Error(`HTTP ${response.status}`);
               await ingestXmltvToDatabase({ response, playlistId, channels });
             } catch (err) {
-              errors.push(`${epgUrl} - ${err instanceof Error ? err.message : 'Unknown error'}`);
+              errors.push(
+                `${epgUrl} - ${err instanceof Error ? err.message : "Unknown error"}`,
+              );
             }
           }
         } else {
           // Native ingestion runs in Kotlin background thread
           for (let i = 0; i < urlsToIngest.length; i++) {
             const epgUrl = urlsToIngest[i];
-            if (i > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
+            if (i > 0)
+              await new Promise((resolve) => setTimeout(resolve, 2000));
             try {
               const INGESTION_TIMEOUT_MS = 90 * 1000;
               const timeoutPromise = new Promise<never>((_, reject) =>
-                setTimeout(() => reject(new Error('EPG ingestion timed out after 5 minutes')), INGESTION_TIMEOUT_MS)
+                setTimeout(
+                  () =>
+                    reject(
+                      new Error("EPG ingestion timed out after 5 minutes"),
+                    ),
+                  INGESTION_TIMEOUT_MS,
+                ),
               );
               const onEvent: IngestionEventListener = (type, data) => {
                 const getUrlShort = (url?: string): string => {
-                  if (!url || typeof url !== 'string') return 'unknown';
-                  const parts = url.split('/');
+                  if (!url || typeof url !== "string") return "unknown";
+                  const parts = url.split("/");
                   return parts[parts.length - 1] || url;
                 };
-                if (type === 'progress') {
+                if (type === "progress") {
                   const progress = data as IngestionProgress;
-                  console.log(`[EPG] ${getUrlShort(progress.epgUrl)}: ${progress.programsProcessed} processed`);
-                } else if (type === 'complete') {
-                  const complete = data as { programsCount: number; epgUrl?: string };
-                  console.log(`[EPG] ${getUrlShort(complete.epgUrl)}: ${complete.programsCount} inserted`);
-                } else if (type === 'error') {
+                  console.log(
+                    `[EPG] ${getUrlShort(progress.epgUrl)}: ${progress.programsProcessed} processed`,
+                  );
+                } else if (type === "complete") {
+                  const complete = data as {
+                    programsCount: number;
+                    epgUrl?: string;
+                  };
+                  console.log(
+                    `[EPG] ${getUrlShort(complete.epgUrl)}: ${complete.programsCount} inserted`,
+                  );
+                } else if (type === "error") {
                   const error = data as { error: string; epgUrl?: string };
-                  console.error(`[EPG] ${getUrlShort(error.epgUrl)}: ${error.error}`);
+                  console.error(
+                    `[EPG] ${getUrlShort(error.epgUrl)}: ${error.error}`,
+                  );
                 }
               };
               await Promise.race([
-                startNativeEpgIngestion(epgUrl, playlistId, channels, datasetSignature, onEvent),
+                startNativeEpgIngestion(
+                  epgUrl,
+                  playlistId,
+                  channels,
+                  datasetSignature,
+                  onEvent,
+                ),
                 timeoutPromise,
               ]);
             } catch (error) {
-              const message = error instanceof Error ? error.message : 'Unknown error';
+              const message =
+                error instanceof Error ? error.message : "Unknown error";
               errors.push(`${epgUrl} - ${message}`);
             }
           }
@@ -336,7 +382,7 @@ export const useEPGManagement = () => {
 
         const errorMessage =
           errors.length > 0 && errors.length === urlsToIngest.length
-            ? errors.join('\n')
+            ? errors.join("\n")
             : null;
 
         setEpgStatus({ loading: false, error: errorMessage });
@@ -345,12 +391,15 @@ export const useEPGManagement = () => {
           return;
         }
 
-        const message = error instanceof Error ? error.message : 'Unknown error';
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
         setEpgStatus({ loading: false, error: message });
       }
     };
 
-    let interactionHandle: ReturnType<typeof InteractionManager.runAfterInteractions> | null = null;
+    let interactionHandle: ReturnType<
+      typeof InteractionManager.runAfterInteractions
+    > | null = null;
     const timeoutId = setTimeout(() => {
       interactionHandle = InteractionManager.runAfterInteractions(() => {
         loadEpg();
@@ -363,7 +412,9 @@ export const useEPGManagement = () => {
       interactionHandle?.cancel();
       // If loading was set to true by this effect and ingestion was cancelled
       // before completion, reset it so the spinner doesn't get stuck.
-      setEpgStatus((prev) => (prev.loading ? { loading: false, error: null } : prev));
+      setEpgStatus((prev) =>
+        prev.loading ? { loading: false, error: null } : prev,
+      );
     };
     // datasetSignature already encodes activeEpgUrls.join('|'), so depending on
     // activeEpgUrls here would cause spurious re-runs every time the playlist
@@ -383,7 +434,7 @@ export const useEPGManagement = () => {
       }
       return programsByChannel[channelId] ?? [];
     },
-    [programsByChannel, loadProgramsForChannels]
+    [programsByChannel, loadProgramsForChannels],
   );
 
   const getCurrentProgram = useCallback(
@@ -396,7 +447,7 @@ export const useEPGManagement = () => {
         null
       );
     },
-    [getProgramsForChannel]
+    [getProgramsForChannel],
   );
 
   return {
@@ -408,5 +459,3 @@ export const useEPGManagement = () => {
     prefetchProgramsForChannels: loadProgramsForChannels,
   };
 };
-
-

@@ -16,6 +16,8 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
 import com.chuchplayer.epg.EpgIngestionPackage
+import com.chuchplayer.player.ExoPlayerPackage
+import com.chuchplayer.playlist.PlaylistParserPackage
 import io.realm.Realm
 
 class MainApplication : Application(), ReactApplication {
@@ -26,6 +28,8 @@ class MainApplication : Application(), ReactApplication {
         override fun getPackages(): List<ReactPackage> =
             PackageList(this).packages.apply {
               add(EpgIngestionPackage())
+              add(ExoPlayerPackage())
+              add(PlaylistParserPackage())
             }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
