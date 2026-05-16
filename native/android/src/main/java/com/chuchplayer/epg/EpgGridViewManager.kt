@@ -26,4 +26,14 @@ class EpgGridViewManager(private val reactContext: ReactApplicationContext) :
     fun setCurrentChannelId(view: EpgGridView, id: String?) {
         view.setCurrentChannelId(id)
     }
+
+    @ReactProp(name = "accentColor")
+    fun setAccentColor(view: EpgGridView, color: String?) {
+        if (!color.isNullOrEmpty()) view.setAccentColor(color)
+    }
+
+    @ReactProp(name = "bgColor")
+    fun setBgColor(view: EpgGridView, color: String?) {
+        if (!color.isNullOrEmpty()) view.setBgColor(color)
+    }
 }

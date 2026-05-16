@@ -10,6 +10,8 @@ const NativeView =
         playlistId: string;
         channels: string;
         currentChannelId?: string;
+        accentColor?: string;
+        bgColor?: string;
       }>('EpgGridView')
     : null;
 
@@ -18,6 +20,8 @@ interface Props {
   playlistId: string;
   channels: Channel[];
   currentChannelId?: string;
+  accentColor?: string;
+  bgColor?: string;
   onChannelSelect: (channelId: string, channelName: string) => void;
 }
 
@@ -26,6 +30,8 @@ const NativeEpgGrid: React.FC<Props> = ({
   playlistId,
   channels,
   currentChannelId,
+  accentColor,
+  bgColor,
   onChannelSelect,
 }) => {
   useEffect(() => {
@@ -59,6 +65,8 @@ const NativeEpgGrid: React.FC<Props> = ({
       playlistId={playlistId}
       channels={channelsJson}
       currentChannelId={currentChannelId ?? ''}
+      accentColor={accentColor ?? '#ffffff'}
+      bgColor={bgColor ?? '#0a0a0a'}
     />
   );
 };

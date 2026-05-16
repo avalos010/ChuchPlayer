@@ -21,7 +21,6 @@ import GroupsPlaylistsPanel from '../components/player/GroupsPlaylistsPanel';
 import ChannelNumberPad from '../components/player/ChannelNumberPad';
 import VolumeIndicator from '../components/player/VolumeIndicator';
 import VideoControls from '../components/player/VideoControls';
-import FloatingButtons from '../components/player/FloatingButtons';
 import MultiScreenView from '../components/player/MultiScreenView';
 import MultiScreenControls from '../components/player/MultiScreenControls';
 import ChannelInfoBar from '../components/player/ChannelInfoBar';
@@ -364,12 +363,6 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       ref={mainViewRef}
       className="flex-1 bg-black relative"
     >
-      {/* Floating Buttons */}
-      <FloatingButtons
-        onBack={handleBack}
-        onEPGInfo={handleEPGInfoPress}
-      />
-
       {/* Invisible D-pad navigation zones for Android TV */}
       {!showEPG && !showEPGGrid && !showChannelList && !showGroupsPlaylists && Platform.OS === 'android' && (
         <>

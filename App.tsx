@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -7,6 +7,7 @@ import Toast from 'react-native-toast-message';
 import AppNavigator from './src/navigation/AppNavigator';
 import './global.css';
 import { useDataRefreshScheduler } from './src/hooks/useDataRefreshScheduler';
+import { useThemeStore } from './src/store/useThemeStore';
 
 // Verify NativeWind installation
 if (__DEV__) {
@@ -20,6 +21,8 @@ if (__DEV__) {
 
 const App = () => {
   useDataRefreshScheduler();
+  const loadPersistedTheme = useThemeStore((s) => s.loadPersistedTheme);
+  useEffect(() => { loadPersistedTheme(); }, []);
 
   return (
     <GestureHandlerRootView className="flex-1 bg-dark">

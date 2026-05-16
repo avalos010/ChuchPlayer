@@ -43,7 +43,9 @@ export interface Settings {
   defaultPlaylist?: string;
   autoPlay: boolean;
   showEPG: boolean;
-  theme: 'dark' | 'light';
+  theme: string;
+  customAccent?: string;
+  customBg?: string;
   multiScreenEnabled: boolean;
   maxMultiScreens: number;
   epgRefreshIntervalMinutes: number;

@@ -132,6 +132,28 @@ class EpgGridView(context: Context) : View(context) {
 
     // ── Public API (called by ViewManager) ────────────────────────────────────
 
+    fun setAccentColor(hex: String) {
+        try {
+            val c = Color.parseColor(hex)
+            pFocusBorder.color = c
+            pBlockNow.color    = c
+            tTimeNow.color     = c
+            invalidate()
+        } catch (_: Exception) {}
+    }
+
+    fun setBgColor(hex: String) {
+        try {
+            val c = Color.parseColor(hex)
+            pBg.color    = c
+            pHdr.color   = (Color.valueOf(c).let {
+                Color.argb(1f, (it.red() * 0.85f), (it.green() * 0.85f), (it.blue() * 0.85f))
+            })
+            pChCol.color = c
+            invalidate()
+        } catch (_: Exception) {}
+    }
+
     fun setPlaylistId(id: String) {
         playlistId = id
         maybeLoad()

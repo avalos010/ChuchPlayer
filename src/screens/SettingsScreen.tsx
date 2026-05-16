@@ -22,6 +22,8 @@ import { fetchM3UPlaylist } from '../utils/m3uParser';
 import { fetchXtreamPlaylist } from '../utils/xtreamParser';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
+import { useThemeStore } from '../store/useThemeStore';
+import { THEME_LIST } from '../theme/themes';
 import { useSleepTimer } from '../hooks/useSleepTimer';
 
 interface SettingsScreenProps {
@@ -115,6 +117,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [pinModalVisible,    setPinModalVisible]    = useState(false);
   const [pinInput,           setPinInput]           = useState('');
   const [pinConfirm,         setPinConfirm]         = useState('');
+
+  const { themeId, customAccent, customBg, setTheme, setCustom, resetTheme } = useThemeStore();
+  const [customAccentInput, setCustomAccentInput] = useState(customAccent);
+  const [customBgInput,     setCustomBgInput]     = useState(customBg);
 
   const { setTimer: setSleepTimer } = useSleepTimer();
   const hasPlayer = !!usePlayerStore.getState().channel;
@@ -383,6 +389,106 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         >
           <Text style={s.addBtnTxt}>+ Add Playlist</Text>
         </FocusableItem>
+
+        <Divider />
+
+        {/* ══ APPEARANCE ══════════════════════════════════ */}
+        <SectionTitle label="Appearance" />
+        <Card>
+          <Text style={s.settingTitle}>Theme</Text>
+          <Text style={[s.settingDesc, { marginBottom: 14 }]}>
+            Select a color preset or configure custom colors below
+          </Text>
+          <View style={s.swatchGrid}>
+            {THEME_LIST.map((t) => (
+              <FocusableItem
+                key={t.id}
+                onPress={() => { setTheme(t.id); setCustomAccentInput(t.accent); setCustomBgInput(t.bg); }}
+                style={[
+                  s.swatchBtn,
+                  themeId === t.id && s.swatchBtnActive,
+                  { backgroundColor: t.bg, borderColor: themeId === t.id ? t.accent : '#333' },
+                ]}
+                focusedStyle={{ backgroundColor: t.bg, borderColor: t.accent, borderWidth: 2.5, transform: [], elevation: 6 }}
+              >
+                <View style={[s.swatchDot, { backgroundColor: t.accent }]} />
+                <Text style={[s.swatchLabel, { color: t.accent }]} numberOfLines={1}>{t.name}</Text>
+              </FocusableItem>
+            ))}
+          </View>
+        </Card>
+
+        <Card style={{ marginTop: 0 }}>
+          <Text style={s.settingTitle}>Custom Colors</Text>
+          <Text style={[s.settingDesc, { marginBottom: 16 }]}>
+            Set your own accent and background colors (hex format, e.g. #ff6f00)
+          </Text>
+
+          {/* Accent color */}
+          <View style={s.colorRow}>
+            <View style={[s.colorSwatch, { backgroundColor: customAccentInput }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.colorLabel}>Accent Color</Text>
+              <TextInput
+                style={s.colorInput}
+                value={customAccentInput}
+                onChangeText={setCustomAccentInput}
+                placeholder="#ffffff"
+                placeholderTextColor="#3d3d3d"
+                autoCorrect={false}
+                autoCapitalize="none"
+                maxLength={7}
+              />
+            </View>
+          </View>
+
+          {/* Background color */}
+          <View style={[s.colorRow, { marginTop: 12 }]}>
+            <View style={[s.colorSwatch, { backgroundColor: customBgInput }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.colorLabel}>Background</Text>
+              <TextInput
+                style={s.colorInput}
+                value={customBgInput}
+                onChangeText={setCustomBgInput}
+                placeholder="#0a0a0a"
+                placeholderTextColor="#3d3d3d"
+                autoCorrect={false}
+                autoCapitalize="none"
+                maxLength={7}
+              />
+            </View>
+          </View>
+
+          <View style={[s.chipRow, { marginTop: 18 }]}>
+            <FocusableItem
+              onPress={() => {
+                if (/^#[0-9a-fA-F]{6}$/.test(customBgInput) && /^#[0-9a-fA-F]{6}$/.test(customAccentInput)) {
+                  setCustom(customBgInput, customAccentInput);
+                  setTimeout(() => showSuccess('Custom theme applied.'), 100);
+                } else {
+                  setTimeout(() => showError('Enter valid hex colors (e.g. #ff6f00).'), 100);
+                }
+              }}
+              style={[s.chip, { flex: 1, alignItems: 'center' }]}
+              focusedStyle={BTN_FOCUSED}
+            >
+              <Text style={s.chipTxt}>Apply Custom</Text>
+            </FocusableItem>
+            <FocusableItem
+              onPress={() => {
+                resetTheme();
+                setCustomAccentInput('#ffffff');
+                setCustomBgInput('#0a0a0a');
+                setTimeout(() => showSuccess('Theme reset to default.'), 100);
+              }}
+              style={[s.chip, { alignItems: 'center' }]}
+              focusedStyle={BTN_FOCUSED}
+            >
+              <Text style={s.chipTxt}>Reset</Text>
+            </FocusableItem>
+          </View>
+        </Card>
 
         <Divider />
 
@@ -964,6 +1070,32 @@ const s = StyleSheet.create({
     borderColor: '#2a2a2a',
   },
   changePinTxt: { color: '#8a8a8a', fontSize: TV ? 14 : 13, fontWeight: '600' },
+
+  // Appearance
+  swatchGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  swatchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: TV ? 12 : 10,
+    paddingVertical: TV ? 9 : 7,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    gap: 7,
+    minWidth: TV ? 110 : 90,
+  },
+  swatchBtnActive: { borderWidth: 2.5 },
+  swatchDot: { width: TV ? 12 : 10, height: TV ? 12 : 10, borderRadius: 6 },
+  swatchLabel: { fontSize: TV ? 12 : 11, fontWeight: '700' },
+  colorRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  colorSwatch: { width: TV ? 44 : 36, height: TV ? 44 : 36, borderRadius: 8, borderWidth: 1, borderColor: '#333' },
+  colorLabel: { color: '#8a8a8a', fontSize: TV ? 12 : 10, fontWeight: '600', marginBottom: 5, letterSpacing: 0.5 },
+  colorInput: {
+    backgroundColor: '#161616',
+    color: '#f5f5f5',
+    borderRadius: 8, borderWidth: 1, borderColor: '#222222',
+    paddingHorizontal: TV ? 14 : 10, paddingVertical: TV ? 10 : 8,
+    fontSize: TV ? 15 : 13, fontFamily: 'monospace',
+  },
 
   helpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
   helpTitle: { color: '#8a8a8a', fontSize: TV ? 16 : 14, fontWeight: '600' },

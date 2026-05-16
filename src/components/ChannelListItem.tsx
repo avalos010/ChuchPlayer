@@ -1,8 +1,10 @@
-import React, { useState, forwardRef, useCallback } from 'react';
+import React, { useState, forwardRef, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import FocusableItem from './FocusableItem';
 import { Channel } from '../types';
+import { useThemeStore } from '../store/useThemeStore';
+import { Theme } from '../theme/themes';
 
 interface ChannelListItemProps {
   channel: Channel;
@@ -12,9 +14,13 @@ interface ChannelListItemProps {
   isCurrentChannel?: boolean;
   isFavorite?: boolean;
   onToggleFavorite?: (channel: Channel) => void;
+  showNumbers?: boolean;
+  index?: number;
 }
 
 const TV = Platform.OS === 'android';
+const LOGO_SZ = TV ? 48 : 40;
+const ROW_H   = TV ? 72 : 58;
 
 const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
   channel,
@@ -24,15 +30,34 @@ const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
   isCurrentChannel = false,
   isFavorite = false,
   onToggleFavorite,
+  showNumbers = false,
+  index,
 }, ref) => {
+  const theme  = useThemeStore((s) => s.theme);
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [imgErr, setImgErr] = useState(false);
 
   const handlePress  = useCallback(() => onPress(channel), [channel, onPress]);
   const handleFocus  = useCallback(() => onFocus?.(channel.id), [channel.id, onFocus]);
   const handleStar   = useCallback(() => onToggleFavorite?.(channel), [channel, onToggleFavorite]);
 
-  const logoSz = TV ? 68 : 56;
   const initials = channel.name.substring(0, 2).toUpperCase();
+
+  const focusedStyle = useMemo(() => ({
+    backgroundColor: theme.card,
+    borderColor: theme.focused,
+    borderWidth: 2,
+    transform: [] as any[],
+    elevation: 6,
+  }), [theme]);
+
+  const starFocusedStyle = useMemo(() => ({
+    backgroundColor: theme.cardActive,
+    borderColor: theme.accent,
+    borderWidth: 1,
+    transform: [] as any[],
+    elevation: 3,
+  }), [theme]);
 
   return (
     <FocusableItem
@@ -40,69 +65,57 @@ const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
       onPress={handlePress}
       onFocus={handleFocus}
       hasTVPreferredFocus={hasTVPreferredFocus}
-      style={[
-        s.item,
-        isCurrentChannel && s.itemCurrent,
-      ]}
-      focusedStyle={FOCUSED_STYLE}
+      style={[styles.item, isCurrentChannel && styles.itemCurrent]}
+      focusedStyle={focusedStyle}
     >
-      <View style={s.inner}>
-        {/* Logo / initials */}
+      <View style={styles.row}>
+        {/* Channel number */}
+        {showNumbers && (
+          <Text style={[styles.num, isCurrentChannel && styles.numActive]}>
+            {index != null ? String(index + 1).padStart(3, ' ') : '   '}
+          </Text>
+        )}
+
+        {/* Logo */}
         {channel.logo && !imgErr ? (
           <Image
             source={{ uri: channel.logo }}
-            style={[s.logo, { width: logoSz, height: logoSz }]}
+            style={styles.logo}
             contentFit="contain"
             cachePolicy="disk"
             onError={() => setImgErr(true)}
           />
         ) : (
-          <View style={[s.logoFallback, { width: logoSz, height: logoSz },
-            isCurrentChannel && s.logoFallbackCurrent,
-          ]}>
-            <Text style={[s.logoInitials, isCurrentChannel && { color: '#f5f5f5' }]}>
+          <View style={[styles.logoFallback, isCurrentChannel && styles.logoFallbackActive]}>
+            <Text style={[styles.initials, isCurrentChannel && styles.initialsActive]}>
               {initials}
             </Text>
           </View>
         )}
 
-        {/* Name + group */}
-        <View style={s.meta}>
-          <Text
-            style={[s.name, isCurrentChannel && s.nameCurrent]}
-            numberOfLines={1}
-          >
+        {/* Name + program */}
+        <View style={styles.meta}>
+          <Text style={[styles.name, isCurrentChannel && styles.nameActive]} numberOfLines={1}>
             {channel.name}
           </Text>
-          {channel.group ? (
-            <Text
-              style={[s.group, isCurrentChannel && s.groupCurrent]}
-              numberOfLines={1}
-            >
-              {channel.group}
-            </Text>
-          ) : null}
         </View>
 
-        {/* LIVE badge for current channel */}
-        {isCurrentChannel && (
-          <View style={s.liveBadge}>
-            <Text style={s.liveTxt}>LIVE</Text>
+        {/* Right: LIVE badge or star */}
+        {isCurrentChannel ? (
+          <View style={styles.liveBadge}>
+            <Text style={styles.liveTxt}>LIVE</Text>
           </View>
-        )}
-
-        {/* Favorite star */}
-        {onToggleFavorite && (
+        ) : onToggleFavorite ? (
           <FocusableItem
             onPress={handleStar}
-            style={s.starBtn}
-            focusedStyle={STAR_FOCUSED_STYLE}
+            style={styles.starBtn}
+            focusedStyle={starFocusedStyle}
           >
-            <Text style={[s.starIcon, isFavorite && s.starIconActive]}>
+            <Text style={[styles.star, isFavorite && styles.starActive]}>
               {isFavorite ? '★' : '☆'}
             </Text>
           </FocusableItem>
-        )}
+        ) : null}
       </View>
     </FocusableItem>
   );
@@ -110,132 +123,98 @@ const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
 
 ChannelListItemComponent.displayName = 'ChannelListItem';
 
-// Memoized with custom comparator to prevent re-renders on parent state change
-const ChannelListItem = React.memo(ChannelListItemComponent, (prev, next) => {
-  return (
-    prev.channel.id === next.channel.id &&
-    prev.channel.name === next.channel.name &&
-    prev.channel.logo === next.channel.logo &&
-    prev.isCurrentChannel === next.isCurrentChannel &&
-    prev.hasTVPreferredFocus === next.hasTVPreferredFocus &&
-    prev.isFavorite === next.isFavorite
-  );
-});
+const ChannelListItem = React.memo(ChannelListItemComponent, (prev, next) =>
+  prev.channel.id === next.channel.id &&
+  prev.channel.name === next.channel.name &&
+  prev.channel.logo === next.channel.logo &&
+  prev.isCurrentChannel === next.isCurrentChannel &&
+  prev.hasTVPreferredFocus === next.hasTVPreferredFocus &&
+  prev.isFavorite === next.isFavorite &&
+  prev.showNumbers === next.showNumbers &&
+  prev.index === next.index
+);
 
 export default ChannelListItem;
 
-// ─── Focused styles (static) ─────────────────────────────────────────────────
-
-const STAR_FOCUSED_STYLE = {
-  backgroundColor: '#1c1c00',
-  borderColor: '#f5b942',
-  borderWidth: 1,
-  transform: [] as any[],
-  elevation: 4,
-};
-
-const FOCUSED_STYLE = {
-  backgroundColor: '#1c1c1c',
-  borderColor: '#ffffff',
-  borderWidth: 2,
-  transform: [] as any[],
-  elevation: 6,
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.5,
-  shadowRadius: 6,
-};
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const s = StyleSheet.create({
-  item: {
-    marginHorizontal: 10,
-    marginVertical: 3,
-    borderRadius: 12,
-    backgroundColor: '#111111',
-    borderWidth: 1,
-    borderColor: '#1a1a1a',
-  },
-  itemCurrent: {
-    backgroundColor: '#161616',
-    borderColor: '#333333',
-    borderLeftWidth: 3,
-    borderLeftColor: '#e5e5e5',
-  },
-  inner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: TV ? 16 : 14,
-    paddingVertical: TV ? 14 : 11,
-    gap: TV ? 14 : 12,
-  },
-
-  // Logo
-  logo: {
-    borderRadius: 10,
-    backgroundColor: '#181818',
-  },
-  logoFallback: {
-    borderRadius: 10,
-    backgroundColor: '#181818',
-    borderWidth: 1,
-    borderColor: '#222222',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoFallbackCurrent: {
-    backgroundColor: '#1f1f1f',
-    borderColor: '#333333',
-  },
-  logoInitials: {
-    color: '#3d3d3d',
-    fontSize: TV ? 20 : 17,
-    fontWeight: '800',
-  },
-
-  // Text
-  meta: { flex: 1 },
-  name: {
-    color: '#8a8a8a',
-    fontSize: TV ? 17 : 15,
-    fontWeight: '700',
-    marginBottom: 3,
-  },
-  nameCurrent: { color: '#f5f5f5' },
-  group: {
-    color: '#333333',
-    fontSize: TV ? 13 : 11,
-    fontWeight: '500',
-  },
-  groupCurrent: { color: '#555555' },
-
-  // Star
-  starBtn: {
-    width: TV ? 36 : 30,
-    height: TV ? 36 : 30,
-    borderRadius: 8,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 4,
-  },
-  starIcon: { color: '#333', fontSize: TV ? 20 : 18 },
-  starIconActive: { color: '#f5b942' },
-
-  // LIVE badge
-  liveBadge: {
-    backgroundColor: '#e5e5e5',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  liveTxt: {
-    color: '#0a0a0a',
-    fontSize: TV ? 11 : 9,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-});
+function createStyles(theme: Theme) {
+  return StyleSheet.create({
+    item: {
+      marginHorizontal: 8,
+      marginVertical: 2,
+      borderRadius: 8,
+      backgroundColor: 'transparent',
+      borderWidth: 1,
+      borderColor: 'transparent',
+      borderLeftWidth: 3,
+      borderLeftColor: 'transparent',
+      height: ROW_H,
+      justifyContent: 'center',
+    },
+    itemCurrent: {
+      backgroundColor: theme.cardActive,
+      borderColor: theme.border,
+      borderLeftColor: theme.accent,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: TV ? 12 : 10,
+      gap: TV ? 12 : 10,
+      height: ROW_H,
+    },
+    num: {
+      color: theme.textMuted,
+      fontSize: TV ? 13 : 11,
+      fontWeight: '600',
+      width: 30,
+      textAlign: 'right',
+      fontFamily: 'monospace',
+    },
+    numActive: { color: theme.textSub },
+    logo: {
+      width: LOGO_SZ,
+      height: LOGO_SZ,
+      borderRadius: 8,
+      backgroundColor: theme.card,
+    },
+    logoFallback: {
+      width: LOGO_SZ,
+      height: LOGO_SZ,
+      borderRadius: 8,
+      backgroundColor: theme.card,
+      borderWidth: 1,
+      borderColor: theme.border,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    logoFallbackActive: { backgroundColor: theme.cardActive, borderColor: theme.border },
+    initials: { color: theme.textMuted, fontSize: TV ? 17 : 14, fontWeight: '800' },
+    initialsActive: { color: theme.textSub },
+    meta: { flex: 1 },
+    name: {
+      color: theme.textSub,
+      fontSize: TV ? 16 : 14,
+      fontWeight: '700',
+    },
+    nameActive: { color: theme.text },
+    liveBadge: {
+      backgroundColor: theme.live,
+      borderRadius: 4,
+      paddingHorizontal: 6,
+      paddingVertical: 3,
+    },
+    liveTxt: { color: '#fff', fontSize: TV ? 10 : 9, fontWeight: '800', letterSpacing: 0.5 },
+    starBtn: {
+      width: TV ? 32 : 28,
+      height: TV ? 32 : 28,
+      borderRadius: 6,
+      backgroundColor: 'transparent',
+      borderWidth: 1,
+      borderColor: 'transparent',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    star: { color: theme.textMuted, fontSize: TV ? 18 : 16 },
+    starActive: { color: '#f5b942' },
+  });
+}
