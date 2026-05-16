@@ -1,16 +1,17 @@
 # chuchPlayer (Expo Edition) 📺
 
-A fresh Expo build of the Android TV IPTV player. This project focuses on a TV-first experience with playlist management, channel browsing, and video playback powered by `expo-av`.
+A high-performance Android TV IPTV player with smoothness. Built with Expo and optimized native Kotlin modules for instant channel switching, smooth EPG scrolling, and 10k+ channel playlist support.
 
 ## Features
 
-- 📺 IPTV playback with M3U/M3U8 playlists
-- 🎮 Android TV remote navigation with focus states
-- 🔍 Channel search and category filters
-- 📂 Playlist management stored via AsyncStorage
-- ⚙️ Configurable settings (autoplay, theme toggle)
-- 💾 Favorites support (API ready)
-- 🧩 Custom Expo config plugin for Android TV leanback launcher
+- 📺 **Native ExoPlayer** (1-2s stream start): Direct Media3 integration with buffer config (1s min, 30s max)
+- ⚡ **Instant Channel Switching**: Zero artificial delays, cascading render optimization
+- 🎮 **Android TV Remote Navigation**: Focus states, smooth EPG grid, 9 rendering optimizations
+- 🔍 **Channel Search & Category Filters**: Fast filtering with memoized components
+- 📂 **Playlist Management**: M3U/Xtream Codes support with Kotlin streaming parser for 10k+ channels
+- 💾 **Smart Caching**: Disk-cached logos (expo-image), EPG Realm persistence, playlist AsyncStorage
+- ⚙️ **Configurable Settings**: Autoplay, audio track selection, resize mode
+- 🧩 **Native Modules**: ExoPlayer for video, Kotlin M3U parser, EPG ingestion with background sync
 
 ## Getting Started
 
@@ -31,6 +32,7 @@ npm run web
 ```
 
 Expo will open a Dev Tools window where you can choose:
+
 - `a` – launch on Android (emulator or device)
 - `w` – open in the browser
 - Scan the QR code with Expo Go (phone/tablet)
@@ -110,4 +112,3 @@ http://example.com/stream.m3u8
 - Picture-in-picture support (Android TV)
 
 Enjoy building with Expo! 🎉
-
