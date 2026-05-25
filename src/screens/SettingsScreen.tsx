@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,7 +24,7 @@ import { fetchXtreamPlaylist } from '../utils/xtreamParser';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
 import { useThemeStore } from '../store/useThemeStore';
-import { THEME_LIST } from '../theme/themes';
+import { Theme, THEME_LIST } from '../theme/themes';
 import { useSleepTimer } from '../hooks/useSleepTimer';
 
 interface SettingsScreenProps {
@@ -62,55 +62,11 @@ const ROW_FOCUSED = {
   elevation: 4,
 };
 
-// ─── Reusable components ──────────────────────────────────────────────────────
-
-const SectionTitle: React.FC<{ label: string }> = ({ label }) => (
-  <Text style={s.sectionTitle}>{label}</Text>
-);
-
-const Card: React.FC<{ children: React.ReactNode; style?: any }> = ({ children, style }) => (
-  <View style={[s.card, style]}>{children}</View>
-);
-
-const Divider = () => <View style={s.divider} />;
-
-const RowBetween: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <View style={s.rowBetween}>{children}</View>
-);
-
-const SettingRow: React.FC<{
-  title: string;
-  desc?: string;
-  right: React.ReactNode;
-  top?: boolean;
-  onPress?: () => void;
-}> = ({ title, desc, right, top, onPress }) => {
-  const content = (
-    <View style={[s.settingRow, top && !onPress && s.settingRowTop]}>
-      <View style={{ flex: 1 }}>
-        <Text style={s.settingTitle}>{title}</Text>
-        {desc && <Text style={s.settingDesc}>{desc}</Text>}
-      </View>
-      <View pointerEvents={TV && onPress ? 'none' : 'auto'}>
-        {right}
-      </View>
-    </View>
-  );
-
-  if (TV && onPress) {
-    return (
-      <FocusableItem onPress={onPress} style={[s.settingRowFocusWrap, top && s.settingRowTop]} focusedStyle={ROW_FOCUSED}>
-        {content}
-      </FocusableItem>
-    );
-  }
-
-  return content;
-};
-
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) => {
+  const theme = useThemeStore((state) => state.theme);
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [settings, setSettings] = useState<Settings>({
     autoPlay: true,
     showEPG: false,
@@ -131,6 +87,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
   const [playlists,          setPlaylists]          = useState<Playlist[]>([]);
   const [loadingPlaylists,   setLoadingPlaylists]   = useState(true);
   const [modalVisible,       setModalVisible]       = useState(false);
+  const [editingPlaylistId,  setEditingPlaylistId]  = useState<string | null>(null);
   const [sourceType,         setSourceType]         = useState<PlaylistSourceType>('m3u');
   const [newPlaylistUrl,     setNewPlaylistUrl]     = useState('');
   const [newPlaylistName,    setNewPlaylistName]    = useState('');
@@ -250,6 +207,41 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
     }
   };
 
+  const resetPlaylistForm = useCallback(() => {
+    setEditingPlaylistId(null);
+    setNewPlaylistName('');
+    setNewPlaylistUrl('');
+    setXtreamServerUrl('');
+    setXtreamUsername('');
+    setXtreamPassword('');
+    setSourceType('m3u');
+  }, []);
+
+  const openCreatePlaylistModal = useCallback(() => {
+    resetPlaylistForm();
+    setModalVisible(true);
+  }, [resetPlaylistForm]);
+
+  const openEditPlaylistModal = useCallback((playlist: Playlist) => {
+    setEditingPlaylistId(playlist.id);
+    setNewPlaylistName(playlist.name);
+    setSourceType(playlist.sourceType);
+
+    if (playlist.sourceType === 'm3u') {
+      setNewPlaylistUrl(playlist.url);
+      setXtreamServerUrl('');
+      setXtreamUsername('');
+      setXtreamPassword('');
+    } else {
+      setNewPlaylistUrl('');
+      setXtreamServerUrl(playlist.xtreamCredentials?.serverUrl ?? '');
+      setXtreamUsername(playlist.xtreamCredentials?.username ?? '');
+      setXtreamPassword(playlist.xtreamCredentials?.password ?? '');
+    }
+
+    setModalVisible(true);
+  }, []);
+
   // ── Add playlist ────────────────────────────────────────────────────────────
   const handleAddPlaylist = async () => {
     if (!newPlaylistName.trim()) { setTimeout(() => showError('Enter a playlist name.'), 100); return; }
@@ -260,6 +252,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
 
     setAddingPlaylist(true);
     try {
+      const existingPlaylist = editingPlaylistId
+        ? playlists.find((playlist) => playlist.id === editingPlaylistId) ?? null
+        : null;
       let channels: Playlist['channels'] = [];
       let playlistUrl = '';
       let epgUrls: string[] = [];
@@ -279,23 +274,47 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
 
       const now = new Date();
       const playlist: Playlist = {
-        id: Date.now().toString(), name: newPlaylistName.trim(), url: playlistUrl,
-        sourceType, channels, epgUrls, createdAt: now, updatedAt: now, xtreamCredentials,
+        id: existingPlaylist?.id ?? Date.now().toString(),
+        name: newPlaylistName.trim(),
+        url: playlistUrl,
+        sourceType,
+        channels,
+        epgUrls,
+        createdAt: existingPlaylist?.createdAt ?? now,
+        updatedAt: now,
+        xtreamCredentials,
       };
 
       await savePlaylist(playlist);
-      setPlaylists(prev => [...prev, playlist]);
+      setPlaylists(prev => {
+        const idx = prev.findIndex((item) => item.id === playlist.id);
+        if (idx === -1) return [...prev, playlist];
+        const updated = [...prev];
+        updated[idx] = playlist;
+        return updated;
+      });
       setModalVisible(false);
-      setNewPlaylistName(''); setNewPlaylistUrl(''); setXtreamServerUrl('');
-      setXtreamUsername(''); setXtreamPassword(''); setSourceType('m3u');
+      resetPlaylistForm();
 
-      usePlayerStore.getState().setPlaylist(playlist);
-      usePlayerStore.getState().setChannels(channels);
-      useUIStore.getState().setShowEPGGrid(true);
-      navigation.navigate('Player', {});
-      setTimeout(() => showSuccess(`Added ${channels.length} channels.`), 100);
+      const playerState = usePlayerStore.getState();
+      if (!existingPlaylist || playerState.playlist?.id === playlist.id) {
+        playerState.setPlaylist(playlist);
+        playerState.setChannels(channels);
+        const matchingChannel = channels.find((channelItem) => channelItem.id === playerState.channel?.id);
+        playerState.setChannel(matchingChannel ?? channels[0] ?? null);
+      }
+
+      if (!existingPlaylist) {
+        useUIStore.getState().setShowEPGGrid(true);
+        navigation.navigate('Player', {});
+        setTimeout(() => showSuccess(`Added ${channels.length} channels.`), 100);
+      } else {
+        setTimeout(() => showSuccess(`Updated "${playlist.name}".`), 100);
+      }
     } catch (err) {
-      const msg = sourceType === 'm3u' ? 'Check the URL and try again.' : 'Check credentials and try again.';
+      const msg = sourceType === 'm3u'
+        ? `Check the URL and try again.`
+        : 'Check credentials and try again.';
       setTimeout(() => showError(msg, err instanceof Error ? err.message : String(err)), 100);
     } finally {
       setAddingPlaylist(false);
@@ -400,25 +419,31 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
 
   // ── Render playlist row ─────────────────────────────────────────────────────
   const renderPlaylistItem = useCallback(({ item }: { item: Playlist }) => (
-    <View style={s.playlistRow}>
+    <View style={styles.playlistRow}>
       <View style={{ flex: 1 }}>
-        <Text style={s.playlistName} numberOfLines={1}>{item.name}</Text>
-        <Text style={s.playlistMeta}>{item.channels.length} channels · {item.sourceType.toUpperCase()}</Text>
+        <Text style={styles.playlistName} numberOfLines={1}>{item.name}</Text>
+        <Text style={styles.playlistMeta}>{item.channels.length} channels · {item.sourceType.toUpperCase()}</Text>
       </View>
       <FocusableItem
+        onPress={() => openEditPlaylistModal(item)}
+        style={styles.editBtn}
+        focusedStyle={BTN_FOCUSED}
+      >
+        <Text style={styles.editBtnTxt}>Edit</Text>
+      </FocusableItem>
+      <FocusableItem
         onPress={() => confirmDeletePlaylist(item)}
-        style={s.deleteBtn}
+        style={styles.deleteBtn}
         focusedStyle={DANGER_FOCUSED}
       >
-        <Text style={s.deleteBtnTxt}>Delete</Text>
+        <Text style={styles.deleteBtnTxt}>Delete</Text>
       </FocusableItem>
     </View>
-  ), []);
+  ), [openEditPlaylistModal]);
 
   const closeModal = () => {
     setModalVisible(false);
-    setNewPlaylistName(''); setNewPlaylistUrl(''); setXtreamServerUrl('');
-    setXtreamUsername(''); setXtreamPassword(''); setSourceType('m3u');
+    resetPlaylistForm();
   };
 
   const infoBarOptions: { label: string; value: number }[] = [
@@ -428,9 +453,53 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
     { label: 'Never', value: 0 },
   ];
 
+  const SectionTitle: React.FC<{ label: string }> = ({ label }) => (
+    <Text style={styles.sectionTitle}>{label}</Text>
+  );
+
+  const Card: React.FC<{ children: React.ReactNode; style?: any }> = ({ children, style }) => (
+    <View style={[styles.card, style]}>{children}</View>
+  );
+
+  const Divider = () => <View style={styles.divider} />;
+
+  const RowBetween: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <View style={styles.rowBetween}>{children}</View>
+  );
+
+  const SettingRow: React.FC<{
+    title: string;
+    desc?: string;
+    right: React.ReactNode;
+    top?: boolean;
+    onPress?: () => void;
+  }> = ({ title, desc, right, top, onPress }) => {
+    const content = (
+      <View style={[styles.settingRow, top && !onPress && styles.settingRowTop]}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.settingTitle}>{title}</Text>
+          {desc && <Text style={styles.settingDesc}>{desc}</Text>}
+        </View>
+        <View pointerEvents={TV && onPress ? 'none' : 'auto'}>
+          {right}
+        </View>
+      </View>
+    );
+
+    if (TV && onPress) {
+      return (
+        <FocusableItem onPress={onPress} style={[styles.settingRowFocusWrap, top && styles.settingRowTop]} focusedStyle={ROW_FOCUSED}>
+          {content}
+        </FocusableItem>
+      );
+    }
+
+    return content;
+  };
+
   return (
-    <View style={s.root}>
-      <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={s.scroll}>
+    <View style={styles.root}>
+      <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={styles.scroll}>
 
         <View onLayout={(e) => setSectionOffset('top', e.nativeEvent.layout.y)} />
 
@@ -440,10 +509,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
             ref={backBtnRef}
             onPress={() => navigation.navigate('Player', {})}
             hasTVPreferredFocus={shouldPreferFocus('back')}
-            style={s.backBtn}
+            style={styles.backBtn}
             focusedStyle={BTN_FOCUSED}
           >
-            <Text style={s.backBtnTxt}>← Back to Player</Text>
+            <Text style={styles.backBtnTxt}>← Back to Player</Text>
           </FocusableItem>
         )}
 
@@ -451,13 +520,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
         <SectionTitle label="Playlists" />
 
         {loadingPlaylists ? (
-          <Card style={s.centered}>
+          <Card style={styles.centered}>
             <ActivityIndicator size="large" color="#555555" />
           </Card>
         ) : playlists.length === 0 ? (
           <Card>
-            <Text style={s.emptyTitle}>No playlists yet</Text>
-            <Text style={s.emptyBody}>Add an M3U playlist or Xtream Codes account to get started.</Text>
+            <Text style={styles.emptyTitle}>No playlists yet</Text>
+            <Text style={styles.emptyBody}>Add an M3U playlist or Xtream Codes account to get started.</Text>
           </Card>
         ) : (
           <FlatList
@@ -472,12 +541,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
         <View onLayout={(e) => setSectionOffset('addPlaylist', e.nativeEvent.layout.y)}>
           <FocusableItem
             ref={addPlaylistRef}
-            onPress={() => setModalVisible(true)}
+            onPress={openCreatePlaylistModal}
             hasTVPreferredFocus={shouldPreferFocus('addPlaylist')}
-            style={s.addBtn}
+            style={styles.addBtn}
             focusedStyle={BTN_FOCUSED}
           >
-            <Text style={s.addBtnTxt}>+ Add Playlist</Text>
+            <Text style={styles.addBtnTxt}>+ Add Playlist</Text>
           </FocusableItem>
         </View>
 
@@ -486,42 +555,42 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
         {/* ══ APPEARANCE ══════════════════════════════════ */}
         <SectionTitle label="Appearance" />
         <Card>
-          <Text style={s.settingTitle}>Theme</Text>
-          <Text style={[s.settingDesc, { marginBottom: 14 }]}>
+          <Text style={styles.settingTitle}>Theme</Text>
+          <Text style={[styles.settingDesc, { marginBottom: 14 }]}>
             Select a color preset or configure custom colors below
           </Text>
-          <View style={s.swatchGrid}>
+          <View style={styles.swatchGrid}>
             {THEME_LIST.map((t) => (
               <FocusableItem
                 key={t.id}
                 onPress={() => { setTheme(t.id); setCustomAccentInput(t.accent); setCustomBgInput(t.bg); }}
                 style={[
-                  s.swatchBtn,
-                  themeId === t.id && s.swatchBtnActive,
+                  styles.swatchBtn,
+                  themeId === t.id && styles.swatchBtnActive,
                   { backgroundColor: t.bg, borderColor: themeId === t.id ? t.accent : '#333' },
                 ]}
                 focusedStyle={{ backgroundColor: t.bg, borderColor: t.accent, borderWidth: 2.5, transform: [], elevation: 6 }}
               >
-                <View style={[s.swatchDot, { backgroundColor: t.accent }]} />
-                <Text style={[s.swatchLabel, { color: t.accent }]} numberOfLines={1}>{t.name}</Text>
+                <View style={[styles.swatchDot, { backgroundColor: t.accent }]} />
+                <Text style={[styles.swatchLabel, { color: t.accent }]} numberOfLines={1}>{t.name}</Text>
               </FocusableItem>
             ))}
           </View>
         </Card>
 
         <Card style={{ marginTop: 0 }}>
-          <Text style={s.settingTitle}>Custom Colors</Text>
-          <Text style={[s.settingDesc, { marginBottom: 16 }]}>
+          <Text style={styles.settingTitle}>Custom Colors</Text>
+          <Text style={[styles.settingDesc, { marginBottom: 16 }]}>
             Set your own accent and background colors (hex format, e.g. #ff6f00)
           </Text>
 
           {/* Accent color */}
-          <View style={s.colorRow}>
-            <View style={[s.colorSwatch, { backgroundColor: customAccentInput }]} />
+          <View style={styles.colorRow}>
+            <View style={[styles.colorSwatch, { backgroundColor: customAccentInput }]} />
             <View style={{ flex: 1 }}>
-              <Text style={s.colorLabel}>Accent Color</Text>
+              <Text style={styles.colorLabel}>Accent Color</Text>
               <TextInput
-                style={s.colorInput}
+                style={styles.colorInput}
                 value={customAccentInput}
                 onChangeText={setCustomAccentInput}
                 placeholder="#ffffff"
@@ -534,12 +603,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
           </View>
 
           {/* Background color */}
-          <View style={[s.colorRow, { marginTop: 12 }]}>
-            <View style={[s.colorSwatch, { backgroundColor: customBgInput }]} />
+          <View style={[styles.colorRow, { marginTop: 12 }]}>
+            <View style={[styles.colorSwatch, { backgroundColor: customBgInput }]} />
             <View style={{ flex: 1 }}>
-              <Text style={s.colorLabel}>Background</Text>
+              <Text style={styles.colorLabel}>Background</Text>
               <TextInput
-                style={s.colorInput}
+                style={styles.colorInput}
                 value={customBgInput}
                 onChangeText={setCustomBgInput}
                 placeholder="#0a0a0a"
@@ -551,7 +620,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
             </View>
           </View>
 
-          <View style={[s.chipRow, { marginTop: 18 }]}>
+          <View style={[styles.chipRow, { marginTop: 18 }]}>
             <FocusableItem
               onPress={() => {
                 if (/^#[0-9a-fA-F]{6}$/.test(customBgInput) && /^#[0-9a-fA-F]{6}$/.test(customAccentInput)) {
@@ -561,10 +630,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
                   setTimeout(() => showError('Enter valid hex colors (e.g. #ff6f00).'), 100);
                 }
               }}
-              style={[s.chip, { flex: 1, alignItems: 'center' }]}
+              style={[styles.chip, { flex: 1, alignItems: 'center' }]}
               focusedStyle={BTN_FOCUSED}
             >
-              <Text style={s.chipTxt}>Apply Custom</Text>
+              <Text style={styles.chipTxt}>Apply Custom</Text>
             </FocusableItem>
             <FocusableItem
               onPress={() => {
@@ -573,10 +642,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
                 setCustomBgInput('#0a0a0a');
                 setTimeout(() => showSuccess('Theme reset to default.'), 100);
               }}
-              style={[s.chip, { alignItems: 'center' }]}
+              style={[styles.chip, { alignItems: 'center' }]}
               focusedStyle={BTN_FOCUSED}
             >
-              <Text style={s.chipTxt}>Reset</Text>
+              <Text style={styles.chipTxt}>Reset</Text>
             </FocusableItem>
           </View>
         </Card>
@@ -615,12 +684,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
               />
             }
           />
-          <View style={s.settingRowTop}>
-            <Text style={s.settingTitle}>Buffer Mode</Text>
-            <Text style={[s.settingDesc, { marginBottom: 14 }]}>
+          <View style={styles.settingRowTop}>
+            <Text style={styles.settingTitle}>Buffer Mode</Text>
+            <Text style={[styles.settingDesc, { marginBottom: 14 }]}>
               Low Latency = fastest start · Smooth = most stable
             </Text>
-            <View style={s.chipRow}>
+            <View style={styles.chipRow}>
               {([
                 { id: 'low', label: 'Low Latency' },
                 { id: 'balanced', label: 'Balanced' },
@@ -629,10 +698,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
                 <FocusableItem
                   key={opt.id}
                   onPress={() => updateSetting('bufferMode', opt.id)}
-                  style={[s.chip, settings.bufferMode === opt.id && s.chipActive]}
+                  style={[styles.chip, settings.bufferMode === opt.id && styles.chipActive]}
                   focusedStyle={BTN_FOCUSED}
                 >
-                  <Text style={[s.chipTxt, settings.bufferMode === opt.id && s.chipTxtActive]}>
+                  <Text style={[styles.chipTxt, settings.bufferMode === opt.id && styles.chipTxtActive]}>
                     {opt.label}
                   </Text>
                 </FocusableItem>
@@ -648,21 +717,21 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
         <SectionTitle label="Interface" />
         <Card>
           <View>
-            <Text style={s.settingTitle}>Info Bar Timeout</Text>
-            <Text style={[s.settingDesc, { marginBottom: 14 }]}>
+            <Text style={styles.settingTitle}>Info Bar Timeout</Text>
+            <Text style={[styles.settingDesc, { marginBottom: 14 }]}>
               How long the channel info bar stays visible
             </Text>
-            <View style={s.chipRow}>
+            <View style={styles.chipRow}>
               {infoBarOptions.map((opt, idx) => (
                 <FocusableItem
                   key={opt.value}
                   ref={idx === 0 ? infoBarTimeoutRef : undefined}
                   onPress={() => updateSetting('infoBarTimeoutSeconds', opt.value)}
-                  style={[s.chip, (settings.infoBarTimeoutSeconds ?? 6) === opt.value && s.chipActive]}
+                  style={[styles.chip, (settings.infoBarTimeoutSeconds ?? 6) === opt.value && styles.chipActive]}
                   hasTVPreferredFocus={idx === 0 && shouldPreferFocus('interface')}
                   focusedStyle={BTN_FOCUSED}
                 >
-                  <Text style={[s.chipTxt, (settings.infoBarTimeoutSeconds ?? 6) === opt.value && s.chipTxtActive]}>
+                  <Text style={[styles.chipTxt, (settings.infoBarTimeoutSeconds ?? 6) === opt.value && styles.chipTxtActive]}>
                     {opt.label}
                   </Text>
                 </FocusableItem>
@@ -684,17 +753,17 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
               />
             }
           />
-          <View style={s.settingRowTop}>
-            <Text style={s.settingTitle}>Clock Format</Text>
-            <View style={[s.chipRow, { marginTop: 10 }]}>
+          <View style={styles.settingRowTop}>
+            <Text style={styles.settingTitle}>Clock Format</Text>
+            <View style={[styles.chipRow, { marginTop: 10 }]}>
               {(['12h', '24h'] as const).map(fmt => (
                 <FocusableItem
                   key={fmt}
                   onPress={() => updateSetting('clockFormat', fmt)}
-                  style={[s.chip, (settings.clockFormat ?? '24h') === fmt && s.chipActive]}
+                  style={[styles.chip, (settings.clockFormat ?? '24h') === fmt && styles.chipActive]}
                   focusedStyle={BTN_FOCUSED}
                 >
-                  <Text style={[s.chipTxt, (settings.clockFormat ?? '24h') === fmt && s.chipTxtActive]}>
+                  <Text style={[styles.chipTxt, (settings.clockFormat ?? '24h') === fmt && styles.chipTxtActive]}>
                     {fmt}
                   </Text>
                 </FocusableItem>
@@ -723,10 +792,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
         {/* ══ SLEEP TIMER ══════════════════════════════════ */}
         <SectionTitle label="Sleep Timer" />
         <Card>
-          <Text style={s.settingDesc} numberOfLines={2}>
+          <Text style={styles.settingDesc} numberOfLines={2}>
             Playback will automatically stop after the selected duration.
           </Text>
-          <View style={[s.chipRow, { marginTop: 14 }]}>
+          <View style={[styles.chipRow, { marginTop: 14 }]}>
             {[
               { label: 'Off', min: 0 },
               { label: '15 min', min: 15 },
@@ -742,10 +811,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
                   if (hasPlayer) navigation.navigate('Player', {});
                   setTimeout(() => showSuccess(opt.min === 0 ? 'Sleep timer off.' : `Sleep timer set: ${opt.label}`), 100);
                 }}
-                style={s.chip}
+                style={styles.chip}
                 focusedStyle={BTN_FOCUSED}
               >
-                <Text style={s.chipTxt}>{opt.label}</Text>
+                <Text style={styles.chipTxt}>{opt.label}</Text>
               </FocusableItem>
             ))}
           </View>
@@ -770,17 +839,17 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
               />
             }
           />
-          <View style={s.settingRowTop}>
-            <Text style={s.settingTitle}>Max Screens</Text>
-            <View style={[s.chipRow, { marginTop: 10 }]}>
+          <View style={styles.settingRowTop}>
+            <Text style={styles.settingTitle}>Max Screens</Text>
+            <View style={[styles.chipRow, { marginTop: 10 }]}>
               {[2, 3, 4].map(n => (
                 <FocusableItem
                   key={n}
                   onPress={() => updateSetting('maxMultiScreens', n)}
-                  style={[s.chip, settings.maxMultiScreens === n && s.chipActive]}
+                  style={[styles.chip, settings.maxMultiScreens === n && styles.chipActive]}
                   focusedStyle={BTN_FOCUSED}
                 >
-                  <Text style={[s.chipTxt, settings.maxMultiScreens === n && s.chipTxtActive]}>{n}</Text>
+                  <Text style={[styles.chipTxt, settings.maxMultiScreens === n && styles.chipTxtActive]}>{n}</Text>
                 </FocusableItem>
               ))}
             </View>
@@ -795,21 +864,21 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
 
         <Card style={{ marginBottom: 10 }}>
           <RowBetween>
-            <Text style={s.settingTitle}>EPG Refresh</Text>
-            <Text style={s.valueLabel}>{settings.epgRefreshIntervalMinutes / 60}h</Text>
+            <Text style={styles.settingTitle}>EPG Refresh</Text>
+            <Text style={styles.valueLabel}>{settings.epgRefreshIntervalMinutes / 60}h</Text>
           </RowBetween>
-          <Text style={[s.settingDesc, { marginBottom: 14 }]}>How often to refresh the program guide</Text>
-          <View style={s.chipRow}>
+          <Text style={[styles.settingDesc, { marginBottom: 14 }]}>How often to refresh the program guide</Text>
+          <View style={styles.chipRow}>
             {[120, 180, 240, 360, 480].map((min, idx) => (
               <FocusableItem
                 key={`epg-${min}`}
                 ref={idx === 0 ? epgRefreshRef : undefined}
                 onPress={() => updateSetting('epgRefreshIntervalMinutes', min)}
-                style={[s.chip, settings.epgRefreshIntervalMinutes === min && s.chipActive]}
+                style={[styles.chip, settings.epgRefreshIntervalMinutes === min && styles.chipActive]}
                 hasTVPreferredFocus={idx === 0 && shouldPreferFocus('epg')}
                 focusedStyle={BTN_FOCUSED}
               >
-                <Text style={[s.chipTxt, settings.epgRefreshIntervalMinutes === min && s.chipTxtActive]}>
+                <Text style={[styles.chipTxt, settings.epgRefreshIntervalMinutes === min && styles.chipTxtActive]}>
                   {min / 60}h
                 </Text>
               </FocusableItem>
@@ -819,19 +888,19 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
 
         <Card style={{ marginBottom: 10 }}>
           <RowBetween>
-            <Text style={s.settingTitle}>Channel Refresh</Text>
-            <Text style={s.valueLabel}>{settings.channelRefreshIntervalMinutes / 60}h</Text>
+            <Text style={styles.settingTitle}>Channel Refresh</Text>
+            <Text style={styles.valueLabel}>{settings.channelRefreshIntervalMinutes / 60}h</Text>
           </RowBetween>
-          <Text style={[s.settingDesc, { marginBottom: 14 }]}>How often to refresh your channel lists</Text>
-          <View style={s.chipRow}>
+          <Text style={[styles.settingDesc, { marginBottom: 14 }]}>How often to refresh your channel lists</Text>
+          <View style={styles.chipRow}>
             {[120, 240, 360, 480].map(min => (
               <FocusableItem
                 key={`ch-${min}`}
                 onPress={() => updateSetting('channelRefreshIntervalMinutes', min)}
-                style={[s.chip, settings.channelRefreshIntervalMinutes === min && s.chipActive]}
+                style={[styles.chip, settings.channelRefreshIntervalMinutes === min && styles.chipActive]}
                 focusedStyle={BTN_FOCUSED}
               >
-                <Text style={[s.chipTxt, settings.channelRefreshIntervalMinutes === min && s.chipTxtActive]}>
+                <Text style={[styles.chipTxt, settings.channelRefreshIntervalMinutes === min && styles.chipTxtActive]}>
                   {min / 60}h
                 </Text>
               </FocusableItem>
@@ -841,14 +910,14 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
 
         <FocusableItem
           onPress={handleManualRefresh}
-          style={[s.refreshBtn, manualRefreshing && s.refreshBtnDisabled]}
+          style={[styles.refreshBtn, manualRefreshing && styles.refreshBtnDisabled]}
           focusedStyle={BTN_FOCUSED}
           disabled={manualRefreshing}
         >
           {manualRefreshing
             ? <ActivityIndicator size="small" color="#f5f5f5" style={{ marginRight: 10 }} />
             : null}
-          <Text style={s.refreshBtnTxt}>{manualRefreshing ? 'Refreshing…' : 'Refresh Now'}</Text>
+          <Text style={styles.refreshBtnTxt}>{manualRefreshing ? 'Refreshing…' : 'Refresh Now'}</Text>
         </FocusableItem>
 
         <Divider />
@@ -887,13 +956,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
             }
           />
           {settings.parentalPinEnabled && (
-            <View style={s.settingRowTop}>
+            <View style={styles.settingRowTop}>
               <FocusableItem
                 onPress={() => setPinModalVisible(true)}
-                style={s.changePinBtn}
+                style={styles.changePinBtn}
                 focusedStyle={BTN_FOCUSED}
               >
-                <Text style={s.changePinTxt}>Change PIN</Text>
+                <Text style={styles.changePinTxt}>Change PIN</Text>
               </FocusableItem>
             </View>
           )}
@@ -910,11 +979,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
             'How to Add Playlists',
             'M3U Playlists:\n1. Get an M3U URL from your IPTV provider\n2. Tap "Add Playlist"\n3. Choose M3U, enter a name and paste the URL\n\nXtream Codes:\n1. Choose "Xtream Codes"\n2. Enter server URL, username, and password',
           )}
-          style={[s.card, s.helpBtn]}
+          style={[styles.card, styles.helpBtn]}
           focusedStyle={BTN_FOCUSED}
         >
-          <Text style={s.helpTitle}>How to Add Playlists</Text>
-          <Text style={s.helpArrow}>›</Text>
+          <Text style={styles.helpTitle}>How to Add Playlists</Text>
+          <Text style={styles.helpArrow}>›</Text>
         </FocusableItem>
 
         <FocusableItem
@@ -924,11 +993,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
             'Navigation:\n• D-Pad: Move between items\n• Center/OK: Select\n• Back: Previous screen\n\nPlayer:\n• Center/OK: Play / Pause\n• D-Pad Up/Down: Switch channel\n• D-Pad Left: Open channel list\n• INFO key: Program details\n• Long press EPG block: Program details\n• Back: Open program guide',
           )}
           hasTVPreferredFocus={shouldPreferFocus('help')}
-          style={[s.card, s.helpBtn]}
+          style={[styles.card, styles.helpBtn]}
           focusedStyle={BTN_FOCUSED}
         >
-          <Text style={s.helpTitle}>TV Remote Controls</Text>
-          <Text style={s.helpArrow}>›</Text>
+          <Text style={styles.helpTitle}>TV Remote Controls</Text>
+          <Text style={styles.helpArrow}>›</Text>
         </FocusableItem>
 
         <Divider />
@@ -943,11 +1012,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
             { label: 'EPG', value: 'XMLTV + Xtream' },
           ].map((row, i, arr) => (
             <View key={row.label} style={[
-              s.aboutRow,
+              styles.aboutRow,
               i < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
             ]}>
-              <Text style={s.aboutLabel}>{row.label}</Text>
-              <Text style={s.aboutValue}>{row.value}</Text>
+              <Text style={styles.aboutLabel}>{row.label}</Text>
+              <Text style={styles.aboutValue}>{row.value}</Text>
             </View>
           ))}
         </Card>
@@ -957,20 +1026,20 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
 
       {/* ══ ADD PLAYLIST MODAL ══════════════════════════ */}
       <Modal visible={modalVisible} transparent animationType="fade">
-        <TouchableOpacity style={s.modalBackdrop} activeOpacity={1} onPress={closeModal} focusable={false}>
-          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={s.modalBox} focusable={false}>
-            <Text style={s.modalTitle}>Add Playlist</Text>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={closeModal} focusable={false}>
+          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.modalBox} focusable={false}>
+            <Text style={styles.modalTitle}>{editingPlaylistId ? 'Edit Playlist' : 'Add Playlist'}</Text>
 
-            <View style={s.tabRow}>
+            <View style={styles.tabRow}>
               {(['m3u', 'xtream'] as PlaylistSourceType[]).map((t, idx) => (
                 <FocusableItem
                   key={t}
                   onPress={() => setSourceType(t)}
                   hasTVPreferredFocus={modalVisible && idx === 0}
-                  style={[s.tab, sourceType === t && s.tabActive]}
+                  style={[styles.tab, sourceType === t && styles.tabActive]}
                   focusedStyle={BTN_FOCUSED}
                 >
-                  <Text style={[s.tabTxt, sourceType === t && s.tabTxtActive]}>
+                  <Text style={[styles.tabTxt, sourceType === t && styles.tabTxtActive]}>
                     {t === 'm3u' ? 'M3U' : 'Xtream Codes'}
                   </Text>
                 </FocusableItem>
@@ -978,7 +1047,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
             </View>
 
             <TextInput
-              style={s.input}
+              style={styles.input}
               placeholder="Playlist name"
               placeholderTextColor="#3d3d3d"
               value={newPlaylistName}
@@ -987,7 +1056,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
 
             {sourceType === 'm3u' ? (
               <TextInput
-                style={s.input}
+                style={styles.input}
                 placeholder="M3U URL"
                 placeholderTextColor="#3d3d3d"
                 value={newPlaylistUrl}
@@ -997,23 +1066,23 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
               />
             ) : (
               <>
-                <TextInput style={s.input} placeholder="Server URL (https://...)" placeholderTextColor="#3d3d3d"
+                <TextInput style={styles.input} placeholder="Server URL (https://...)" placeholderTextColor="#3d3d3d"
                   value={xtreamServerUrl} onChangeText={setXtreamServerUrl} autoCapitalize="none" keyboardType="url" />
-                <TextInput style={s.input} placeholder="Username" placeholderTextColor="#3d3d3d"
+                <TextInput style={styles.input} placeholder="Username" placeholderTextColor="#3d3d3d"
                   value={xtreamUsername} onChangeText={setXtreamUsername} autoCapitalize="none" />
-                <TextInput style={s.input} placeholder="Password" placeholderTextColor="#3d3d3d"
+                <TextInput style={styles.input} placeholder="Password" placeholderTextColor="#3d3d3d"
                   value={xtreamPassword} onChangeText={setXtreamPassword} secureTextEntry autoCapitalize="none" />
               </>
             )}
 
-            <View style={s.modalActions}>
-              <FocusableItem onPress={closeModal} style={s.cancelBtn} focusedStyle={BTN_FOCUSED} disabled={addingPlaylist}>
-                <Text style={s.cancelBtnTxt}>Cancel</Text>
+            <View style={styles.modalActions}>
+              <FocusableItem onPress={closeModal} style={styles.cancelBtn} focusedStyle={BTN_FOCUSED} disabled={addingPlaylist}>
+                <Text style={styles.cancelBtnTxt}>Cancel</Text>
               </FocusableItem>
-              <FocusableItem onPress={handleAddPlaylist} style={s.confirmBtn} focusedStyle={BTN_FOCUSED} disabled={addingPlaylist}>
+              <FocusableItem onPress={handleAddPlaylist} style={styles.confirmBtn} focusedStyle={BTN_FOCUSED} disabled={addingPlaylist}>
                 {addingPlaylist
                   ? <ActivityIndicator color="#0a0a0a" size="small" />
-                  : <Text style={s.confirmBtnTxt}>Add</Text>}
+                  : <Text style={styles.confirmBtnTxt}>{editingPlaylistId ? 'Save' : 'Add'}</Text>}
               </FocusableItem>
             </View>
           </TouchableOpacity>
@@ -1023,16 +1092,16 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
       {/* ══ PIN MODAL ════════════════════════════════════ */}
       <Modal visible={pinModalVisible} transparent animationType="fade">
         <TouchableOpacity
-          style={s.modalBackdrop}
+          style={styles.modalBackdrop}
           activeOpacity={1}
           onPress={() => { setPinModalVisible(false); setPinInput(''); setPinConfirm(''); }}
           focusable={false}
         >
-          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={[s.modalBox, { maxWidth: 400 }]} focusable={false}>
-            <Text style={s.modalTitle}>Set PIN</Text>
-            <Text style={s.settingDesc}>Enter a 4-digit PIN to protect content.</Text>
+          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={[styles.modalBox, { maxWidth: 400 }]} focusable={false}>
+            <Text style={styles.modalTitle}>Set PIN</Text>
+            <Text style={styles.settingDesc}>Enter a 4-digit PIN to protect content.</Text>
             <TextInput
-              style={s.input}
+              style={styles.input}
               placeholder="New 4-digit PIN"
               placeholderTextColor="#3d3d3d"
               value={pinInput}
@@ -1042,7 +1111,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
               maxLength={4}
             />
             <TextInput
-              style={s.input}
+              style={styles.input}
               placeholder="Confirm PIN"
               placeholderTextColor="#3d3d3d"
               value={pinConfirm}
@@ -1051,16 +1120,16 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
               secureTextEntry
               maxLength={4}
             />
-            <View style={s.modalActions}>
+            <View style={styles.modalActions}>
               <FocusableItem
                 onPress={() => { setPinModalVisible(false); setPinInput(''); setPinConfirm(''); }}
-                style={s.cancelBtn}
+                style={styles.cancelBtn}
                 focusedStyle={BTN_FOCUSED}
               >
-                <Text style={s.cancelBtnTxt}>Cancel</Text>
+                <Text style={styles.cancelBtnTxt}>Cancel</Text>
               </FocusableItem>
-              <FocusableItem onPress={handleSavePin} style={s.confirmBtn} focusedStyle={BTN_FOCUSED}>
-                <Text style={s.confirmBtnTxt}>Save</Text>
+              <FocusableItem onPress={handleSavePin} style={styles.confirmBtn} focusedStyle={BTN_FOCUSED}>
+                <Text style={styles.confirmBtnTxt}>Save</Text>
               </FocusableItem>
             </View>
           </TouchableOpacity>
@@ -1074,201 +1143,207 @@ export default SettingsScreen;
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0a0a0a' },
-  scroll: { paddingHorizontal: TV ? 48 : 24, paddingTop: TV ? 32 : 24 },
+function createStyles(theme: Theme) {
+  return StyleSheet.create({
+    root: { flex: 1, backgroundColor: theme.bg },
+    scroll: { paddingHorizontal: TV ? 48 : 24, paddingTop: TV ? 32 : 24 },
 
-  backBtn: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: TV ? 20 : 16,
-    paddingVertical: TV ? 12 : 9,
-    borderRadius: 10,
-    backgroundColor: '#161616',
-    borderWidth: 1,
-    borderColor: '#222222',
-    marginBottom: TV ? 32 : 24,
-  },
-  backBtnTxt: { color: '#8a8a8a', fontSize: TV ? 16 : 14, fontWeight: '600' },
+    backBtn: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: TV ? 20 : 16,
+      paddingVertical: TV ? 12 : 9,
+      borderRadius: 10,
+      backgroundColor: theme.card,
+      borderWidth: 1,
+      borderColor: theme.border,
+      marginBottom: TV ? 32 : 24,
+    },
+    backBtnTxt: { color: theme.textSub, fontSize: TV ? 16 : 14, fontWeight: '600' },
 
-  sectionTitle: {
-    color: '#3d3d3d',
-    fontSize: TV ? 11 : 10,
-    fontWeight: '800',
-    letterSpacing: 2.5,
-    marginBottom: TV ? 14 : 10,
-    marginTop: 4,
-  },
+    sectionTitle: {
+      color: theme.textMuted,
+      fontSize: TV ? 11 : 10,
+      fontWeight: '800',
+      letterSpacing: 2.5,
+      marginBottom: TV ? 14 : 10,
+      marginTop: 4,
+    },
 
-  card: {
-    backgroundColor: '#111111',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#1a1a1a',
-    padding: TV ? 24 : 18,
-    marginBottom: 10,
-  },
-  centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: 32 },
+    card: {
+      backgroundColor: theme.surface,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.border,
+      padding: TV ? 24 : 18,
+      marginBottom: 10,
+    },
+    centered: { alignItems: 'center', justifyContent: 'center', paddingVertical: 32 },
 
-  divider: { height: 1, backgroundColor: '#141414', marginVertical: TV ? 28 : 22 },
+    divider: { height: 1, backgroundColor: theme.border, marginVertical: TV ? 28 : 22 },
 
-  settingRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
-  settingRowFocusWrap: {
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginHorizontal: -12,
-    marginVertical: -10,
-  },
-  settingRowTop: { paddingTop: 18, marginTop: 18, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 20 },
-  settingTitle: { color: '#e5e5e5', fontSize: TV ? 17 : 15, fontWeight: '700', marginBottom: 4 },
-  settingDesc: { color: '#3d3d3d', fontSize: TV ? 13 : 11, lineHeight: TV ? 20 : 17 },
-  valueLabel: { color: '#555555', fontSize: TV ? 15 : 13, fontWeight: '600' },
+    settingRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+    settingRowFocusWrap: {
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginHorizontal: -12,
+      marginVertical: -10,
+    },
+    settingRowTop: { paddingTop: 18, marginTop: 18, borderTopWidth: 1, borderTopColor: theme.border },
+    rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 20 },
+    settingTitle: { color: theme.text, fontSize: TV ? 17 : 15, fontWeight: '700', marginBottom: 4 },
+    settingDesc: { color: theme.textMuted, fontSize: TV ? 13 : 11, lineHeight: TV ? 20 : 17 },
+    valueLabel: { color: theme.textSub, fontSize: TV ? 15 : 13, fontWeight: '600' },
 
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    paddingHorizontal: TV ? 20 : 14, paddingVertical: TV ? 10 : 7,
-    borderRadius: 10,
-    backgroundColor: '#161616',
-    borderWidth: 1, borderColor: '#222222',
-  },
-  chipActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  chipTxt: { color: '#555555', fontSize: TV ? 14 : 12, fontWeight: '700' },
-  chipTxtActive: { color: '#0a0a0a' },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    chip: {
+      paddingHorizontal: TV ? 20 : 14, paddingVertical: TV ? 10 : 7,
+      borderRadius: 10,
+      backgroundColor: theme.card,
+      borderWidth: 1, borderColor: theme.border,
+    },
+    chipActive: { backgroundColor: theme.accent, borderColor: theme.accent },
+    chipTxt: { color: theme.textSub, fontSize: TV ? 14 : 12, fontWeight: '700' },
+    chipTxtActive: { color: theme.accentText, fontSize: TV ? 14 : 12, fontWeight: '700' },
 
-  // Playlist rows
-  playlistRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#111111',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#1a1a1a',
-    padding: TV ? 22 : 16,
-    marginBottom: 8,
-    gap: 16,
-  },
-  playlistName: { color: '#f5f5f5', fontSize: TV ? 19 : 16, fontWeight: '700', marginBottom: 4 },
-  playlistMeta: { color: '#3d3d3d', fontSize: TV ? 14 : 12, fontWeight: '500' },
-  deleteBtn: {
-    paddingHorizontal: TV ? 20 : 16, paddingVertical: TV ? 12 : 9,
-    borderRadius: 10,
-    backgroundColor: 'rgba(239,68,68,0.08)',
-    borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
-  },
-  deleteBtnTxt: { color: '#f87171', fontSize: TV ? 14 : 13, fontWeight: '700' },
+    playlistRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.surface,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.border,
+      padding: TV ? 22 : 16,
+      marginBottom: 8,
+      gap: 16,
+    },
+    playlistName: { color: theme.text, fontSize: TV ? 19 : 16, fontWeight: '700', marginBottom: 4 },
+    playlistMeta: { color: theme.textMuted, fontSize: TV ? 14 : 12, fontWeight: '500' },
+    editBtn: {
+      paddingHorizontal: TV ? 20 : 16, paddingVertical: TV ? 12 : 9,
+      borderRadius: 10,
+      backgroundColor: theme.card,
+      borderWidth: 1, borderColor: theme.border,
+    },
+    editBtnTxt: { color: theme.text, fontSize: TV ? 14 : 13, fontWeight: '700' },
+    deleteBtn: {
+      paddingHorizontal: TV ? 20 : 16, paddingVertical: TV ? 12 : 9,
+      borderRadius: 10,
+      backgroundColor: 'rgba(239,68,68,0.08)',
+      borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)',
+    },
+    deleteBtnTxt: { color: '#f87171', fontSize: TV ? 14 : 13, fontWeight: '700' },
 
-  addBtn: {
-    alignItems: 'center',
-    paddingVertical: TV ? 18 : 14,
-    borderRadius: 14,
-    backgroundColor: '#161616',
-    borderWidth: 1, borderColor: '#2a2a2a',
-    marginBottom: 4,
-  },
-  addBtnTxt: { color: '#f5f5f5', fontSize: TV ? 17 : 15, fontWeight: '700' },
+    addBtn: {
+      alignItems: 'center',
+      paddingVertical: TV ? 18 : 14,
+      borderRadius: 14,
+      backgroundColor: theme.card,
+      borderWidth: 1, borderColor: theme.border,
+      marginBottom: 4,
+    },
+    addBtnTxt: { color: theme.text, fontSize: TV ? 17 : 15, fontWeight: '700' },
 
-  emptyTitle: { color: '#f5f5f5', fontSize: TV ? 18 : 15, fontWeight: '700', marginBottom: 6 },
-  emptyBody: { color: '#3d3d3d', fontSize: TV ? 14 : 12, lineHeight: TV ? 22 : 18 },
+    emptyTitle: { color: theme.text, fontSize: TV ? 18 : 15, fontWeight: '700', marginBottom: 6 },
+    emptyBody: { color: theme.textMuted, fontSize: TV ? 14 : 12, lineHeight: TV ? 22 : 18 },
 
-  refreshBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: TV ? 18 : 14, borderRadius: 14,
-    backgroundColor: '#161616', borderWidth: 1, borderColor: '#2a2a2a',
-  },
-  refreshBtnDisabled: { opacity: 0.5 },
-  refreshBtnTxt: { color: '#f5f5f5', fontSize: TV ? 17 : 15, fontWeight: '700' },
+    refreshBtn: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+      paddingVertical: TV ? 18 : 14, borderRadius: 14,
+      backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border,
+    },
+    refreshBtnDisabled: { opacity: 0.5 },
+    refreshBtnTxt: { color: theme.text, fontSize: TV ? 17 : 15, fontWeight: '700' },
 
-  changePinBtn: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: TV ? 20 : 16,
-    paddingVertical: TV ? 12 : 9,
-    borderRadius: 10,
-    backgroundColor: '#161616',
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
-  changePinTxt: { color: '#8a8a8a', fontSize: TV ? 14 : 13, fontWeight: '600' },
+    changePinBtn: {
+      alignSelf: 'flex-start',
+      paddingHorizontal: TV ? 20 : 16,
+      paddingVertical: TV ? 12 : 9,
+      borderRadius: 10,
+      backgroundColor: theme.card,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    changePinTxt: { color: theme.textSub, fontSize: TV ? 14 : 13, fontWeight: '600' },
 
-  // Appearance
-  swatchGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  swatchBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: TV ? 12 : 10,
-    paddingVertical: TV ? 9 : 7,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    gap: 7,
-    minWidth: TV ? 110 : 90,
-  },
-  swatchBtnActive: { borderWidth: 2.5 },
-  swatchDot: { width: TV ? 12 : 10, height: TV ? 12 : 10, borderRadius: 6 },
-  swatchLabel: { fontSize: TV ? 12 : 11, fontWeight: '700' },
-  colorRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  colorSwatch: { width: TV ? 44 : 36, height: TV ? 44 : 36, borderRadius: 8, borderWidth: 1, borderColor: '#333' },
-  colorLabel: { color: '#8a8a8a', fontSize: TV ? 12 : 10, fontWeight: '600', marginBottom: 5, letterSpacing: 0.5 },
-  colorInput: {
-    backgroundColor: '#161616',
-    color: '#f5f5f5',
-    borderRadius: 8, borderWidth: 1, borderColor: '#222222',
-    paddingHorizontal: TV ? 14 : 10, paddingVertical: TV ? 10 : 8,
-    fontSize: TV ? 15 : 13, fontFamily: 'monospace',
-  },
+    swatchGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    swatchBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: TV ? 12 : 10,
+      paddingVertical: TV ? 9 : 7,
+      borderRadius: 10,
+      borderWidth: 1.5,
+      gap: 7,
+      minWidth: TV ? 110 : 90,
+    },
+    swatchBtnActive: { borderWidth: 2.5 },
+    swatchDot: { width: TV ? 12 : 10, height: TV ? 12 : 10, borderRadius: 6 },
+    swatchLabel: { fontSize: TV ? 12 : 11, fontWeight: '700' },
+    colorRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    colorSwatch: { width: TV ? 44 : 36, height: TV ? 44 : 36, borderRadius: 8, borderWidth: 1, borderColor: theme.border },
+    colorLabel: { color: theme.textSub, fontSize: TV ? 12 : 10, fontWeight: '600', marginBottom: 5, letterSpacing: 0.5 },
+    colorInput: {
+      backgroundColor: theme.card,
+      color: theme.text,
+      borderRadius: 8, borderWidth: 1, borderColor: theme.border,
+      paddingHorizontal: TV ? 14 : 10, paddingVertical: TV ? 10 : 8,
+      fontSize: TV ? 15 : 13, fontFamily: 'monospace',
+    },
 
-  helpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  helpTitle: { color: '#8a8a8a', fontSize: TV ? 16 : 14, fontWeight: '600' },
-  helpArrow: { color: '#3d3d3d', fontSize: TV ? 22 : 18, fontWeight: '300' },
+    helpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+    helpTitle: { color: theme.textSub, fontSize: TV ? 16 : 14, fontWeight: '600' },
+    helpArrow: { color: theme.textMuted, fontSize: TV ? 22 : 18, fontWeight: '300' },
 
-  aboutRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14 },
-  aboutLabel: { color: '#3d3d3d', fontSize: TV ? 14 : 12, fontWeight: '500' },
-  aboutValue: { color: '#8a8a8a', fontSize: TV ? 15 : 13, fontWeight: '600' },
+    aboutRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14 },
+    aboutLabel: { color: theme.textMuted, fontSize: TV ? 14 : 12, fontWeight: '500' },
+    aboutValue: { color: theme.textSub, fontSize: TV ? 15 : 13, fontWeight: '600' },
 
-  // Modal
-  modalBackdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.8)',
-    justifyContent: 'center', alignItems: 'center', padding: TV ? 40 : 24,
-  },
-  modalBox: {
-    backgroundColor: '#111111',
-    borderRadius: 20,
-    borderWidth: 1, borderColor: '#1e1e1e',
-    padding: TV ? 36 : 24,
-    width: '100%', maxWidth: 680,
-    gap: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.8, shadowRadius: 40, elevation: 30,
-  },
-  modalTitle: { color: '#f5f5f5', fontSize: TV ? 24 : 20, fontWeight: '800', marginBottom: 4 },
-  tabRow: { flexDirection: 'row', gap: 10 },
-  tab: {
-    flex: 1, paddingVertical: TV ? 14 : 10, borderRadius: 12,
-    backgroundColor: '#161616', borderWidth: 1, borderColor: '#222222',
-    alignItems: 'center',
-  },
-  tabActive: { backgroundColor: '#f5f5f5', borderColor: '#f5f5f5' },
-  tabTxt: { color: '#555555', fontSize: TV ? 15 : 13, fontWeight: '700' },
-  tabTxtActive: { color: '#0a0a0a' },
-  input: {
-    backgroundColor: '#161616',
-    color: '#f5f5f5',
-    borderRadius: 12, borderWidth: 1, borderColor: '#222222',
-    paddingHorizontal: TV ? 18 : 14, paddingVertical: TV ? 16 : 12,
-    fontSize: TV ? 16 : 14,
-  },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 4 },
-  cancelBtn: {
-    paddingHorizontal: TV ? 24 : 18, paddingVertical: TV ? 14 : 10,
-    borderRadius: 12, backgroundColor: '#161616',
-    borderWidth: 1, borderColor: '#222222', alignItems: 'center', minWidth: 110,
-  },
-  cancelBtnTxt: { color: '#555555', fontSize: TV ? 15 : 13, fontWeight: '700' },
-  confirmBtn: {
-    paddingHorizontal: TV ? 24 : 18, paddingVertical: TV ? 14 : 10,
-    borderRadius: 12, backgroundColor: '#f5f5f5',
-    alignItems: 'center', minWidth: 110,
-  },
-  confirmBtnTxt: { color: '#0a0a0a', fontSize: TV ? 15 : 13, fontWeight: '800' },
-});
+    modalBackdrop: {
+      flex: 1, backgroundColor: 'rgba(0,0,0,0.8)',
+      justifyContent: 'center', alignItems: 'center', padding: TV ? 40 : 24,
+    },
+    modalBox: {
+      backgroundColor: theme.surface,
+      borderRadius: 20,
+      borderWidth: 1, borderColor: theme.border,
+      padding: TV ? 36 : 24,
+      width: '100%', maxWidth: 680,
+      gap: 14,
+      shadowColor: '#000', shadowOffset: { width: 0, height: 20 },
+      shadowOpacity: 0.8, shadowRadius: 40, elevation: 30,
+    },
+    modalTitle: { color: theme.text, fontSize: TV ? 24 : 20, fontWeight: '800', marginBottom: 4 },
+    tabRow: { flexDirection: 'row', gap: 10 },
+    tab: {
+      flex: 1, paddingVertical: TV ? 14 : 10, borderRadius: 12,
+      backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border,
+      alignItems: 'center',
+    },
+    tabActive: { backgroundColor: theme.accent, borderColor: theme.accent },
+    tabTxt: { color: theme.textSub, fontSize: TV ? 15 : 13, fontWeight: '700' },
+    tabTxtActive: { color: theme.accentText },
+    input: {
+      backgroundColor: theme.card,
+      color: theme.text,
+      borderRadius: 12, borderWidth: 1, borderColor: theme.border,
+      paddingHorizontal: TV ? 18 : 14, paddingVertical: TV ? 16 : 12,
+      fontSize: TV ? 16 : 14,
+    },
+    modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 4 },
+    cancelBtn: {
+      paddingHorizontal: TV ? 24 : 18, paddingVertical: TV ? 14 : 10,
+      borderRadius: 12, backgroundColor: theme.card,
+      borderWidth: 1, borderColor: theme.border, alignItems: 'center', minWidth: 110,
+    },
+    cancelBtnTxt: { color: theme.textSub, fontSize: TV ? 15 : 13, fontWeight: '700' },
+    confirmBtn: {
+      paddingHorizontal: TV ? 24 : 18, paddingVertical: TV ? 14 : 10,
+      borderRadius: 12, backgroundColor: theme.accent,
+      alignItems: 'center', minWidth: 110,
+    },
+    confirmBtnTxt: { color: theme.accentText, fontSize: TV ? 15 : 13, fontWeight: '800' },
+  });
+}

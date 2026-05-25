@@ -22,12 +22,13 @@ if (__DEV__) {
 const App = () => {
   useDataRefreshScheduler();
   const loadPersistedTheme = useThemeStore((s) => s.loadPersistedTheme);
+  const theme = useThemeStore((s) => s.theme);
   useEffect(() => { loadPersistedTheme(); }, []);
 
   return (
-    <GestureHandlerRootView className="flex-1 bg-dark">
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.bg }}>
       <SafeAreaProvider>
-        <StatusBar style="light" backgroundColor="#1a1a1a" />
+        <StatusBar style={theme.accentText === '#111111' ? 'dark' : 'light'} backgroundColor={theme.bg} />
         <AppNavigator />
         <View className="absolute inset-0 z-[9999]" style={{ elevation: 9999 }} pointerEvents="box-none">
           <Toast />

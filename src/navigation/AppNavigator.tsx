@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useColorScheme, View, ActivityIndicator, Platform } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import { RootStackParamList } from '../types';
 import { getLastChannel, getPlaylists } from '../utils/storage';
+import { useThemeStore } from '../store/useThemeStore';
 
 import PlayerScreen from '../screens/PlayerScreen';
 import WebPlayerScreen from '../screens/WebPlayerScreen';
@@ -14,9 +15,22 @@ const ActivePlayerScreen = Platform.OS === 'web' ? WebPlayerScreen : PlayerScree
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const AppNavigator = () => {
-  const colorScheme = useColorScheme();
+  const theme = useThemeStore((state) => state.theme);
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList | null>(null);
   const [initialChannel, setInitialChannel] = useState<any>(null);
+  const navigationTheme = useMemo(() => ({
+    ...DefaultTheme,
+    dark: theme.bg !== '#f0f0f0',
+    colors: {
+      ...DefaultTheme.colors,
+      primary: theme.accent,
+      background: theme.bg,
+      card: theme.surface,
+      text: theme.text,
+      border: theme.border,
+      notification: theme.live,
+    },
+  }), [theme]);
 
   useEffect(() => {
     const determineInitialRoute = async () => {
@@ -61,23 +75,24 @@ const AppNavigator = () => {
   if (!initialRoute) {
     // Show loading screen while determining initial route
     return (
-      <View style={{ flex: 1, backgroundColor: '#1a1a1a', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#f5f5f5" />
+      <View style={{ flex: 1, backgroundColor: theme.bg, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={theme.accent} />
       </View>
     );
   }
 
   return (
-    <NavigationContainer theme={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <NavigationContainer theme={navigationTheme}>
       <Stack.Navigator
         initialRouteName={initialRoute}
         screenOptions={{
           headerStyle: {
-            backgroundColor: '#1a1a1a',
+            backgroundColor: theme.surface,
           },
-          headerTintColor: '#fff',
+          headerTintColor: theme.text,
           headerTitleStyle: {
             fontWeight: 'bold',
+            color: theme.text,
           },
           animation: 'slide_from_right',
         }}
@@ -99,4 +114,3 @@ const AppNavigator = () => {
 };
 
 export default AppNavigator;
-
