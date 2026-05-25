@@ -15,6 +15,7 @@ type NativeEpgGridViewProps = {
   currentChannelId?: string;
   accentColor?: string;
   bgColor?: string;
+  dataVersion?: number;
 };
 
 export const isNativeEpgGridAvailable =
@@ -34,6 +35,7 @@ interface Props {
   currentChannelId?: string;
   accentColor?: string;
   bgColor?: string;
+  dataVersion?: number;
   onChannelSelect: (channelId: string, channelName: string) => void;
 }
 
@@ -44,6 +46,7 @@ const NativeEpgGrid: React.FC<Props> = ({
   currentChannelId,
   accentColor,
   bgColor,
+  dataVersion,
   onChannelSelect,
 }) => {
   useEffect(() => {
@@ -79,6 +82,7 @@ const NativeEpgGrid: React.FC<Props> = ({
       currentChannelId={currentChannelId ?? ''}
       accentColor={accentColor ?? '#ffffff'}
       bgColor={bgColor ?? '#0a0a0a'}
+      dataVersion={dataVersion ?? 0}
     />
   );
 };

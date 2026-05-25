@@ -4,7 +4,6 @@ import {
   Animated,
   DeviceEventEmitter,
   Dimensions,
-  FlatList,
   Platform,
   Text,
   View,
@@ -104,8 +103,6 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
 
   // Refs
   const videoRef = useRef<Video>(null);
-  const channelListSlideAnim = useRef(new Animated.Value(-400)).current;
-  const channelListRef = useRef<FlatList>(null);
   const mainViewRef = useRef<View>(null);
   const centerZoneRef = useRef<any>(null);
 
@@ -144,6 +141,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     epgError,
     epgLastUpdated,
     prefetchProgramsForChannels,
+    forceRefresh: forceEpgRefresh,
   } = useEPGManagement();
   const { pipAnim, pipScale, enterPIP, exitPIP } = usePIPMode();
   const { setShowChannelInfoCard } = useChannelInfo({ showOnInitialLoad: true });
@@ -221,14 +219,13 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       !showEPGGrid &&
       !showChannelList &&
       !showGroupsPlaylists &&
-      !showInfoBar &&
       !showProgramInfo &&
       !showSleepTimer &&
       !showChannelNumberPad
     ) {
       centerZoneRef.current?.focus?.();
     }
-  }, [showEPG, showEPGGrid, showChannelList, showGroupsPlaylists, showInfoBar, showProgramInfo, showSleepTimer, showChannelNumberPad]);
+  }, [showEPG, showEPGGrid, showChannelList, showGroupsPlaylists, showProgramInfo, showSleepTimer, showChannelNumberPad]);
 
   useEffect(() => {
     if (!channel) return;
@@ -264,35 +261,6 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     centerZoneRef,
   });
 
-  // Animate channel list slide and scroll to current channel
-  useEffect(() => {
-    if (showChannelList) {
-      Animated.timing(channelListSlideAnim, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-      // Scroll to current channel after animation
-      setTimeout(() => {
-        if (channel) {
-        const currentIndex = channels.findIndex(c => c.id === channel.id);
-        if (currentIndex >= 0 && channelListRef.current) {
-          channelListRef.current.scrollToIndex({
-            index: currentIndex,
-            animated: true,
-            viewPosition: 0.5,
-          });
-          }
-        }
-      }, 350);
-    } else {
-      Animated.timing(channelListSlideAnim, {
-        toValue: -500,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [showChannelList, channelListSlideAnim, channels, channel?.id]);
 
   const handleMultiScreenPress = useCallback(() => {
     setShowMultiScreenControls(true);
@@ -310,9 +278,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   }, [navigation]);
 
   const handleManualEpgRefresh = useCallback(() => {
-    useUIStore.getState().setShowEPGGrid(false);
-    useUIStore.getState().setShowEPGGrid(true);
-  }, []);
+    forceEpgRefresh();
+  }, [forceEpgRefresh]);
 
 const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     const { width } = Dimensions.get('window');
@@ -345,7 +312,6 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     showEPGGrid ||
     showChannelList ||
     showGroupsPlaylists ||
-    showInfoBar ||
     showProgramInfo ||
     showSleepTimer ||
     showChannelNumberPad;
@@ -629,6 +595,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
           navigation={navigation}
           epgLoading={epgLoading}
           epgError={epgError}
+          epgLastUpdated={epgLastUpdated}
           handleManualEpgRefresh={handleManualEpgRefresh}
         />
       )}
@@ -636,6 +603,8 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       {/* Channel List Panel */}
       <ChannelListPanel
         onChannelSelect={handleChannelSelect}
+        getCurrentProgram={getCurrentProgram}
+        epgLastUpdated={epgLastUpdated}
       />
 
       {/* Groups & Playlists Panel */}
@@ -651,6 +620,8 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
           currentProgram={currentProgram}
           isFavorite={channel ? isFavorite(channel.id) : false}
           onToggleFavorite={() => channel && toggleFavorite(channel)}
+          onTogglePlayback={handleTogglePlayback}
+          onMultiScreen={handleMultiScreenPress}
           onSleepTimer={() => useUIStore.getState().setShowSleepTimer(true)}
           sleepLabel={sleepLabel}
           navigation={navigation}

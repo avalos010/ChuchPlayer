@@ -176,7 +176,7 @@ export const useEPGManagement = () => {
 
   // Track last fetch time to prevent too frequent requests
   const lastFetchTimeRef = useRef<number>(0);
-  const MIN_TIME_BETWEEN_FETCHES_MS = 5 * 60 * 1000; // 5 minutes minimum between fetches
+  const MIN_TIME_BETWEEN_FETCHES_MS = 30 * 1000; // 30 seconds minimum between fetches
 
   useEffect(() => {
     if (!datasetSignature) {
@@ -299,7 +299,7 @@ export const useEPGManagement = () => {
             if (i > 0)
               await new Promise((resolve) => setTimeout(resolve, 2000));
             try {
-              const INGESTION_TIMEOUT_MS = 90 * 1000;
+              const INGESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for large XMLTV files
               const timeoutPromise = new Promise<never>((_, reject) =>
                 setTimeout(
                   () =>
@@ -450,6 +450,15 @@ export const useEPGManagement = () => {
     [getProgramsForChannel],
   );
 
+  const forceRefresh = useCallback(() => {
+    loadedSignatureRef.current = null;
+    lastFetchTimeRef.current = 0;
+    loadedChannelsRef.current.clear();
+    pendingChannelLoadsRef.current.clear();
+    setProgramsByChannel({});
+    setEpgStatus({ loading: false, error: null });
+  }, []);
+
   return {
     getProgramsForChannel,
     getCurrentProgram,
@@ -457,5 +466,6 @@ export const useEPGManagement = () => {
     epgError: epgStatus.error,
     epgLastUpdated,
     prefetchProgramsForChannels: loadProgramsForChannels,
+    forceRefresh,
   };
 };

@@ -106,6 +106,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
   const infoBarTimeoutRef = useRef<any>(null);
   const epgRefreshRef = useRef<any>(null);
   const helpRemoteRef = useRef<any>(null);
+  // Modal TextInput refs for TV D-pad chaining
+  const nameInputRef = useRef<any>(null);
+  const urlInputRef = useRef<any>(null);
+  const xtreamServerRef = useRef<any>(null);
+  const xtreamUsernameRef = useRef<any>(null);
+  const xtreamPasswordRef = useRef<any>(null);
+  const modalSaveBtnRef = useRef<any>(null);
   const sectionOffsetsRef = useRef<Partial<Record<SettingsFocusTarget | 'top', number>>>({});
 
   const { themeId, customAccent, customBg, setTheme, setCustom, resetTheme } = useThemeStore();
@@ -1047,15 +1054,23 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
             </View>
 
             <TextInput
+              ref={nameInputRef}
               style={styles.input}
               placeholder="Playlist name"
               placeholderTextColor="#3d3d3d"
               value={newPlaylistName}
               onChangeText={setNewPlaylistName}
+              returnKeyType="next"
+              submitBehavior="submit"
+              onSubmitEditing={() => {
+                if (sourceType === 'm3u') urlInputRef.current?.focus();
+                else xtreamServerRef.current?.focus();
+              }}
             />
 
             {sourceType === 'm3u' ? (
               <TextInput
+                ref={urlInputRef}
                 style={styles.input}
                 placeholder="M3U URL"
                 placeholderTextColor="#3d3d3d"
@@ -1063,15 +1078,50 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
                 onChangeText={setNewPlaylistUrl}
                 autoCapitalize="none"
                 keyboardType="url"
+                returnKeyType="done"
+                submitBehavior="blurAndSubmit"
+                onSubmitEditing={() => modalSaveBtnRef.current?.focus()}
               />
             ) : (
               <>
-                <TextInput style={styles.input} placeholder="Server URL (https://...)" placeholderTextColor="#3d3d3d"
-                  value={xtreamServerUrl} onChangeText={setXtreamServerUrl} autoCapitalize="none" keyboardType="url" />
-                <TextInput style={styles.input} placeholder="Username" placeholderTextColor="#3d3d3d"
-                  value={xtreamUsername} onChangeText={setXtreamUsername} autoCapitalize="none" />
-                <TextInput style={styles.input} placeholder="Password" placeholderTextColor="#3d3d3d"
-                  value={xtreamPassword} onChangeText={setXtreamPassword} secureTextEntry autoCapitalize="none" />
+                <TextInput
+                  ref={xtreamServerRef}
+                  style={styles.input}
+                  placeholder="Server URL (https://...)"
+                  placeholderTextColor="#3d3d3d"
+                  value={xtreamServerUrl}
+                  onChangeText={setXtreamServerUrl}
+                  autoCapitalize="none"
+                  keyboardType="url"
+                  returnKeyType="next"
+                  submitBehavior="submit"
+                  onSubmitEditing={() => xtreamUsernameRef.current?.focus()}
+                />
+                <TextInput
+                  ref={xtreamUsernameRef}
+                  style={styles.input}
+                  placeholder="Username"
+                  placeholderTextColor="#3d3d3d"
+                  value={xtreamUsername}
+                  onChangeText={setXtreamUsername}
+                  autoCapitalize="none"
+                  returnKeyType="next"
+                  submitBehavior="submit"
+                  onSubmitEditing={() => xtreamPasswordRef.current?.focus()}
+                />
+                <TextInput
+                  ref={xtreamPasswordRef}
+                  style={styles.input}
+                  placeholder="Password"
+                  placeholderTextColor="#3d3d3d"
+                  value={xtreamPassword}
+                  onChangeText={setXtreamPassword}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  returnKeyType="done"
+                  submitBehavior="blurAndSubmit"
+                  onSubmitEditing={() => modalSaveBtnRef.current?.focus()}
+                />
               </>
             )}
 
@@ -1079,7 +1129,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
               <FocusableItem onPress={closeModal} style={styles.cancelBtn} focusedStyle={BTN_FOCUSED} disabled={addingPlaylist}>
                 <Text style={styles.cancelBtnTxt}>Cancel</Text>
               </FocusableItem>
-              <FocusableItem onPress={handleAddPlaylist} style={styles.confirmBtn} focusedStyle={BTN_FOCUSED} disabled={addingPlaylist}>
+              <FocusableItem
+                ref={modalSaveBtnRef}
+                onPress={handleAddPlaylist}
+                style={styles.confirmBtn}
+                focusedStyle={BTN_FOCUSED}
+                disabled={addingPlaylist}
+              >
                 {addingPlaylist
                   ? <ActivityIndicator color="#0a0a0a" size="small" />
                   : <Text style={styles.confirmBtnTxt}>{editingPlaylistId ? 'Save' : 'Add'}</Text>}

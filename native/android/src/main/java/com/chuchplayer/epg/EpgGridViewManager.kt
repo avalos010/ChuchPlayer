@@ -36,4 +36,10 @@ class EpgGridViewManager(private val reactContext: ReactApplicationContext) :
     fun setBgColor(view: EpgGridView, color: String?) {
         if (!color.isNullOrEmpty()) view.setBgColor(color)
     }
+
+    @ReactProp(name = "dataVersion", defaultInt = 0)
+    fun setDataVersion(view: EpgGridView, version: Int) {
+        // Re-query Realm whenever the JS side signals new data is available
+        view.maybeLoad()
+    }
 }

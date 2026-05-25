@@ -13,6 +13,7 @@ import {
   Platform,
   ActivityIndicator,
   StyleSheet,
+  DeviceEventEmitter,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { FlashList, ListRenderItemInfo } from '@shopify/flash-list';
@@ -26,7 +27,150 @@ import { useThemeStore } from '../../store/useThemeStore';
 import { groupChannelsByCategory } from '../../utils/m3uParser';
 import NativeEpgGrid, { isNativeEpgGridAvailable } from './NativeEpgGrid';
 
+const TV = Platform.OS === 'android';
 const USE_NATIVE_GRID = isNativeEpgGridAvailable;
+
+// ─── Info Panel ───────────────────────────────────────────────────────────────
+
+interface FocusedInfo {
+  channelId: string;
+  channelName: string;
+  channelNumber: number;
+  programTitle?: string;
+  programDesc?: string;
+  programStart?: number;
+  programEnd?: number;
+}
+
+const INFO_H = Platform.OS === 'android' ? 140 : 96;
+
+const fmtAmPm = (ms?: number) => {
+  if (!ms) return '';
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+};
+
+const EpgInfoPanel = memo<{
+  info: FocusedInfo | null;
+  channel: Channel | null;
+  channels: Channel[];
+  theme: any;
+}>(({ info, channel, channels, theme }) => {
+  const displayChannel = useMemo(() =>
+    channels.find(c => c.id === (info?.channelId ?? channel?.id)) ?? channel,
+    [channels, info?.channelId, channel],
+  );
+
+  const now = Date.now();
+  const progStart = info?.programStart;
+  const progEnd   = info?.programEnd;
+  const progress  = (progStart && progEnd && progEnd > progStart)
+    ? Math.min(Math.max((now - progStart) / (progEnd - progStart), 0), 1)
+    : null;
+  const remaining = progEnd ? Math.max(0, Math.round((progEnd - now) / 60000)) : null;
+
+  const isLive = displayChannel?.id === channel?.id;
+  const [imgErr, setImgErr] = useState(false);
+  const initials = displayChannel?.name.substring(0, 2).toUpperCase() ?? '';
+
+  const panelStyles = useMemo(() => ({
+    panel: {
+      height: INFO_H,
+      backgroundColor: theme.surface,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      paddingHorizontal: TV ? 24 : 16,
+      gap: TV ? 24 : 16,
+    },
+    logoBox: {
+      width: TV ? 96 : 64,
+      height: TV ? 96 : 64,
+      borderRadius: 12,
+      backgroundColor: theme.card,
+      borderWidth: 1,
+      borderColor: theme.border,
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+      overflow: 'hidden' as const,
+    },
+    logoInitials: {
+      color: theme.textMuted,
+      fontSize: TV ? 22 : 16,
+      fontWeight: '800' as const,
+    },
+  }), [theme]);
+
+  return (
+    <View style={panelStyles.panel}>
+      {/* Logo */}
+      <View style={panelStyles.logoBox}>
+        {displayChannel?.logo && !imgErr ? (
+          <Image
+            source={{ uri: displayChannel.logo }}
+            style={{ width: '100%', height: '100%' }}
+            contentFit="contain"
+            cachePolicy="disk"
+            onError={() => setImgErr(true)}
+          />
+        ) : (
+          <Text style={panelStyles.logoInitials}>{initials}</Text>
+        )}
+      </View>
+
+      {/* Info */}
+      <View style={{ flex: 1, gap: 4 }}>
+        {/* Channel number + name row */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          {(info?.channelNumber ?? 0) > 0 && (
+            <Text style={{ color: theme.accent, fontSize: TV ? 13 : 11, fontWeight: '800' }}>
+              {info?.channelNumber}
+            </Text>
+          )}
+          <Text style={{ color: theme.textMuted, fontSize: TV ? 13 : 11, fontWeight: '600' }} numberOfLines={1}>
+            {displayChannel?.name ?? ''}
+          </Text>
+          {isLive && (
+            <View style={{ backgroundColor: theme.accent, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}>
+              <Text style={{ color: theme.accentText, fontSize: TV ? 10 : 8, fontWeight: '800', letterSpacing: 0.5 }}>
+                LIVE
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Program title */}
+        <Text style={{ color: theme.text, fontSize: TV ? 20 : 15, fontWeight: '800', lineHeight: TV ? 26 : 20 }} numberOfLines={1}>
+          {info?.programTitle ?? 'No guide data'}
+        </Text>
+
+        {/* Time range + remaining */}
+        {progStart && progEnd ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text style={{ color: theme.textMuted, fontSize: TV ? 12 : 10, fontWeight: '500' }}>
+              {fmtAmPm(progStart)} – {fmtAmPm(progEnd)}
+            </Text>
+            {remaining !== null && (
+              <Text style={{ color: theme.textSub, fontSize: TV ? 12 : 10, fontWeight: '600' }}>
+                {remaining} min
+              </Text>
+            )}
+          </View>
+        ) : null}
+
+        {/* Progress bar */}
+        {progress !== null && (
+          <View style={{ height: 3, backgroundColor: theme.card, borderRadius: 2, marginTop: 2, overflow: 'hidden' }}>
+            <View style={{ width: `${progress * 100}%`, height: '100%', backgroundColor: theme.accent, borderRadius: 2 }} />
+          </View>
+        )}
+      </View>
+    </View>
+  );
+});
+EpgInfoPanel.displayName = 'EpgInfoPanel';
 
 interface EPGGridViewProps {
   getCurrentProgram: (channelId: string) => EPGProgram | null;
@@ -37,6 +181,7 @@ interface EPGGridViewProps {
   navigation?: NativeStackNavigationProp<RootStackParamList>;
   epgLoading?: boolean;
   epgError?: string | null;
+  epgLastUpdated?: number;
   handleManualEpgRefresh?: () => void;
 }
 
@@ -48,7 +193,6 @@ interface ChannelRowData {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const TV = Platform.OS === 'android';
 const CH_COL  = TV ? 320 : 240;  // channel column px
 const SLOT_W  = TV ? 200 : 140;  // 1-hour slot px
 const ROW_H   = TV ? 140 : 90;   // unfocused row height (spacious)
@@ -117,15 +261,15 @@ const ChannelRow = memo<{
       .filter(b => b.left >= -SLOT_W && b.left <= 48 * SLOT_W);
   }, [programs]);
 
-  const rowBg   = isCurrent ? '#121212' : '#0e0e0e';
-  const lBorder = isCurrent ? accent : '#181818';
+  const rowBg   = isCurrent ? '#172840' : '#0d1521';
+  const lBorder = isCurrent ? accent : 'transparent';
 
   const focusedRowStyle = useMemo(() => ({
-    backgroundColor: '#1c1c1c',
+    backgroundColor: '#1a3d6b',  // strong blue — clearly visible
     borderLeftColor: accent,
-    borderLeftWidth: 3,
+    borderLeftWidth: 5,
     transform: [] as any[],
-    elevation: 4,
+    elevation: 6,
   }), [accent]);
 
   return (
@@ -145,10 +289,10 @@ const ChannelRow = memo<{
         )}
 
         {blocks.length > 0 ? blocks.map(b => {
-          const blockBg     = b.isNow ? accent : (isFocused ? '#252525' : '#1a1a1a');
-          const blockBorder = b.isNow ? accent : '#2a2a2a';
-          const titleColor  = b.isNow ? '#0a0a0a' : (isFocused ? '#e5e5e5' : '#888888');
-          const timeColor   = b.isNow ? '#0a0a0aAA' : '#444444';
+          const blockBg     = b.isNow ? accent : (isFocused ? '#1e3558' : '#111b2a');
+          const blockBorder = b.isNow ? accent : (isFocused ? '#2a4870' : '#1c2e42');
+          const titleColor  = b.isNow ? '#ffffff' : (isFocused ? '#e8f0fa' : '#7090b0');
+          const timeColor   = b.isNow ? '#ffffffAA' : (isFocused ? '#5a80a8' : '#3a5068');
 
           return (
             <View
@@ -182,7 +326,7 @@ const ChannelRow = memo<{
       {/* ── Fixed channel column ─────────────────── */}
       <View
         pointerEvents="none"
-        style={[s.chCol, { backgroundColor: isFocused ? '#141414' : '#0a0a0a' }]}
+        style={[s.chCol, { backgroundColor: isFocused ? '#1a3d6b' : (isCurrent ? '#162840' : '#0d1521') }]}
       >
         {channel.logo && !imgErr ? (
           <Image
@@ -201,16 +345,18 @@ const ChannelRow = memo<{
         <View style={s.chMeta}>
           <Text
             style={[s.chName, isFocused && { color: '#f5f5f5' }]}
-            numberOfLines={2}
+            numberOfLines={1}
           >
             {channel.name}
           </Text>
           {nowProgram && (
             <Text style={s.chNow} numberOfLines={1}>{nowProgram.title}</Text>
           )}
-          {channel.group ? (
-            <Text style={s.chGroup} numberOfLines={1}>{channel.group}</Text>
-          ) : null}
+          {channel.catchupAvailable && (
+            <View style={s.catchupBadge}>
+              <Text style={s.catchupText}>◉ CATCHUP</Text>
+            </View>
+          )}
         </View>
 
         {isCurrent && (
@@ -289,6 +435,8 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   navigation,
   epgLoading = false,
   epgError = null,
+  epgLastUpdated = 0,
+  handleManualEpgRefresh,
 }) => {
   const theme        = useThemeStore((st) => st.theme);
   const showEPGGrid  = useUIStore((st) => st.showEPGGrid);
@@ -298,16 +446,32 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   const playlist     = usePlayerStore((st) => st.playlist);
 
   const [selectedGroup, setSelectedGroup] = useState('All');
-  const flashRef    = useRef<FlashList<ChannelRowData>>(null);
-  const hScrollRef  = useRef<ScrollView>(null);
+  const flashRef      = useRef<FlashList<ChannelRowData>>(null);
+  const hScrollRef    = useRef<ScrollView>(null);
+  const groupScrollRef = useRef<ScrollView>(null);
   const [focusedId, setFocusedId]       = useState<string | null>(null);
   const [initFocusId, setInitFocusId]   = useState<string | null>(null);
   const [timePos, setTimePos]           = useState(0);
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const [epgVersion, setEpgVersion]     = useState(0);
+  const [focusedInfo, setFocusedInfo]   = useState<FocusedInfo | null>(null);
 
-  // Update current time position every 5 min
+  // Keep a stable ref to the current channel's group so the open-effect
+  // can read it without taking `channel` as a dep (avoids scroll-jump loops).
+  const currentChannelGroupRef = useRef(channel?.group);
+  currentChannelGroupRef.current = channel?.group;
+
+  // When the EPG opens, switch the group filter to the playing channel's group
+  // so the user immediately sees their channel's playlist section.
   useEffect(() => {
+    if (!showEPGGrid) return;
+    const group = currentChannelGroupRef.current;
+    setSelectedGroup(group && group.trim() ? group : 'All');
+  }, [showEPGGrid]);
+
+  // Update current time position every 5 min — only while grid is visible
+  useEffect(() => {
+    if (!showEPGGrid) return;
     const update = () => {
       const now = new Date();
       setTimePos(12 * SLOT_W + (now.getMinutes() / 60) * SLOT_W);
@@ -315,7 +479,50 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     update();
     const id = setInterval(update, 300_000);
     return () => clearInterval(id);
+  }, [showEPGGrid]);
+
+  // Listen for focus events from the native Kotlin grid
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('EPG_CHANNEL_FOCUS', (data: FocusedInfo) => {
+      setFocusedInfo(data);
+    });
+    return () => sub.remove();
   }, []);
+
+  // For the JS grid path: sync focusedId → focusedInfo
+  useEffect(() => {
+    if (USE_NATIVE_GRID || !focusedId) return;
+    const ch = channels.find(c => c.id === focusedId);
+    if (!ch) return;
+    const now = new Date();
+    const prog = getProgramsForChannel ? getProgramsForChannel(focusedId)
+      .find(p => p.start <= now && p.end > now) : null;
+    setFocusedInfo({
+      channelId: ch.id,
+      channelName: ch.name,
+      channelNumber: channels.indexOf(ch) + 1,
+      programTitle: prog?.title,
+      programDesc:  prog?.description,
+      programStart: prog?.start.getTime(),
+      programEnd:   prog?.end.getTime(),
+    });
+  }, [focusedId, channels, getProgramsForChannel]);
+
+  const groups = useMemo(() => {
+    if (!channels?.length) return ['All'];
+    const g = groupChannelsByCategory(channels);
+    return ['All', ...Array.from(g.keys()).sort()];
+  }, [channels]);
+
+  // Scroll group tab bar to the active tab when selection changes
+  useEffect(() => {
+    const idx = groups.indexOf(selectedGroup);
+    if (idx < 0) return;
+    const TAB_W = TV ? 100 : 76; // approximate tab width including gap
+    setTimeout(() => {
+      groupScrollRef.current?.scrollTo({ x: Math.max(0, idx * TAB_W - 40), animated: true });
+    }, 80);
+  }, [selectedGroup, groups]);
 
   // Scroll to current time when grid opens
   useEffect(() => {
@@ -336,12 +543,6 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     onExitPIP?.();
     setTimeout(() => { try { navigation?.navigate('Settings', { focusTarget: 'epg' }); } catch {} }, 100);
   }, [setShowEPGGrid, onExitPIP, navigation]);
-
-  const groups = useMemo(() => {
-    if (!channels?.length) return ['All'];
-    const g = groupChannelsByCategory(channels);
-    return ['All', ...Array.from(g.keys()).sort()];
-  }, [channels]);
 
   const filteredChannels = useMemo(() => {
     if (!channels?.length) return [];
@@ -459,6 +660,14 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
 
   return (
     <View style={s.root}>
+      {/* ── Info panel ───────────────────────────────────────────────── */}
+      <EpgInfoPanel
+        info={focusedInfo}
+        channel={channel}
+        channels={channels}
+        theme={theme}
+      />
+
       {/* ── Full-screen loading overlay (only when no data at all) ────── */}
       {epgLoading && !hasAnyData && (
         <View pointerEvents="none" style={s.loadingOverlay}>
@@ -484,6 +693,11 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
           ) : null}
         </View>
         <View style={s.headerBtns}>
+          {handleManualEpgRefresh && !epgLoading && (
+            <FocusableItem onPress={handleManualEpgRefresh} style={s.hBtn} focusedStyle={HDR_BTN_FOCUSED}>
+              <Text style={s.hBtnIcon}>↺</Text>
+            </FocusableItem>
+          )}
           <FocusableItem onPress={handleSettings} style={s.hBtn} focusedStyle={HDR_BTN_FOCUSED}>
             <Text style={s.hBtnIcon}>⚙</Text>
           </FocusableItem>
@@ -497,6 +711,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
       {groups.length > 1 && (
         <View style={s.groupBar}>
           <ScrollView
+            ref={groupScrollRef}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}
@@ -535,6 +750,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
           currentChannelId={channel?.id}
           accentColor={theme.accent}
           bgColor={theme.bg}
+          dataVersion={epgLastUpdated}
           onChannelSelect={(channelId) => {
             const ch = channels.find((c) => c.id === channelId);
             if (ch) onChannelSelect(ch);
@@ -578,7 +794,7 @@ export default EPGGridView;
 const s = StyleSheet.create({
   root: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#0d1521',
     zIndex: 25,
     elevation: 25,
   },
@@ -587,38 +803,38 @@ const s = StyleSheet.create({
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 40, elevation: 40,
-    backgroundColor: 'rgba(10,10,10,0.88)',
+    backgroundColor: 'rgba(9,15,24,0.92)',
     justifyContent: 'center', alignItems: 'center', gap: 12,
   },
-  loadingTxt: { color: '#555555', fontSize: TV ? 17 : 14, fontWeight: '600' },
+  loadingTxt: { color: '#607898', fontSize: TV ? 17 : 14, fontWeight: '600' },
 
   loadingBadge: {
     position: 'absolute',
     top: TV ? 24 : 18, right: TV ? 24 : 18,
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: 'rgba(20,20,20,0.92)',
-    borderWidth: 1, borderColor: '#2a2a2a',
+    backgroundColor: 'rgba(13,21,33,0.95)',
+    borderWidth: 1, borderColor: '#1e2e42',
     borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6,
     zIndex: 45, elevation: 45,
   },
-  loadingBadgeTxt: { color: '#888', fontSize: TV ? 12 : 11, fontWeight: '600' },
+  loadingBadgeTxt: { color: '#607898', fontSize: TV ? 12 : 11, fontWeight: '600' },
 
   // Header
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: TV ? 28 : 20,
     paddingVertical: TV ? 18 : 14,
-    backgroundColor: '#0d0d0d',
-    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    backgroundColor: '#090f18',
+    borderBottomWidth: 1, borderBottomColor: '#1e2e42',
   },
   headerTitle: {
-    color: '#f5f5f5',
+    color: '#e8f0fa',
     fontSize: TV ? 26 : 20,
     fontWeight: '800',
     letterSpacing: -0.5,
   },
   headerSub: {
-    color: '#3d3d3d',
+    color: '#405878',
     fontSize: TV ? 14 : 11,
     fontWeight: '500',
     marginTop: 3,
@@ -627,40 +843,40 @@ const s = StyleSheet.create({
   hBtn: {
     width: TV ? 50 : 42, height: TV ? 50 : 42,
     borderRadius: TV ? 12 : 10,
-    backgroundColor: '#161616', borderWidth: 1, borderColor: '#222222',
+    backgroundColor: '#111d2e', borderWidth: 1, borderColor: '#1e2e42',
     justifyContent: 'center', alignItems: 'center',
   },
-  hBtnClose: { backgroundColor: '#141414', borderColor: '#1f1f1f' },
-  hBtnIcon: { color: '#8a8a8a', fontSize: TV ? 20 : 17, fontWeight: '700' },
+  hBtnClose: { backgroundColor: '#0e1928', borderColor: '#1a2838' },
+  hBtnIcon: { color: '#607898', fontSize: TV ? 20 : 17, fontWeight: '700' },
 
   // Group tabs
   groupBar: {
-    backgroundColor: '#0d0d0d',
+    backgroundColor: '#090f18',
     paddingHorizontal: TV ? 24 : 16,
     paddingBottom: TV ? 14 : 10,
-    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    borderBottomWidth: 1, borderBottomColor: '#1e2e42',
   },
   groupTab: {
     paddingHorizontal: TV ? 18 : 12,
     paddingVertical: TV ? 8 : 6,
     borderRadius: 8,
-    backgroundColor: '#111111',
-    borderWidth: 1, borderColor: '#1e1e1e',
+    backgroundColor: '#111d2e',
+    borderWidth: 1, borderColor: '#1e2e42',
     alignItems: 'center',
     minWidth: TV ? 80 : 60,
   },
-  groupTabActive: { backgroundColor: '#161616', borderColor: '#2a2a2a' },
-  groupTabTxt: { color: '#555555', fontSize: TV ? 13 : 11, fontWeight: '700' },
+  groupTabActive: { backgroundColor: '#1a3558', borderColor: '#2a4870' },
+  groupTabTxt: { color: '#507090', fontSize: TV ? 13 : 11, fontWeight: '700' },
   groupTabTxtActive: { color: '#e5e5e5' },
   groupTabLine: {
     width: 16, height: 2, borderRadius: 1,
-    backgroundColor: '#e5e5e5', marginTop: 4,
+    backgroundColor: '#1b90ff', marginTop: 4,
   },
 
   // Error banner
   errBanner: {
-    backgroundColor: 'rgba(239,68,68,0.08)',
-    borderBottomWidth: 1, borderBottomColor: 'rgba(239,68,68,0.2)',
+    backgroundColor: 'rgba(239,68,68,0.10)',
+    borderBottomWidth: 1, borderBottomColor: 'rgba(239,68,68,0.25)',
     paddingHorizontal: TV ? 28 : 20, paddingVertical: 10,
   },
   errTxt: { color: '#f87171', fontSize: TV ? 14 : 12, fontWeight: '500' },
@@ -668,86 +884,94 @@ const s = StyleSheet.create({
   // Time header
   timeHeader: {
     height: HDR_H,
-    backgroundColor: '#0d0d0d',
-    borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
+    backgroundColor: '#090f18',
+    borderBottomWidth: 1, borderBottomColor: '#1e2e42',
     flexDirection: 'row',
     overflow: 'hidden',
   },
   timeSlot: {
     width: SLOT_W, height: HDR_H,
     justifyContent: 'center', alignItems: 'center',
-    borderRightWidth: 1, borderRightColor: '#181818',
+    borderRightWidth: 1, borderRightColor: '#1e2e42',
   },
-  timeSlotNow: { backgroundColor: 'rgba(255,255,255,0.03)' },
-  timeText:    { color: '#666666', fontSize: TV ? 13 : 10, fontWeight: '600', letterSpacing: 0.5 },
-  timeTextNow: { color: '#e5e5e5' },
+  timeSlotNow: { backgroundColor: 'rgba(27,144,255,0.07)' },
+  timeText:    { color: '#607898', fontSize: TV ? 13 : 10, fontWeight: '600', letterSpacing: 0.5 },
+  timeTextNow: { color: '#1b90ff' },
   timeChLabel: {
     position: 'absolute', left: 0, top: 0, bottom: 0, width: CH_COL,
-    borderRightWidth: 1, borderRightColor: '#1a1a1a',
-    backgroundColor: '#0a0a0a',
+    borderRightWidth: 1, borderRightColor: '#1e2e42',
+    backgroundColor: '#0d1521',
     justifyContent: 'center', paddingHorizontal: TV ? 20 : 14, zIndex: 8,
   },
-  timeChLabelTxt: { color: '#444444', fontSize: TV ? 10 : 8, fontWeight: '800', letterSpacing: 2 },
+  timeChLabelTxt: { color: '#405878', fontSize: TV ? 10 : 8, fontWeight: '800', letterSpacing: 2 },
 
   // Row
   row: {
     flexDirection: 'row',
-    borderBottomWidth: 1, borderBottomColor: '#111111',
-    borderLeftWidth: 3, overflow: 'hidden',
+    borderBottomWidth: 1, borderBottomColor: '#141e2d',
+    borderLeftWidth: 5, overflow: 'hidden',
   },
 
   // Program blocks
   block: {
-    position: 'absolute', borderRadius: 8, borderWidth: 1,
+    position: 'absolute', borderRadius: 6, borderWidth: 1,
     paddingHorizontal: 12, paddingVertical: 8,
     justifyContent: 'center', overflow: 'hidden',
   },
   blockTitle: { fontSize: TV ? 15 : 12, fontWeight: '700', lineHeight: TV ? 21 : 16 },
   blockTime:  { fontSize: TV ? 12 : 10, fontWeight: '500', marginTop: 3 },
-  blockDesc:  { color: '#5a5a5a', fontSize: TV ? 12 : 9, marginTop: 5, lineHeight: TV ? 17 : 13 },
+  blockDesc:  { color: '#5a88b0', fontSize: TV ? 12 : 9, marginTop: 5, lineHeight: TV ? 17 : 13 },
   noData: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  noDataText: { color: '#252525', fontSize: TV ? 12 : 10, fontWeight: '600' },
+  noDataText: { color: '#304050', fontSize: TV ? 12 : 10, fontWeight: '600' },
 
-  // Current time line
+  // Current time line (accent blue, not red)
   timeLine: {
     position: 'absolute', top: 0, bottom: 0,
-    width: 2, backgroundColor: '#ef4444', zIndex: 20,
+    width: 2.5, backgroundColor: '#1b90ff', zIndex: 20,
   },
   timeDot: {
     position: 'absolute', top: -4, left: -5,
     width: 11, height: 11, borderRadius: 6,
-    backgroundColor: '#ef4444', borderWidth: 2, borderColor: '#0a0a0a',
+    backgroundColor: '#1b90ff', borderWidth: 2, borderColor: '#0d1521',
   },
 
   // Channel column
   chCol: {
     position: 'absolute', left: 0, top: 0, bottom: 0, width: CH_COL,
-    borderRightWidth: 1, borderRightColor: '#181818',
+    borderRightWidth: 1, borderRightColor: '#1e2e42',
     zIndex: 6, flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: TV ? 16 : 10, gap: 12,
     shadowColor: '#000', shadowOffset: { width: 4, height: 0 },
-    shadowOpacity: 0.6, shadowRadius: 10, elevation: 6,
+    shadowOpacity: 0.7, shadowRadius: 12, elevation: 8,
   },
   chMeta: { flex: 1 },
   chName: {
-    color: '#cccccc',
+    color: '#adbece',
     fontSize: TV ? 14 : 12,
     fontWeight: '700',
     lineHeight: TV ? 20 : 16,
     marginBottom: 2,
   },
-  chNow:  { color: '#666666', fontSize: TV ? 11 : 9, fontWeight: '500' },
-  chGroup:{ color: '#444444', fontSize: TV ? 10 : 8, fontWeight: '500', marginTop: 1 },
+  chNow:  { color: '#5888aa', fontSize: TV ? 11 : 9, fontWeight: '500' },
+  chGroup:{ color: '#405060', fontSize: TV ? 10 : 8, fontWeight: '500', marginTop: 1 },
   logoFallback: {
-    borderRadius: 8, backgroundColor: '#1e1e1e',
-    borderWidth: 1, borderColor: '#2a2a2a',
+    borderRadius: 8, backgroundColor: '#182840',
+    borderWidth: 1, borderColor: '#243650',
     justifyContent: 'center', alignItems: 'center',
   },
-  logoInitials: { color: '#666666', fontSize: TV ? 15 : 12, fontWeight: '800' },
+  logoInitials: { color: '#7898b8', fontSize: TV ? 15 : 12, fontWeight: '800' },
   onNowBadge: {
     position: 'absolute', bottom: 6, right: 8,
     backgroundColor: '#ef4444', borderRadius: 4,
     paddingHorizontal: 6, paddingVertical: 2,
   },
   onNowText: { color: '#ffffff', fontSize: TV ? 9 : 7, fontWeight: '800', letterSpacing: 0.5 },
+  catchupBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#1a3550',
+    borderRadius: 3,
+    paddingHorizontal: 5, paddingVertical: 1,
+    marginTop: 3,
+  },
+  catchupText: { color: '#5aaad0', fontSize: TV ? 9 : 7, fontWeight: '800', letterSpacing: 0.3 },
 });

@@ -1,9 +1,11 @@
 package com.chuchplayer.epg
 
+import android.content.Context
 import android.util.Log
 import androidx.work.*
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import io.realm.Realm
 import kotlinx.coroutines.*
 import okhttp3.*
 import java.util.concurrent.TimeUnit
@@ -11,7 +13,19 @@ import java.util.concurrent.TimeUnit
 class EpgIngestionModule(reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
 
+    init {
+        ensureRealmInitialized(reactContext.applicationContext)
+    }
+
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private fun ensureRealmInitialized(context: Context) {
+        try {
+            Realm.init(context.applicationContext)
+        } catch (_: IllegalStateException) {
+            // Realm is already initialized.
+        }
+    }
 
     companion object {
         private const val TAG            = "EpgIngestionModule"
@@ -65,7 +79,13 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
                     putString("epgUrl", epgUrl)
                 })
 
-                scheduleBackgroundSync(epgUrl, playlistId, channelsJson, datasetSignature)
+                // Schedule background refresh — failure here must NOT fail the promise
+                // because all data is already written and the metadata updated.
+                try {
+                    scheduleBackgroundSync(epgUrl, playlistId, channelsJson, datasetSignature)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Background sync scheduling failed (non-fatal): ${e.message}")
+                }
 
                 promise.resolve(written)
             } catch (t: Throwable) {
@@ -114,21 +134,30 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
         scope.launch {
             try {
                 val ids = (0 until channelIds.size()).mapNotNull { channelIds.getString(it) }
+                Log.d(TAG, "queryPrograms: playlist=$playlistId channels=$ids")
                 val now = System.currentTimeMillis()
                 val lowerBound = now - HOURS_BEFORE * 3_600_000L
                 val upperBound = now + HOURS_AFTER * 3_600_000L
 
                 val realm = openRealm()
                 try {
-                    val result = Arguments.createMap()
-                    ids.forEach { channelId ->
-                        val programs = realm.where(ProgramRealm::class.java)
-                            .equalTo("playlistId", playlistId)
-                            .equalTo("channelId", channelId)
-                            .greaterThan("end", java.util.Date(lowerBound))
-                            .lessThan("start", java.util.Date(upperBound))
-                            .findAll()
+                    // Single query for all channels instead of N per-channel queries
+                    val idsArray = ids.toTypedArray()
+                    val allPrograms = realm.where(ProgramRealm::class.java)
+                        .equalTo("playlistId", playlistId)
+                        .`in`("channelId", idsArray)
+                        .greaterThan("end", java.util.Date(lowerBound))
+                        .lessThan("start", java.util.Date(upperBound))
+                        .findAll()
 
+                    // Group results in Kotlin before bridging to JS
+                    val grouped = ids.associateWith { mutableListOf<ProgramRealm>() }
+                    allPrograms.forEach { p -> grouped[p.channelId]?.add(p) }
+
+                    val result = Arguments.createMap()
+                    var totalPrograms = 0
+                    ids.forEach { channelId ->
+                        val programs = grouped[channelId] ?: emptyList()
                         val arr = Arguments.createArray()
                         programs.forEach { p ->
                             arr.pushMap(Arguments.createMap().apply {
@@ -140,8 +169,11 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
                                 putDouble("end", p.end.time.toDouble())
                             })
                         }
+                        totalPrograms += arr.size()
+                        Log.d(TAG, "queryPrograms: channel=$channelId results=${arr.size()}")
                         result.putArray(channelId, arr)
                     }
+                    Log.d(TAG, "queryPrograms: playlist=$playlistId totalChannels=${ids.size} totalPrograms=$totalPrograms")
                     promise.resolve(result)
                 } finally {
                     realm.close()
@@ -269,11 +301,15 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
             return
         }
 
+        // datasetSignature encodes all channel IDs joined with "|" and can easily
+        // exceed WorkManager's 10 KB Data limit for large playlists. Store only a
+        // compact hash — it is only used for cache-invalidation comparison.
+        val sigHash = datasetSignature?.hashCode()?.toString() ?: ""
         val input = workDataOf(
             "epgUrl"           to epgUrl,
             "playlistId"       to playlistId,
             "channelsPath"     to channelsFile.absolutePath,
-            "datasetSignature" to (datasetSignature ?: "")
+            "datasetSignature" to sigHash
         )
         val work = PeriodicWorkRequestBuilder<EpgSyncWorker>(SYNC_HOURS, TimeUnit.HOURS, 15, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())

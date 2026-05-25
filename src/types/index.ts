@@ -6,6 +6,7 @@ export interface Channel {
   group?: string;
   tvgId?: string;
   number?: string | number;
+  catchupAvailable?: boolean;
 }
 
 export interface EPGProgram {
