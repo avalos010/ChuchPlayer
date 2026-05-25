@@ -96,9 +96,10 @@ export const usePlayerHandlers = (
       return;
     }
 
-    // Show EPG overlay (channel logo and options menu)
+    // Toggle the non-blocking info card at the top
     if (channel) {
-      setShowEPG(true);
+      const currentlyShowing = useUIStore.getState().showInfoBar;
+      useUIStore.getState().setShowInfoBar(!currentlyShowing);
     }
   }, [
     showEPG,
@@ -196,10 +197,10 @@ export const usePlayerHandlers = (
   ]);
 
   const showControlsOnFocus = useCallback(() => {
-    if (!showEPG && channel) {
-      setShowEPG(true);
+    if (channel) {
+      useUIStore.getState().setShowInfoBar(true);
     }
-  }, [showEPG, channel, setShowEPG]);
+  }, [channel]);
 
   return {
     handleScreenPress,

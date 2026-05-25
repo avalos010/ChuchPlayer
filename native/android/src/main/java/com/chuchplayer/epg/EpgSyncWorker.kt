@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import io.realm.Realm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.*
@@ -21,6 +22,11 @@ class EpgSyncWorker(context: Context, params: WorkerParameters) :
     }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        try {
+            Realm.init(applicationContext)
+        } catch (_: IllegalStateException) {
+            // Realm is already initialized.
+        }
         val epgUrl          = inputData.getString("epgUrl")          ?: return@withContext Result.failure()
         val playlistId      = inputData.getString("playlistId")      ?: return@withContext Result.failure()
         val channelsPath    = inputData.getString("channelsPath")    ?: return@withContext Result.failure()

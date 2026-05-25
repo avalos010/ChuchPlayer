@@ -1,5 +1,5 @@
-import { NativeModules } from 'react-native';
-import { EPGProgram } from '../types';
+import { NativeModules } from "react-native";
+import { EPGProgram } from "../types";
 
 const { EpgIngestionModule } = NativeModules;
 
@@ -21,7 +21,9 @@ export type MetadataRow = {
 
 const getNativeModule = () => {
   if (!EpgIngestionModule) {
-    throw new Error('EpgIngestionModule is not available. Ensure a native build is installed.');
+    throw new Error(
+      "EpgIngestionModule is not available. Ensure a native build is installed.",
+    );
   }
   return EpgIngestionModule;
 };
@@ -30,7 +32,9 @@ export const ensureEpgDatabase = async (): Promise<void> => {
   getNativeModule();
 };
 
-export const clearProgramsForPlaylist = async (_playlistId: string): Promise<void> => {
+export const clearProgramsForPlaylist = async (
+  _playlistId: string,
+): Promise<void> => {
   // Programs are managed entirely by the native module; clearing is not exposed via bridge.
   // The native module deduplicates on insert so stale data is harmless.
 };
@@ -38,13 +42,13 @@ export const clearProgramsForPlaylist = async (_playlistId: string): Promise<voi
 export const setPlaylistMetadata = async (
   _playlistId: string,
   _lastUpdated: number,
-  _sourceSignature?: string | null
+  _sourceSignature?: string | null,
 ): Promise<void> => {
   // Metadata is written by the native module after ingestion.
 };
 
 export const getPlaylistMetadata = async (
-  playlistId: string
+  playlistId: string,
 ): Promise<MetadataRow | null> => {
   try {
     const meta = await getNativeModule().getNativePlaylistMetadata(playlistId);
@@ -61,7 +65,7 @@ export const getPlaylistMetadata = async (
 
 export const insertProgramsExclusive = async (
   _playlistId: string,
-  _programs: InsertableProgram[]
+  _programs: InsertableProgram[],
 ): Promise<number> => {
   // Insertion is handled by the native module during ingestion.
   return 0;
@@ -69,17 +73,33 @@ export const insertProgramsExclusive = async (
 
 export const queryProgramsForChannels = async (
   playlistId: string,
-  channelIds: string[]
+  channelIds: string[],
 ): Promise<Record<string, EPGProgram[]>> => {
   if (channelIds.length === 0) return {};
 
   try {
-    const result: Record<string, { id: string; channelId: string; title: string; description: string; start: number; end: number }[]> =
-      await getNativeModule().queryPrograms(playlistId, channelIds);
+    const result: Record<
+      string,
+      {
+        id: string;
+        channelId: string;
+        title: string;
+        description: string;
+        start: number;
+        end: number;
+      }[]
+    > = await getNativeModule().queryPrograms(playlistId, channelIds);
+
+    console.log(
+      `[EPG] queryProgramsForChannels playlist=${playlistId} requested=${channelIds.length} returned=${Object.keys(result).length} keys=${Object.keys(result).join(",")}`,
+    );
 
     const grouped: Record<string, EPGProgram[]> = {};
     for (const channelId of channelIds) {
       const programs = result[channelId] ?? [];
+      console.log(
+        `[EPG] queryProgramsForChannels channel=${channelId} count=${programs.length}`,
+      );
       grouped[channelId] = programs.map((p) => ({
         id: p.id,
         channelId: p.channelId,
@@ -91,25 +111,27 @@ export const queryProgramsForChannels = async (
     }
     return grouped;
   } catch (e) {
-    console.warn('[EPG] queryProgramsForChannels failed:', e);
+    console.warn("[EPG] queryProgramsForChannels failed:", e);
     return {};
   }
 };
 
 export const pruneOldPrograms = async (
   _playlistId: string,
-  _cutoffTimestamp: number
+  _cutoffTimestamp: number,
 ): Promise<void> => {
   // Native module handles time-window filtering during ingestion and query.
 };
 
-export const debugDatabaseContents = async (playlistId?: string): Promise<void> => {
+export const debugDatabaseContents = async (
+  playlistId?: string,
+): Promise<void> => {
   try {
     if (playlistId) {
       const meta = await getPlaylistMetadata(playlistId);
-      console.log('[DB DEBUG] Metadata:', meta);
+      console.log("[DB DEBUG] Metadata:", meta);
     }
   } catch (e) {
-    console.error('[DB DEBUG] Error:', e);
+    console.error("[DB DEBUG] Error:", e);
   }
 };

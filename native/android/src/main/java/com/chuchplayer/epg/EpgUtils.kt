@@ -17,7 +17,9 @@ const val BATCH_SIZE = 2000
 fun getRealmConfig(): RealmConfiguration =
     RealmConfiguration.Builder()
         .name("default.realm")
-        .schemaVersion(1)
+        .schemaVersion(2)
+        .deleteRealmIfMigrationNeeded()
+        .modules(Realm.getDefaultModule())
         .build()
 
 fun openRealm(): Realm = Realm.getInstance(getRealmConfig())
@@ -52,8 +54,8 @@ fun parseChannelsJson(channelsJson: String): Map<String, ChannelInfo> {
             // id is second priority
             normalizeKeys(id).forEach { k -> index.putIfAbsent(k, info) }
 
-            // name is lowest priority, only when no tvgId
-            if (name.isNotEmpty() && tvgId == null) {
+            // name is lowest priority, but still useful as a fallback when tvgId/id do not match
+            if (name.isNotEmpty()) {
                 normalizeKeys(name).forEach { k -> index.putIfAbsent(k, info) }
             }
         }
@@ -81,6 +83,11 @@ fun parseXmlStream(
     val currentText = StringBuilder()
     var eventType = parser.eventType
 
+    var totalPrograms = 0
+    var noChannelCount = 0
+    var invalidDateCount = 0
+    var outsideWindowCount = 0
+
     while (eventType != XmlPullParser.END_DOCUMENT) {
         when (eventType) {
             XmlPullParser.START_TAG -> {
@@ -101,7 +108,20 @@ fun parseXmlStream(
                     "title" -> currentProgram?.title = currentText.toString().trim()
                     "desc"  -> currentProgram?.description = currentText.toString().trim()
                     "programme" -> {
-                        currentProgram?.build(lowerBound, upperBound)?.let { programs.add(it) }
+                        currentProgram?.let { program ->
+                            totalPrograms++
+                            val built = program.build(lowerBound, upperBound)
+                            if (built != null) {
+                                programs.add(built)
+                            } else {
+                                when (program.rejectionReason) {
+                                    "no-channel" -> noChannelCount++
+                                    "invalid-date" -> invalidDateCount++
+                                    "outside-window" -> outsideWindowCount++
+                                    else -> {}
+                                }
+                            }
+                        }
                         currentProgram = null
                     }
                 }
@@ -110,6 +130,13 @@ fun parseXmlStream(
         }
         eventType = parser.next()
     }
+
+    Log.d(
+        TAG,
+        "parseXmlStream playlist=$playlistId parsed=${programs.size} matching programs from=$totalPrograms entries " +
+            "noChannel=$noChannelCount invalidDate=$invalidDateCount outsideWindow=$outsideWindowCount"
+    )
+
     return programs
 }
 
@@ -190,12 +217,28 @@ class ProgramBuilder(
 ) {
     var title: String = ""
     var description: String? = null
+    var rejectionReason: String? = null
 
     fun build(lowerBound: Long, upperBound: Long): ProgramData? {
-        val info = matchChannel(epgChannelId) ?: return null
-        val startMs = parseXmltvDate(start) ?: return null
-        val endMs   = parseXmltvDate(stop) ?: (startMs + 3_600_000L)
-        if (endMs < lowerBound || startMs > upperBound) return null
+        rejectionReason = null
+        val info = matchChannel(epgChannelId)
+        if (info == null) {
+            rejectionReason = "no-channel"
+            return null
+        }
+
+        val startMs = parseXmltvDate(start)
+        if (startMs == null) {
+            rejectionReason = "invalid-date"
+            return null
+        }
+
+        val endMs = parseXmltvDate(stop) ?: (startMs + 3_600_000L)
+        if (endMs < lowerBound || startMs > upperBound) {
+            rejectionReason = "outside-window"
+            return null
+        }
+
         return ProgramData(
             playlistId   = playlistId,
             channelId    = info.id,

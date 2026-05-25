@@ -4,8 +4,6 @@ import { Channel, EPGProgram } from '../types';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
 import { useEPGStore } from '../store/useEPGStore';
-import { saveLastChannel } from '../utils/storage';
-import { showError } from '../utils/toast';
 
 interface UseChannelNavigationProps {
   videoRef: React.RefObject<Video | null>;
@@ -33,7 +31,7 @@ export const useChannelNavigation = ({
   const channelSwitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleChannelSelect = useCallback(async (selectedChannel: Channel) => {
-    const { channel: currentChannel, setChannel, setLoading, setError, setIsPlaying } = usePlayerStore.getState();
+    const { channel: currentChannel } = usePlayerStore.getState();
     const { showEPGGrid, setShowChannelList, setShowEPGGrid } = useUIStore.getState();
 
     if (!hasUserInteracted) setHasUserInteracted(true);
@@ -53,11 +51,7 @@ export const useChannelNavigation = ({
       }
     }
 
-    setLoading(true);
-    setError(null);
-    setIsPlaying(false);
-
-    setChannel(selectedChannel);
+    usePlayerStore.setState({ loading: true, error: null, isPlaying: false, channel: selectedChannel });
     setShowChannelList(false);
     setShowChannelInfoCard?.(true);
 
@@ -97,14 +91,9 @@ export const useChannelNavigation = ({
         }
       }
 
-      const { setChannel, setLoading, setError, setIsPlaying } = usePlayerStore.getState();
-      setLoading(true);
-      setError(null);
-      setIsPlaying(false);
-
       exitPIP?.();
 
-      setChannel(newChannel);
+      usePlayerStore.setState({ loading: true, error: null, isPlaying: false, channel: newChannel });
       const program = getCurrentProgram(newChannel.id);
       setCurrentProgram(program);
       setShowChannelInfoCard?.(true);

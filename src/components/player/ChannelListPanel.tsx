@@ -1,36 +1,46 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import React, {
+  useRef, useEffect, useState, useCallback, useMemo,
+} from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Platform,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  Platform, Animated,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import FocusableItem from '../FocusableItem';
 import ChannelListItem from '../ChannelListItem';
-import { Channel } from '../../types';
+import { Channel, EPGProgram } from '../../types';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
-import { useThemeStore } from '../../store/useThemeStore';
-import { Theme } from '../../theme/themes';
 import { useFavorites } from '../../hooks/useFavorites';
 import { useRecentChannels } from '../../hooks/useRecentChannels';
 
 interface ChannelListPanelProps {
   onChannelSelect: (channel: Channel) => void;
+  getCurrentProgram?: (channelId: string) => EPGProgram | null;
+  epgLastUpdated?: number;
 }
 
 type TabId = 'all' | 'fav' | 'recent';
+
 const TV = Platform.OS === 'android';
 const PANEL_W = TV ? 340 : 300;
+const SLIDE_DURATION = 250;
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'fav', label: '★ Fav' },
+  { id: 'all',    label: 'All' },
+  { id: 'fav',    label: '★ Fav' },
   { id: 'recent', label: '🕒 Recent' },
 ];
 
-const ChannelListPanel: React.FC<ChannelListPanelProps> = ({ onChannelSelect }) => {
-  const theme  = useThemeStore((s) => s.theme);
-  const styles = useMemo(() => createStyles(theme), [theme]);
+// ─── Focused styles (static — don't recreate per render) ─────────────────────
+const TAB_FOCUSED      = { backgroundColor: '#1e293b', borderColor: '#334155', borderWidth: 1.5, transform: [] as any[], elevation: 3 };
+const TAB_ACT_FOCUSED  = { backgroundColor: '#0284c7', borderColor: '#0ea5e9', borderWidth: 1.5, transform: [] as any[], elevation: 4 };
 
+const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
+  onChannelSelect,
+  getCurrentProgram,
+  epgLastUpdated,
+}) => {
   const showGroupsPlaylists    = useUIStore((s) => s.showGroupsPlaylists);
   const setShowGroupsPlaylists = useUIStore((s) => s.setShowGroupsPlaylists);
   const selectedGroup          = useUIStore((s) => s.selectedGroup);
@@ -43,15 +53,47 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({ onChannelSelect }) 
   const { recentChannels } = useRecentChannels(channels);
 
   const currentChannelId = channel?.id ?? '';
-  const listRef = useRef<FlashList<Channel>>(null);
-  const [isLoading, setIsLoading]     = useState(true);
-  const [preferredFocusId, setPreferredFocusId] = useState<string | null>(null);
-  const preferredFocusIdRef = useRef(preferredFocusId);
-  const [activeTab, setActiveTab]     = useState<TabId>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const listRef    = useRef<FlashList<Channel>>(null);
+  const slideAnim  = useRef(new Animated.Value(-PANEL_W)).current;
+  const didScrollRef = useRef(false);
 
-  useEffect(() => { preferredFocusIdRef.current = preferredFocusId; }, [preferredFocusId]);
+  const [activeTab,    setActiveTab]    = useState<TabId>('all');
+  const [searchQuery,  setSearchQuery]  = useState('');
+  // Which item should get hasTVPreferredFocus on this open
+  const [focusTargetId, setFocusTargetId] = useState<string | null>(null);
+  const focusGivenRef = useRef(false); // cleared once one item takes focus
 
+  // ── Slide animation ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (showChannelList) {
+      slideAnim.setValue(-PANEL_W);
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: SLIDE_DURATION,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [showChannelList]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Reset state when panel opens ────────────────────────────────────────────
+  useEffect(() => {
+    if (!showChannelList) {
+      setSearchQuery('');
+      didScrollRef.current   = false;
+      focusGivenRef.current  = false;
+      return;
+    }
+    // Set focus target to current channel (or first channel)
+    const target = currentChannelId || filteredChannels[0]?.id || null;
+    setFocusTargetId(target);
+    focusGivenRef.current = false;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showChannelList]);
+
+  // ── Reset search when tab changes ───────────────────────────────────────────
+  useEffect(() => { setSearchQuery(''); }, [activeTab]);
+
+  // ── Filtered channel list ───────────────────────────────────────────────────
   const filteredChannels = useMemo(() => {
     let base: Channel[];
     if (activeTab === 'fav') base = favoriteChannels;
@@ -65,97 +107,103 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({ onChannelSelect }) 
       const q = searchQuery.trim().toLowerCase();
       base = base.filter((ch) => ch.name.toLowerCase().includes(q));
     }
+    // Ensure current channel is visible in 'all' tab even if group-filtered out
     if (activeTab === 'all' && channel && !searchQuery.trim() && !base.some((ch) => ch.id === channel.id)) {
       return [channel, ...base];
     }
     return base;
   }, [channels, selectedGroup, channel, activeTab, favoriteChannels, recentChannels, searchQuery]);
 
-  useEffect(() => {
-    if (!showChannelList) { setIsLoading(true); setPreferredFocusId(null); return; }
-    setIsLoading(false);
-    const hasCurrent = filteredChannels.some((ch) => ch.id === currentChannelId);
-    const defaultId = hasCurrent ? currentChannelId : filteredChannels[0]?.id ?? null;
-    setPreferredFocusId((prev) => prev ?? defaultId);
-  }, [showChannelList, filteredChannels, currentChannelId]);
-
-  useEffect(() => { setSearchQuery(''); }, [activeTab]);
-
-  const handleChannelFocus = useCallback((channelId: string) => {
-    if (preferredFocusId) setPreferredFocusId(null);
-  }, [preferredFocusId]);
-
+  // ── Scroll to current channel after panel opens ─────────────────────────────
   const initialScrollIndex = useMemo(() => {
     if (!showChannelList) return undefined;
     const idx = filteredChannels.findIndex((c) => c.id === currentChannelId);
-    return idx >= 0 ? idx : undefined;
+    return idx > 0 ? idx : undefined;
   }, [showChannelList, filteredChannels, currentChannelId]);
 
+  // ── Callbacks ───────────────────────────────────────────────────────────────
   const handleToggleFavorite = useCallback((ch: Channel) => toggleFavorite(ch), [toggleFavorite]);
 
-  const tabFocusedStyle = useMemo(() => ({
-    backgroundColor: theme.card,
-    borderColor: theme.focused,
-    borderWidth: 1.5,
-    transform: [] as any[],
-    elevation: 4,
-  }), [theme]);
+  const handleChannelFocus = useCallback((channelId: string) => {
+    // Once any item naturally gets focus, stop forcing preferred focus
+    if (!focusGivenRef.current) {
+      focusGivenRef.current = true;
+      setFocusTargetId(null);
+    }
+  }, []);
 
-  const tabActiveFocusedStyle = useMemo(() => ({
-    backgroundColor: theme.accent,
-    borderColor: theme.focused,
-    borderWidth: 1.5,
-    transform: [] as any[],
-    elevation: 4,
-  }), [theme]);
+  // ── extraData: re-render items when EPG or favorites change ─────────────────
+  const extraData = useMemo(() => ({
+    currentChannelId,
+    isFavorite,
+    epgLastUpdated,
+  }), [currentChannelId, isFavorite, epgLastUpdated]);
 
+  // ── Render item ─────────────────────────────────────────────────────────────
   const renderChannelItem = useCallback(
-    ({ item, index }: { item: Channel; index: number }) => (
-      <ChannelListItem
-        channel={item}
-        onPress={onChannelSelect}
-        onFocus={handleChannelFocus}
-        hasTVPreferredFocus={preferredFocusIdRef.current === item.id}
-        isCurrentChannel={item.id === currentChannelId}
-        isFavorite={isFavorite(item.id)}
-        onToggleFavorite={handleToggleFavorite}
-        index={index}
-      />
-    ),
-    [currentChannelId, onChannelSelect, handleChannelFocus, isFavorite, handleToggleFavorite],
+    ({ item, index }: { item: Channel; index: number }) => {
+      const isTarget = !focusGivenRef.current && focusTargetId === item.id;
+      const prog = getCurrentProgram ? getCurrentProgram(item.id) : null;
+      return (
+        <ChannelListItem
+          channel={item}
+          onPress={onChannelSelect}
+          onFocus={handleChannelFocus}
+          hasTVPreferredFocus={isTarget}
+          isCurrentChannel={item.id === currentChannelId}
+          isFavorite={isFavorite(item.id)}
+          onToggleFavorite={handleToggleFavorite}
+          index={index}
+          currentProgram={prog}
+        />
+      );
+    },
+    // focusTargetId in deps so preferred-focus updates when panel reopens
+    [currentChannelId, onChannelSelect, handleChannelFocus, isFavorite, handleToggleFavorite, getCurrentProgram, focusTargetId],
   );
 
   const keyExtractor = useCallback((item: Channel) => item.id, []);
 
   if (!showChannelList) return null;
 
-  const groupLabel = selectedGroup && selectedGroup !== 'All Channels' ? selectedGroup : 'All Channels';
+  const groupLabel = selectedGroup && selectedGroup !== 'All Channels'
+    ? selectedGroup
+    : 'All Channels';
+
+  // Offset right when groups panel is also open
+  const groupsOffset = showGroupsPlaylists ? (TV ? 260 : 220) : 0;
 
   return (
     <>
+      {/* Backdrop */}
       <TouchableOpacity
-        style={styles.backdrop}
+        style={st.backdrop}
         activeOpacity={1}
         onPress={() => setShowChannelList(false)}
       />
-      <View style={[styles.panel, { left: showGroupsPlaylists ? (TV ? 260 : 220) : 0 }]}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
+
+      {/* Sliding panel */}
+      <Animated.View
+        style={[
+          st.panel,
+          { left: groupsOffset, transform: [{ translateX: slideAnim }] },
+        ]}
+      >
+        {/* ── Header ──────────────────────────────────────────────────────── */}
+        <View style={st.header}>
+          <Text style={st.headerTitle} numberOfLines={1}>
             {activeTab === 'fav' ? 'Favorites' : activeTab === 'recent' ? 'Recent' : groupLabel}
           </Text>
-          <Text style={styles.headerCount}>
-            {filteredChannels.length}
-          </Text>
+          <Text style={st.headerCount}>{filteredChannels.length}</Text>
         </View>
 
-        {/* Search bar */}
-        <View style={styles.searchWrap}>
-          <Text style={styles.searchIcon}>🔍</Text>
+        {/* ── Search ──────────────────────────────────────────────────────── */}
+        <View style={st.searchWrap}>
+          <Text style={st.searchIcon}>🔍</Text>
           <TextInput
-            style={styles.searchInput}
-            placeholder="Search..."
-            placeholderTextColor={theme.textMuted}
+            style={st.searchInput}
+            placeholder="Search channels..."
+            placeholderTextColor="#334155"
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCorrect={false}
@@ -164,40 +212,42 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({ onChannelSelect }) 
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Text style={styles.clearTxt}>✕</Text>
+              <Text style={st.clearBtn}>✕</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabsRow}>
+        {/* ── Tabs ────────────────────────────────────────────────────────── */}
+        <View style={st.tabsRow}>
           {TABS.map((tab) => (
             <FocusableItem
               key={tab.id}
               onPress={() => setActiveTab(tab.id)}
-              style={[styles.tab, activeTab === tab.id && styles.tabActive]}
-              focusedStyle={activeTab === tab.id ? tabActiveFocusedStyle : tabFocusedStyle}
+              style={[st.tab, activeTab === tab.id && st.tabActive]}
+              focusedStyle={activeTab === tab.id ? TAB_ACT_FOCUSED : TAB_FOCUSED}
             >
-              <Text style={[styles.tabTxt, activeTab === tab.id && styles.tabTxtActive]}>
+              <Text style={[st.tabTxt, activeTab === tab.id && st.tabTxtActive]}>
                 {tab.label}
               </Text>
             </FocusableItem>
           ))}
+
+          {/* Groups button — opens the groups/playlists panel */}
+          {activeTab === 'all' && !showGroupsPlaylists && (
+            <FocusableItem
+              onPress={() => setShowGroupsPlaylists(true)}
+              style={st.groupsBtn}
+              focusedStyle={TAB_FOCUSED}
+            >
+              <Text style={st.groupsBtnTxt}>≡ Groups</Text>
+            </FocusableItem>
+          )}
         </View>
 
-        {/* Content */}
-        {isLoading ? (
-          <View style={styles.skeletonWrap}>
-            {Array.from({ length: 8 }).map((_, i) => (
-              <View key={i} style={styles.skeletonItem}>
-                <View style={styles.skeletonLogo} />
-                <View style={[styles.skeletonLine, { width: '60%' }]} />
-              </View>
-            ))}
-          </View>
-        ) : filteredChannels.length === 0 ? (
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyTxt}>
+        {/* ── List ────────────────────────────────────────────────────────── */}
+        {filteredChannels.length === 0 ? (
+          <View style={st.emptyWrap}>
+            <Text style={st.emptyTxt}>
               {searchQuery.trim()
                 ? `No results for "${searchQuery}"`
                 : activeTab === 'fav'
@@ -208,149 +258,138 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({ onChannelSelect }) 
             </Text>
           </View>
         ) : (
-          <View style={{ flex: 1 }}>
-            {!showGroupsPlaylists && activeTab === 'all' && (
-              <FocusableItem
-                onFocus={() => { if (showChannelList) setShowGroupsPlaylists(true); }}
-                onPress={() => { if (!showGroupsPlaylists) setShowGroupsPlaylists(true); }}
-                style={styles.leftEdgeZone}
-                focusedStyle={{ backgroundColor: 'transparent' }}
-              >
-                <View style={{ flex: 1 }} />
-              </FocusableItem>
-            )}
-            <FlashList
-              ref={listRef}
-              data={filteredChannels}
-              keyExtractor={keyExtractor}
-              renderItem={renderChannelItem}
-              initialScrollIndex={initialScrollIndex}
-              estimatedItemSize={TV ? 76 : 62}
-              contentContainerStyle={{ paddingVertical: 6 }}
-              keyboardShouldPersistTaps="handled"
-              extraData={isFavorite}
-            />
-          </View>
+          <FlashList
+            ref={listRef}
+            data={filteredChannels}
+            keyExtractor={keyExtractor}
+            renderItem={renderChannelItem}
+            estimatedItemSize={TV ? 80 : 66}
+            initialScrollIndex={initialScrollIndex}
+            contentContainerStyle={{ paddingVertical: 6 }}
+            keyboardShouldPersistTaps="handled"
+            extraData={extraData}
+            scrollEventThrottle={16}
+          />
         )}
-      </View>
+      </Animated.View>
     </>
   );
 };
 
 export default ChannelListPanel;
 
-function createStyles(theme: Theme) {
-  return StyleSheet.create({
-    backdrop: {
-      ...StyleSheet.absoluteFillObject,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      zIndex: 15,
-      elevation: 15,
-    },
-    panel: {
-      position: 'absolute',
-      top: 0, bottom: 0,
-      width: PANEL_W,
-      backgroundColor: theme.surface,
-      borderRightWidth: 1,
-      borderRightColor: theme.border,
-      zIndex: 20,
-      elevation: 20,
-    },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: TV ? 16 : 12,
-      paddingTop: TV ? 18 : 14,
-      paddingBottom: TV ? 10 : 8,
-    },
-    headerTitle: {
-      color: theme.text,
-      fontSize: TV ? 20 : 17,
-      fontWeight: '800',
-      flex: 1,
-    },
-    headerCount: {
-      color: theme.textMuted,
-      fontSize: TV ? 13 : 11,
-      fontWeight: '600',
-    },
-    searchWrap: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: theme.card,
-      borderRadius: 8,
-      marginHorizontal: TV ? 10 : 8,
-      marginBottom: TV ? 8 : 6,
-      paddingHorizontal: 10,
-      gap: 6,
-      height: TV ? 38 : 32,
-      borderWidth: 1,
-      borderColor: theme.border,
-    },
-    searchIcon: { fontSize: 13 },
-    searchInput: {
-      flex: 1,
-      color: theme.text,
-      fontSize: TV ? 14 : 12,
-      fontWeight: '500',
-      paddingVertical: 0,
-    },
-    clearTxt: { color: theme.textMuted, fontSize: 12, fontWeight: '700', padding: 2 },
-    tabsRow: {
-      flexDirection: 'row',
-      marginHorizontal: TV ? 10 : 8,
-      marginBottom: TV ? 8 : 6,
-      gap: 6,
-    },
-    tab: {
-      flex: 1,
-      paddingVertical: TV ? 8 : 6,
-      borderRadius: 6,
-      backgroundColor: theme.card,
-      borderWidth: 1,
-      borderColor: theme.border,
-      alignItems: 'center',
-    },
-    tabActive: {
-      backgroundColor: theme.accent,
-      borderColor: theme.accent,
-    },
-    tabTxt: { color: theme.textMuted, fontSize: TV ? 13 : 11, fontWeight: '700' },
-    tabTxtActive: { color: theme.accentText },
-    skeletonWrap: { padding: 8, gap: 4 },
-    skeletonItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      paddingHorizontal: 12,
-      height: TV ? 72 : 58,
-    },
-    skeletonLogo: {
-      width: TV ? 48 : 40,
-      height: TV ? 48 : 40,
-      borderRadius: 8,
-      backgroundColor: theme.card,
-    },
-    skeletonLine: {
-      height: TV ? 14 : 12,
-      borderRadius: 4,
-      backgroundColor: theme.card,
-    },
-    emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-    emptyTxt: {
-      color: theme.textMuted,
-      fontSize: TV ? 14 : 12,
-      fontWeight: '500',
-      textAlign: 'center',
-      lineHeight: 22,
-    },
-    leftEdgeZone: {
-      position: 'absolute',
-      top: 0, bottom: 0, left: -20, width: 20,
-      backgroundColor: 'transparent',
-      zIndex: 1,
-    },
-  });
-}
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const st = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    zIndex: 15,
+    elevation: 15,
+  },
+  panel: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: PANEL_W,
+    backgroundColor: '#080c14',
+    borderRightWidth: 1,
+    borderRightColor: '#1e293b',
+    zIndex: 20,
+    elevation: 20,
+  },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: TV ? 16 : 12,
+    paddingTop: TV ? 20 : 14,
+    paddingBottom: TV ? 10 : 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#0f172a',
+  },
+  headerTitle: {
+    color: '#e2e8f0',
+    fontSize: TV ? 18 : 15,
+    fontWeight: '800',
+    flex: 1,
+    letterSpacing: -0.3,
+  },
+  headerCount: {
+    color: '#334155',
+    fontSize: TV ? 13 : 11,
+    fontWeight: '700',
+  },
+
+  // Search
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0d1117',
+    borderRadius: 8,
+    marginHorizontal: TV ? 10 : 8,
+    marginTop: TV ? 10 : 8,
+    marginBottom: TV ? 6 : 4,
+    paddingHorizontal: 10,
+    gap: 6,
+    height: TV ? 38 : 32,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+  },
+  searchIcon: { fontSize: 13 },
+  searchInput: {
+    flex: 1,
+    color: '#94a3b8',
+    fontSize: TV ? 14 : 12,
+    fontWeight: '500',
+    paddingVertical: 0,
+  },
+  clearBtn: { color: '#334155', fontSize: 12, fontWeight: '700', padding: 4 },
+
+  // Tabs
+  tabsRow: {
+    flexDirection: 'row',
+    marginHorizontal: TV ? 10 : 8,
+    marginBottom: TV ? 8 : 6,
+    gap: 5,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: TV ? 7 : 5,
+    borderRadius: 6,
+    backgroundColor: '#0d1117',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    alignItems: 'center',
+  },
+  tabActive: {
+    backgroundColor: '#0c2240',
+    borderColor: '#0ea5e9',
+  },
+  tabTxt: { color: '#334155', fontSize: TV ? 12 : 10, fontWeight: '700' },
+  tabTxtActive: { color: '#38bdf8' },
+
+  // Groups button
+  groupsBtn: {
+    paddingVertical: TV ? 7 : 5,
+    paddingHorizontal: TV ? 10 : 8,
+    borderRadius: 6,
+    backgroundColor: '#0d1117',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupsBtnTxt: { color: '#334155', fontSize: TV ? 12 : 10, fontWeight: '700' },
+
+  // Empty
+  emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  emptyTxt: {
+    color: '#334155',
+    fontSize: TV ? 13 : 11,
+    fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+});

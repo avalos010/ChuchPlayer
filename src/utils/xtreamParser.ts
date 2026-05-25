@@ -160,6 +160,7 @@ export const parseXtreamStreams = (
       logo: stream.stream_icon || undefined,
       group: group !== 'Uncategorized' ? group : 'Uncategorized',
       tvgId: stream.epg_channel_id || stream.custom_sid || undefined,
+      catchupAvailable: stream.tv_archive > 0,
     });
   });
 

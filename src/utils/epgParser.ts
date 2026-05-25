@@ -1,12 +1,12 @@
-import { InteractionManager } from 'react-native';
-import { Channel } from '../types';
-import { parseXmltvStream, XmltvProgram } from './streamingXmlParser';
+import { InteractionManager } from "react-native";
+import { Channel } from "../types";
+import { parseXmltvStream, XmltvProgram } from "./streamingXmlParser";
 import {
   InsertableProgram,
   insertProgramsExclusive,
   ensureEpgDatabase,
   debugDatabaseContents,
-} from '../database/epgDatabase';
+} from "../database/epgDatabase";
 
 const HOURS_BEFORE = 12;
 const HOURS_AFTER = 36;
@@ -32,17 +32,23 @@ const normalizeKeyVariants = (value: string): string[] => {
     return [];
   }
   const lower = trimmed.toLowerCase();
-  const sanitized = lower.replace(/[^a-z0-9]/g, '');
+  const sanitized = lower.replace(/[^a-z0-9]/g, "");
   if (sanitized && sanitized !== lower) {
     return [lower, sanitized];
   }
   return [lower];
 };
 
-const buildChannelIndex = (channels: Channel[]): Map<string, ChannelIndexEntry> => {
+const buildChannelIndex = (
+  channels: Channel[],
+): Map<string, ChannelIndexEntry> => {
   const index = new Map<string, ChannelIndexEntry>();
 
-  const register = (key: string | undefined, priority: number, channel: Channel) => {
+  const register = (
+    key: string | undefined,
+    priority: number,
+    channel: Channel,
+  ) => {
     if (!key) return;
     normalizeKeyVariants(key).forEach((variant) => {
       const existing = index.get(variant);
@@ -55,9 +61,7 @@ const buildChannelIndex = (channels: Channel[]): Map<string, ChannelIndexEntry> 
   channels.forEach((channel) => {
     register(channel.tvgId, 1, channel);
     register(channel.id, 2, channel);
-    if (!channel.tvgId) {
-      register(channel.name, 3, channel);
-    }
+    register(channel.name, 3, channel);
   });
 
   return index;
@@ -65,7 +69,7 @@ const buildChannelIndex = (channels: Channel[]): Map<string, ChannelIndexEntry> 
 
 const resolveChannel = (
   epgChannelId: string,
-  channelIndex: Map<string, ChannelIndexEntry>
+  channelIndex: Map<string, ChannelIndexEntry>,
 ): Channel | undefined => {
   for (const variant of normalizeKeyVariants(epgChannelId)) {
     const entry = channelIndex.get(variant);
@@ -78,15 +82,15 @@ const resolveChannel = (
 
 const decodeXmlEntities = (value: string): string =>
   value
-    .replace(/<!\[CDATA\[(.*?)\]\]>/gs, '$1')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
+    .replace(/<!\[CDATA\[(.*?)\]\]>/gs, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&#39;/g, "'")
     .replace(/&#34;/g, '"')
-    .replace(/&#38;/g, '&');
+    .replace(/&#38;/g, "&");
 
 const cleanXmlValue = (value?: string): string | undefined => {
   if (!value) return undefined;
@@ -95,10 +99,11 @@ const cleanXmlValue = (value?: string): string | undefined => {
 };
 
 const formatTimezone = (timezone?: string): string => {
-  if (!timezone) return 'Z';
-  if (timezone === 'Z' || timezone === '+0000' || timezone === '-0000') return 'Z';
+  if (!timezone) return "Z";
+  if (timezone === "Z" || timezone === "+0000" || timezone === "-0000")
+    return "Z";
   const match = timezone.match(/^([+-])(\d{2}):?(\d{2})$/);
-  if (!match) return 'Z';
+  if (!match) return "Z";
   const [, sign, hours, minutes] = match;
   return `${sign}${hours}:${minutes}`;
 };
@@ -107,7 +112,7 @@ const parseXmltvDate = (value?: string): Date | null => {
   if (!value) return null;
   const trimmed = value.trim();
   const compactMatch = trimmed.match(
-    /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:\s?([+-]\d{4}|[+-]\d{2}:\d{2}|Z))?/
+    /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:\s?([+-]\d{4}|[+-]\d{2}:\d{2}|Z))?/,
   );
   if (compactMatch) {
     const [, year, month, day, hour, minute, second, timezone] = compactMatch;
@@ -125,15 +130,16 @@ const parseXmltvDate = (value?: string): Date | null => {
 
   // Some providers use ISO strings without separators like 2024-03-21T050000Z or similar.
   const normalized = trimmed
-    .replace(/[-:]/g, '')
-    .replace(/T/, '')
-    .replace(/Z$/, '+0000');
+    .replace(/[-:]/g, "")
+    .replace(/T/, "")
+    .replace(/Z$/, "+0000");
 
   const normalizedMatch = normalized.match(
-    /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})([+-]\d{4})?$/
+    /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})([+-]\d{4})?$/,
   );
   if (normalizedMatch) {
-    const [, year, month, day, hour, minute, second, timezone] = normalizedMatch;
+    const [, year, month, day, hour, minute, second, timezone] =
+      normalizedMatch;
     const iso = `${year}-${month}-${day}T${hour}:${minute}:${second}${formatTimezone(timezone)}`;
     const date = new Date(iso);
     if (!Number.isNaN(date.getTime())) {
@@ -153,34 +159,54 @@ const filterProgramWindow = (start: Date, end: Date): boolean => {
 
 type ConvertResult =
   | { insertable: InsertableProgram; reason?: undefined }
-  | { insertable: null; reason: 'no-channel' | 'invalid-dates' | 'outside-window' | 'no-channel-data'; details?: Record<string, unknown> };
+  | {
+      insertable: null;
+      reason:
+        | "no-channel"
+        | "invalid-dates"
+        | "outside-window"
+        | "no-channel-data";
+      details?: Record<string, unknown>;
+    };
 
 const convertProgramToInsert = (
   program: XmltvProgram,
   channelIndex: Map<string, ChannelIndexEntry>,
-  playlistId: string
+  playlistId: string,
 ): ConvertResult => {
   const matchedChannel = resolveChannel(program.channel, channelIndex);
   if (!matchedChannel) {
-    return { insertable: null, reason: 'no-channel', details: { xmlChannel: program.channel } };
+    return {
+      insertable: null,
+      reason: "no-channel",
+      details: { xmlChannel: program.channel },
+    };
   }
 
   const startDate = parseXmltvDate(program.start);
   const endDate = parseXmltvDate(program.stop ?? program.start);
 
   if (!startDate || !endDate) {
-    return { insertable: null, reason: 'invalid-dates', details: { start: program.start, stop: program.stop } };
+    return {
+      insertable: null,
+      reason: "invalid-dates",
+      details: { start: program.start, stop: program.stop },
+    };
   }
 
   if (!filterProgramWindow(startDate, endDate)) {
-    return { insertable: null, reason: 'outside-window', details: { start: startDate.getTime(), end: endDate.getTime() } };
+    return {
+      insertable: null,
+      reason: "outside-window",
+      details: { start: startDate.getTime(), end: endDate.getTime() },
+    };
   }
 
   return {
     insertable: {
       playlistId,
       channelId: matchedChannel.id,
-      title: cleanXmlValue(program.title) ?? 'Untitled',
+      title: cleanXmlValue(program.title) ?? "Untitled",
       description: cleanXmlValue(program.desc),
       start: startDate.getTime(),
       end: endDate.getTime(),
@@ -198,7 +224,9 @@ export const ingestXmltvToDatabase = async ({
   playlistId: string;
   channels: Channel[];
 }): Promise<number> => {
-  console.log(`[EPG] Starting ingestion for playlist ${playlistId} with ${channels.length} channels`);
+  console.log(
+    `[EPG] Starting ingestion for playlist ${playlistId} with ${channels.length} channels`,
+  );
 
   const channelIndex = buildChannelIndex(channels);
   console.log(`[EPG] Built channel index with ${channelIndex.size} entries`);
@@ -220,7 +248,10 @@ export const ingestXmltvToDatabase = async ({
 
   const runAfterInteractions = (): Promise<void> =>
     new Promise((resolve) => {
-      if (InteractionManager && typeof InteractionManager.runAfterInteractions === 'function') {
+      if (
+        InteractionManager &&
+        typeof InteractionManager.runAfterInteractions === "function"
+      ) {
         InteractionManager.runAfterInteractions(() => resolve());
         return;
       }
@@ -239,9 +270,11 @@ export const ingestXmltvToDatabase = async ({
     const batch = queue.splice(0, batchSize);
     logMemoryUsage(queue, `Before flush (batch size: ${batch.length})`);
     console.log(`[EPG] flushing ${batch.length} programs to database`);
-    const added = await runOnNextTick(() => insertProgramsExclusive(playlistId, batch));
+    const added = await runOnNextTick(() =>
+      insertProgramsExclusive(playlistId, batch),
+    );
     inserted += added;
-    logMemoryUsage(queue, 'After flush');
+    logMemoryUsage(queue, "After flush");
     await yieldToEventLoop();
   };
 
@@ -288,7 +321,7 @@ export const ingestXmltvToDatabase = async ({
         }
       })
       .catch((error) => {
-        console.warn('[EPG] Flush failed:', error);
+        console.warn("[EPG] Flush failed:", error);
       });
     return flushChain;
   };
@@ -314,11 +347,14 @@ export const ingestXmltvToDatabase = async ({
         }
       } else {
         switch (result.reason) {
-          case 'no-channel': {
+          case "no-channel": {
             unmatchedNoChannel++;
             if (result.details?.xmlChannel) {
               const key = String(result.details.xmlChannel);
-              if (unmatchedSamples[key] === undefined && Object.keys(unmatchedSamples).length < 5) {
+              if (
+                unmatchedSamples[key] === undefined &&
+                Object.keys(unmatchedSamples).length < 5
+              ) {
                 unmatchedSamples[key] = 1;
               } else if (unmatchedSamples[key] !== undefined) {
                 unmatchedSamples[key] += 1;
@@ -326,10 +362,10 @@ export const ingestXmltvToDatabase = async ({
             }
             break;
           }
-          case 'invalid-dates':
+          case "invalid-dates":
             unmatchedInvalidDates++;
             break;
-          case 'outside-window':
+          case "outside-window":
             unmatchedOutsideWindow++;
             break;
           default:
@@ -341,13 +377,15 @@ export const ingestXmltvToDatabase = async ({
       const now = Date.now();
 
       // Flush if we have programs and enough time has passed since last flush
-      if (queue.length > 0 && (now - lastFlushTime) >= MIN_TIME_BETWEEN_FLUSHES) {
+      if (queue.length > 0 && now - lastFlushTime >= MIN_TIME_BETWEEN_FLUSHES) {
         console.log(`[EPG] chunk processed, flushing ${queue.length} programs`);
         await scheduleFlush(true);
         lastFlushTime = Date.now();
       } else if (queue.length >= MAX_QUEUE_SIZE) {
         // Emergency flush if queue is critically full, regardless of timing
-        console.warn(`[EPG] emergency flush: queue size ${queue.length} >= ${MAX_QUEUE_SIZE}`);
+        console.warn(
+          `[EPG] emergency flush: queue size ${queue.length} >= ${MAX_QUEUE_SIZE}`,
+        );
         await scheduleFlush(true);
         lastFlushTime = Date.now();
       }
@@ -368,10 +406,15 @@ export const ingestXmltvToDatabase = async ({
     - Unmatched (other): ${unmatchedOther}`);
 
   if (Object.keys(unmatchedSamples).length > 0) {
-    console.log('[EPG] Sample unmatched channel IDs from XML:', unmatchedSamples);
+    console.log(
+      "[EPG] Sample unmatched channel IDs from XML:",
+      unmatchedSamples,
+    );
   }
 
-  console.log(`[EPG] Ingestion complete for playlist ${playlistId}: ${inserted} programs inserted`);
+  console.log(
+    `[EPG] Ingestion complete for playlist ${playlistId}: ${inserted} programs inserted`,
+  );
   await debugDatabaseContents(playlistId);
 
   return inserted;
