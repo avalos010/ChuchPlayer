@@ -171,11 +171,10 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({ onChannelSelect }) 
 
         {/* Tabs */}
         <View style={styles.tabsRow}>
-          {TABS.map((tab, idx) => (
+          {TABS.map((tab) => (
             <FocusableItem
               key={tab.id}
               onPress={() => setActiveTab(tab.id)}
-              hasTVPreferredFocus={TV && idx === 0 && showChannelList}
               style={[styles.tab, activeTab === tab.id && styles.tabActive]}
               focusedStyle={activeTab === tab.id ? tabActiveFocusedStyle : tabFocusedStyle}
             >

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,9 +14,10 @@ import {
   View,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RouteProp } from '@react-navigation/native';
 import FocusableItem from '../components/FocusableItem';
 import { getSettings, saveSettings, getPlaylists, savePlaylist, deletePlaylist } from '../utils/storage';
-import { RootStackParamList, Settings, Playlist, PlaylistSourceType } from '../types';
+import { RootStackParamList, Settings, Playlist, PlaylistSourceType, SettingsFocusTarget } from '../types';
 import { showError, showSuccess } from '../utils/toast';
 import { fetchM3UPlaylist } from '../utils/m3uParser';
 import { fetchXtreamPlaylist } from '../utils/xtreamParser';
@@ -28,6 +29,7 @@ import { useSleepTimer } from '../hooks/useSleepTimer';
 
 interface SettingsScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Settings'>;
+  route: RouteProp<RootStackParamList, 'Settings'>;
 }
 
 const TV = Platform.OS === 'android';
@@ -52,6 +54,14 @@ const DANGER_FOCUSED = {
   elevation: 6,
 };
 
+const ROW_FOCUSED = {
+  backgroundColor: '#161616',
+  borderColor: '#ffffff',
+  borderWidth: 1.5,
+  transform: [] as any[],
+  elevation: 4,
+};
+
 // ─── Reusable components ──────────────────────────────────────────────────────
 
 const SectionTitle: React.FC<{ label: string }> = ({ label }) => (
@@ -73,19 +83,34 @@ const SettingRow: React.FC<{
   desc?: string;
   right: React.ReactNode;
   top?: boolean;
-}> = ({ title, desc, right, top }) => (
-  <View style={[s.settingRow, top && s.settingRowTop]}>
-    <View style={{ flex: 1 }}>
-      <Text style={s.settingTitle}>{title}</Text>
-      {desc && <Text style={s.settingDesc}>{desc}</Text>}
+  onPress?: () => void;
+}> = ({ title, desc, right, top, onPress }) => {
+  const content = (
+    <View style={[s.settingRow, top && !onPress && s.settingRowTop]}>
+      <View style={{ flex: 1 }}>
+        <Text style={s.settingTitle}>{title}</Text>
+        {desc && <Text style={s.settingDesc}>{desc}</Text>}
+      </View>
+      <View pointerEvents={TV && onPress ? 'none' : 'auto'}>
+        {right}
+      </View>
     </View>
-    {right}
-  </View>
-);
+  );
+
+  if (TV && onPress) {
+    return (
+      <FocusableItem onPress={onPress} style={[s.settingRowFocusWrap, top && s.settingRowTop]} focusedStyle={ROW_FOCUSED}>
+        {content}
+      </FocusableItem>
+    );
+  }
+
+  return content;
+};
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
-const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
+const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) => {
   const [settings, setSettings] = useState<Settings>({
     autoPlay: true,
     showEPG: false,
@@ -117,6 +142,14 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const [pinModalVisible,    setPinModalVisible]    = useState(false);
   const [pinInput,           setPinInput]           = useState('');
   const [pinConfirm,         setPinConfirm]         = useState('');
+  const [landingFocusConsumed, setLandingFocusConsumed] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const backBtnRef = useRef<any>(null);
+  const addPlaylistRef = useRef<any>(null);
+  const infoBarTimeoutRef = useRef<any>(null);
+  const epgRefreshRef = useRef<any>(null);
+  const helpRemoteRef = useRef<any>(null);
+  const sectionOffsetsRef = useRef<Partial<Record<SettingsFocusTarget | 'top', number>>>({});
 
   const { themeId, customAccent, customBg, setTheme, setCustom, resetTheme } = useThemeStore();
   const [customAccentInput, setCustomAccentInput] = useState(customAccent);
@@ -124,6 +157,53 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 
   const { setTimer: setSleepTimer } = useSleepTimer();
   const hasPlayer = !!usePlayerStore.getState().channel;
+  const focusTarget = route.params?.focusTarget;
+
+  const setSectionOffset = useCallback(
+    (key: SettingsFocusTarget | 'top', y: number) => {
+      sectionOffsetsRef.current[key] = y;
+    },
+    []
+  );
+
+  const scrollToSection = useCallback((key: SettingsFocusTarget | 'top') => {
+    const y = sectionOffsetsRef.current[key] ?? 0;
+    scrollRef.current?.scrollTo({
+      y: Math.max(0, y - (TV ? 20 : 12)),
+      animated: true,
+    });
+  }, []);
+
+  const focusLandingTarget = useCallback((target?: SettingsFocusTarget) => {
+    if (!TV || modalVisible || pinModalVisible) return;
+
+    const resolvedTarget = target ?? (hasPlayer ? 'back' : 'addPlaylist');
+    const targetMap: Record<SettingsFocusTarget | 'backFallback', { section: SettingsFocusTarget | 'top'; ref: React.RefObject<any> }> = {
+      back: { section: 'top', ref: backBtnRef },
+      addPlaylist: { section: 'addPlaylist', ref: addPlaylistRef },
+      interface: { section: 'interface', ref: infoBarTimeoutRef },
+      epg: { section: 'epg', ref: epgRefreshRef },
+      help: { section: 'help', ref: helpRemoteRef },
+      backFallback: { section: 'addPlaylist', ref: addPlaylistRef },
+    };
+
+    const config = resolvedTarget === 'back' && !hasPlayer
+      ? targetMap.backFallback
+      : targetMap[resolvedTarget];
+
+    setTimeout(() => {
+      scrollToSection(config.section);
+      config.ref.current?.focus?.();
+      setLandingFocusConsumed(true);
+    }, 220);
+  }, [hasPlayer, modalVisible, pinModalVisible, scrollToSection]);
+
+  const shouldPreferFocus = useCallback((target: SettingsFocusTarget) => {
+    if (!TV || modalVisible || pinModalVisible || landingFocusConsumed) return false;
+    const resolvedTarget = focusTarget ?? (hasPlayer ? 'back' : 'addPlaylist');
+    if (resolvedTarget === 'back' && !hasPlayer) return target === 'addPlaylist';
+    return resolvedTarget === target;
+  }, [focusTarget, hasPlayer, landingFocusConsumed, modalVisible, pinModalVisible]);
 
   const loadPlaylists = useCallback(async () => {
     setLoadingPlaylists(true);
@@ -152,6 +232,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   useEffect(() => {
     if (!loadingPlaylists && playlists.length === 0) setModalVisible(true);
   }, [loadingPlaylists, playlists.length]);
+
+  useEffect(() => {
+    setLandingFocusConsumed(false);
+    focusLandingTarget(focusTarget);
+  }, [focusLandingTarget, focusTarget]);
 
   const updateSetting = async <K extends keyof Settings>(key: K, value: Settings[K]) => {
     const prev = settings;
@@ -345,13 +430,16 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
 
   return (
     <View style={s.root}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={s.scroll}>
+      <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={s.scroll}>
+
+        <View onLayout={(e) => setSectionOffset('top', e.nativeEvent.layout.y)} />
 
         {/* ── Back to player ───────────────────────────── */}
         {hasPlayer && (
           <FocusableItem
+            ref={backBtnRef}
             onPress={() => navigation.navigate('Player', {})}
-            hasTVPreferredFocus={TV && hasPlayer && !modalVisible}
+            hasTVPreferredFocus={shouldPreferFocus('back')}
             style={s.backBtn}
             focusedStyle={BTN_FOCUSED}
           >
@@ -381,14 +469,17 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           />
         )}
 
-        <FocusableItem
-          onPress={() => setModalVisible(true)}
-          hasTVPreferredFocus={TV && !hasPlayer && !modalVisible}
-          style={s.addBtn}
-          focusedStyle={BTN_FOCUSED}
-        >
-          <Text style={s.addBtnTxt}>+ Add Playlist</Text>
-        </FocusableItem>
+        <View onLayout={(e) => setSectionOffset('addPlaylist', e.nativeEvent.layout.y)}>
+          <FocusableItem
+            ref={addPlaylistRef}
+            onPress={() => setModalVisible(true)}
+            hasTVPreferredFocus={shouldPreferFocus('addPlaylist')}
+            style={s.addBtn}
+            focusedStyle={BTN_FOCUSED}
+          >
+            <Text style={s.addBtnTxt}>+ Add Playlist</Text>
+          </FocusableItem>
+        </View>
 
         <Divider />
 
@@ -498,6 +589,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           <SettingRow
             title="Auto Play"
             desc="Start playing automatically when opening a channel"
+            onPress={() => updateSetting('autoPlay', !settings.autoPlay)}
             right={
               <Switch
                 value={settings.autoPlay}
@@ -512,6 +604,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             title="Hardware Decoder"
             desc="Use device GPU for video decoding (recommended for 4K)"
             top
+            onPress={() => updateSetting('hardwareDecoder', !(settings.hardwareDecoder ?? true))}
             right={
               <Switch
                 value={settings.hardwareDecoder ?? true}
@@ -551,6 +644,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         <Divider />
 
         {/* ══ INTERFACE ═══════════════════════════════════ */}
+        <View onLayout={(e) => setSectionOffset('interface', e.nativeEvent.layout.y)} />
         <SectionTitle label="Interface" />
         <Card>
           <View>
@@ -559,11 +653,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
               How long the channel info bar stays visible
             </Text>
             <View style={s.chipRow}>
-              {infoBarOptions.map(opt => (
+              {infoBarOptions.map((opt, idx) => (
                 <FocusableItem
                   key={opt.value}
+                  ref={idx === 0 ? infoBarTimeoutRef : undefined}
                   onPress={() => updateSetting('infoBarTimeoutSeconds', opt.value)}
                   style={[s.chip, (settings.infoBarTimeoutSeconds ?? 6) === opt.value && s.chipActive]}
+                  hasTVPreferredFocus={idx === 0 && shouldPreferFocus('interface')}
                   focusedStyle={BTN_FOCUSED}
                 >
                   <Text style={[s.chipTxt, (settings.infoBarTimeoutSeconds ?? 6) === opt.value && s.chipTxtActive]}>
@@ -577,6 +673,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             title="Show Channel Numbers"
             desc="Display channel numbers in the sidebar"
             top
+            onPress={() => updateSetting('showChannelNumbers', !(settings.showChannelNumbers ?? false))}
             right={
               <Switch
                 value={settings.showChannelNumbers ?? false}
@@ -608,6 +705,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
             title="Show EPG Guide"
             desc="Display the program guide when available"
             top
+            onPress={() => updateSetting('showEPG', !settings.showEPG)}
             right={
               <Switch
                 value={settings.showEPG}
@@ -661,6 +759,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           <SettingRow
             title="Multi-Screen Mode"
             desc="Watch up to 4 channels at once"
+            onPress={() => updateSetting('multiScreenEnabled', !settings.multiScreenEnabled)}
             right={
               <Switch
                 value={settings.multiScreenEnabled}
@@ -691,6 +790,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         <Divider />
 
         {/* ══ EPG ═════════════════════════════════════════ */}
+        <View onLayout={(e) => setSectionOffset('epg', e.nativeEvent.layout.y)} />
         <SectionTitle label="EPG" />
 
         <Card style={{ marginBottom: 10 }}>
@@ -700,11 +800,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           </RowBetween>
           <Text style={[s.settingDesc, { marginBottom: 14 }]}>How often to refresh the program guide</Text>
           <View style={s.chipRow}>
-            {[120, 180, 240, 360, 480].map(min => (
+            {[120, 180, 240, 360, 480].map((min, idx) => (
               <FocusableItem
                 key={`epg-${min}`}
+                ref={idx === 0 ? epgRefreshRef : undefined}
                 onPress={() => updateSetting('epgRefreshIntervalMinutes', min)}
                 style={[s.chip, settings.epgRefreshIntervalMinutes === min && s.chipActive]}
+                hasTVPreferredFocus={idx === 0 && shouldPreferFocus('epg')}
                 focusedStyle={BTN_FOCUSED}
               >
                 <Text style={[s.chipTxt, settings.epgRefreshIntervalMinutes === min && s.chipTxtActive]}>
@@ -757,6 +859,15 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
           <SettingRow
             title="Enable Parental PIN"
             desc="Require a 4-digit PIN to access protected content"
+            onPress={() => {
+              if (settings.parentalPinEnabled ?? false) {
+                updateSetting('parentalPinEnabled', false);
+                updateSetting('parentalPinHash', '');
+                setTimeout(() => showSuccess('Parental lock disabled.'), 100);
+              } else {
+                setPinModalVisible(true);
+              }
+            }}
             right={
               <Switch
                 value={settings.parentalPinEnabled ?? false}
@@ -791,6 +902,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         <Divider />
 
         {/* ══ HELP ════════════════════════════════════════ */}
+        <View onLayout={(e) => setSectionOffset('help', e.nativeEvent.layout.y)} />
         <SectionTitle label="Help" />
 
         <FocusableItem
@@ -806,10 +918,12 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
         </FocusableItem>
 
         <FocusableItem
+          ref={helpRemoteRef}
           onPress={() => Alert.alert(
             'TV Remote Controls',
             'Navigation:\n• D-Pad: Move between items\n• Center/OK: Select\n• Back: Previous screen\n\nPlayer:\n• Center/OK: Play / Pause\n• D-Pad Up/Down: Switch channel\n• D-Pad Left: Open channel list\n• INFO key: Program details\n• Long press EPG block: Program details\n• Back: Open program guide',
           )}
+          hasTVPreferredFocus={shouldPreferFocus('help')}
           style={[s.card, s.helpBtn]}
           focusedStyle={BTN_FOCUSED}
         >
@@ -1000,6 +1114,13 @@ const s = StyleSheet.create({
   divider: { height: 1, backgroundColor: '#141414', marginVertical: TV ? 28 : 22 },
 
   settingRow: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  settingRowFocusWrap: {
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginHorizontal: -12,
+    marginVertical: -10,
+  },
   settingRowTop: { paddingTop: 18, marginTop: 18, borderTopWidth: 1, borderTopColor: '#1a1a1a' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 20 },
   settingTitle: { color: '#e5e5e5', fontSize: TV ? 17 : 15, fontWeight: '700', marginBottom: 4 },

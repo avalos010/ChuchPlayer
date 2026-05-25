@@ -61,7 +61,14 @@ export interface Settings {
   sleepTimerMinutes?: number;
 }
 
+export type SettingsFocusTarget =
+  | 'back'
+  | 'addPlaylist'
+  | 'interface'
+  | 'epg'
+  | 'help';
+
 export type RootStackParamList = {
   Player: { channel?: Channel };
-  Settings: undefined;
+  Settings: { focusTarget?: SettingsFocusTarget } | undefined;
 };

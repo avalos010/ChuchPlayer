@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { Platform, BackHandler } from 'react-native';
-import KeyEvent from 'react-native-keyevent';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { usePlayerStore } from '../store/usePlayerStore';
@@ -220,29 +219,6 @@ export const useKeyboardNavigation = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoRef]); // stable — reads state via getState() on each keypress
 
-  // Android TV: DPAD via KeyEvent — registered once, reads latest handlers via ref
-  useEffect(() => {
-    if (Platform.OS !== 'android') return undefined;
-
-    try {
-      if (typeof KeyEvent === 'undefined' || !KeyEvent) return undefined;
-
-      const keyDownListener = (keyEvent: any) => {
-        const { keyCode } = keyEvent;
-        const h = handlersRef.current;
-        // DPAD_LEFT=21, DPAD_UP=19, DPAD_DOWN=20
-        if (keyCode === 21) h.handleLeftDpad();
-        else if (keyCode === 19) h.handleUpDpad(h.exitPIP);
-        else if (keyCode === 20) h.handleDownDpad(h.exitPIP);
-      };
-
-      KeyEvent.onKeyDownListener(keyDownListener);
-      return () => KeyEvent.removeKeyDownListener();
-    } catch {
-      return undefined;
-    }
-  }, []); // registered exactly once — no re-registration on overlay state changes
-
   // Android back button — reads current state via getState() to avoid stale closures
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -285,4 +261,3 @@ export const useKeyboardNavigation = ({
     return () => backHandler.remove();
   }, [navigation]); // only re-register when navigation instance changes
 };
-

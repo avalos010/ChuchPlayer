@@ -68,9 +68,11 @@ const ActionBtn: React.FC<{
   icon: string;
   label: string;
   active?: boolean;
-}> = ({ onPress, icon, label, active }) => (
+  hasTVPreferredFocus?: boolean;
+}> = ({ onPress, icon, label, active, hasTVPreferredFocus }) => (
   <FocusableItem
     onPress={onPress}
+    hasTVPreferredFocus={hasTVPreferredFocus}
     style={[s.actionBtn, active ? s.actionBtnActive : null]}
     focusedStyle={BTN_FOCUSED}
   >
@@ -103,7 +105,7 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
   const close    = useCallback(() => setShowEPG(false), [setShowEPG]);
   const settings = useCallback(() => {
     setShowEPG(false);
-    try { navigation?.navigate('Settings'); } catch {}
+    try { navigation?.navigate('Settings', { focusTarget: 'interface' }); } catch {}
   }, [setShowEPG, navigation]);
 
   const upcoming = useMemo(() => {
@@ -250,7 +252,12 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
                   : 'Stretch'
               }
             />
-            <ActionBtn onPress={settings} icon="⚙" label="Settings" />
+            <ActionBtn
+              onPress={settings}
+              icon="⚙"
+              label="Settings"
+              hasTVPreferredFocus={TV}
+            />
             <ActionBtn onPress={close}    icon="←" label="Close" />
           </View>
 

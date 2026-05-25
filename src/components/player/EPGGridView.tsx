@@ -24,9 +24,9 @@ import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { groupChannelsByCategory } from '../../utils/m3uParser';
-import NativeEpgGrid from './NativeEpgGrid';
+import NativeEpgGrid, { isNativeEpgGridAvailable } from './NativeEpgGrid';
 
-const USE_NATIVE_GRID = Platform.OS === 'android';
+const USE_NATIVE_GRID = isNativeEpgGridAvailable;
 
 interface EPGGridViewProps {
   getCurrentProgram: (channelId: string) => EPGProgram | null;
@@ -334,7 +334,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   const handleSettings = useCallback(() => {
     setShowEPGGrid(false);
     onExitPIP?.();
-    setTimeout(() => { try { navigation?.navigate('Settings'); } catch {} }, 100);
+    setTimeout(() => { try { navigation?.navigate('Settings', { focusTarget: 'epg' }); } catch {} }, 100);
   }, [setShowEPGGrid, onExitPIP, navigation]);
 
   const groups = useMemo(() => {
@@ -507,7 +507,6 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
                 <FocusableItem
                   key={g}
                   onPress={() => setSelectedGroup(g)}
-                  hasTVPreferredFocus={idx === 0 && showEPGGrid}
                   style={[s.groupTab, active && s.groupTabActive]}
                   focusedStyle={{ backgroundColor: '#1f1f1f', borderColor: theme.accent, borderWidth: 2, transform: [], elevation: 4 }}
                 >

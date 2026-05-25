@@ -46,22 +46,34 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   const opacity        = useRef(new Animated.Value(1)).current;
   const hideTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [progress, setProgress] = React.useState(0);
+  const [actionsFocused, setActionsFocused] = React.useState(false);
 
   const scheduleHide = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    if (timeoutSeconds === 0 || actionsFocused) return;
     hideTimerRef.current = setTimeout(() => {
       Animated.timing(opacity, { toValue: 0, duration: 400, useNativeDriver: true }).start(() =>
         setShowInfoBar(false)
       );
     }, timeoutSeconds * 1000);
-  }, [opacity, setShowInfoBar, timeoutSeconds]);
+  }, [actionsFocused, opacity, setShowInfoBar, timeoutSeconds]);
+
+  const handleActionFocus = useCallback(() => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    setActionsFocused(true);
+    Animated.timing(opacity, { toValue: 1, duration: 150, useNativeDriver: true }).start();
+  }, [opacity]);
+
+  const handleActionBlur = useCallback(() => {
+    setActionsFocused(false);
+  }, []);
 
   useEffect(() => {
     if (!showInfoBar) return;
     Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
     scheduleHide();
     return () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); };
-  }, [showInfoBar, scheduleHide, opacity]);
+  }, [showInfoBar, scheduleHide, opacity, actionsFocused]);
 
   useEffect(() => {
     if (!currentProgram) { setProgress(0); return; }
@@ -130,19 +142,34 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
 
       {/* Action buttons */}
       <View style={styles.actions}>
-        <FocusableItem onPress={onToggleFavorite} style={styles.actionBtn} focusedStyle={btnFocusedStyle}>
+        <FocusableItem
+          onPress={onToggleFavorite}
+          onFocus={handleActionFocus}
+          onBlur={handleActionBlur}
+          hasTVPreferredFocus={TV && showInfoBar}
+          style={styles.actionBtn}
+          focusedStyle={btnFocusedStyle}
+        >
           <Text style={[styles.actionIcon, isFavorite && styles.actionIconFav]}>
             {isFavorite ? '★' : '☆'}
           </Text>
         </FocusableItem>
-        <FocusableItem onPress={onSleepTimer} style={styles.actionBtn} focusedStyle={btnFocusedStyle}>
+        <FocusableItem
+          onPress={onSleepTimer}
+          onFocus={handleActionFocus}
+          onBlur={handleActionBlur}
+          style={styles.actionBtn}
+          focusedStyle={btnFocusedStyle}
+        >
           <Text style={styles.actionIcon}>💤</Text>
         </FocusableItem>
         <FocusableItem
           onPress={() => {
             setShowInfoBar(false);
-            setTimeout(() => navigation?.navigate('Settings'), 100);
+            setTimeout(() => navigation?.navigate('Settings', { focusTarget: 'interface' }), 100);
           }}
+          onFocus={handleActionFocus}
+          onBlur={handleActionBlur}
           style={styles.actionBtn}
           focusedStyle={btnFocusedStyle}
         >
@@ -233,8 +260,8 @@ function createStyles(theme: Theme) {
       gap: TV ? 6 : 4,
     },
     actionBtn: {
-      width: TV ? 38 : 30,
-      height: TV ? 38 : 30,
+      width: TV ? 46 : 30,
+      height: TV ? 46 : 30,
       borderRadius: 8,
       backgroundColor: theme.card,
       borderWidth: 1,

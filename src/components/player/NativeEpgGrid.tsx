@@ -1,19 +1,31 @@
 import React, { useEffect, useMemo } from 'react';
-import { requireNativeComponent, ViewStyle, DeviceEventEmitter, Platform } from 'react-native';
+import {
+  requireNativeComponent,
+  ViewStyle,
+  DeviceEventEmitter,
+  Platform,
+  UIManager,
+} from 'react-native';
 import { Channel } from '../../types';
 
-// Only require the native view on Android — requireNativeComponent throws on web/iOS
-const NativeView =
-  Platform.OS === 'android'
-    ? requireNativeComponent<{
-        style?: ViewStyle;
-        playlistId: string;
-        channels: string;
-        currentChannelId?: string;
-        accentColor?: string;
-        bgColor?: string;
-      }>('EpgGridView')
-    : null;
+type NativeEpgGridViewProps = {
+  style?: ViewStyle;
+  playlistId: string;
+  channels: string;
+  currentChannelId?: string;
+  accentColor?: string;
+  bgColor?: string;
+};
+
+export const isNativeEpgGridAvailable =
+  Platform.OS === 'android' &&
+  typeof UIManager.getViewManagerConfig === 'function' &&
+  !!UIManager.getViewManagerConfig('EpgGridView');
+
+// Only require the native view when Android has actually registered it.
+const NativeView = isNativeEpgGridAvailable
+  ? requireNativeComponent<NativeEpgGridViewProps>('EpgGridView')
+  : null;
 
 interface Props {
   style?: ViewStyle;

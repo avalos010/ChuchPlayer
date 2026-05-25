@@ -122,6 +122,10 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const showEPGGrid = useUIStore((state) => state.showEPGGrid);
   const showChannelList = useUIStore((state) => state.showChannelList);
   const showGroupsPlaylists = useUIStore((state) => state.showGroupsPlaylists);
+  const showInfoBar = useUIStore((state) => state.showInfoBar);
+  const showProgramInfo = useUIStore((state) => state.showProgramInfo);
+  const showSleepTimer = useUIStore((state) => state.showSleepTimer);
+  const showChannelNumberPad = useUIStore((state) => state.showChannelNumberPad);
   const setShowChannelList = useUIStore((state) => state.setShowChannelList);
   
   // EPG store state
@@ -216,11 +220,15 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       !showEPG &&
       !showEPGGrid &&
       !showChannelList &&
-      !showGroupsPlaylists
+      !showGroupsPlaylists &&
+      !showInfoBar &&
+      !showProgramInfo &&
+      !showSleepTimer &&
+      !showChannelNumberPad
     ) {
       centerZoneRef.current?.focus?.();
     }
-  }, [showEPG, showEPGGrid, showChannelList, showGroupsPlaylists]);
+  }, [showEPG, showEPGGrid, showChannelList, showGroupsPlaylists, showInfoBar, showProgramInfo, showSleepTimer, showChannelNumberPad]);
 
   useEffect(() => {
     if (!channel) return;
@@ -332,6 +340,16 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     setTimeout(() => centerZoneRef.current?.focus?.(), 10);
   }, [handleDownDpad, exitPIP]);
 
+  const hasModalOverlay =
+    showEPG ||
+    showEPGGrid ||
+    showChannelList ||
+    showGroupsPlaylists ||
+    showInfoBar ||
+    showProgramInfo ||
+    showSleepTimer ||
+    showChannelNumberPad;
+
   // If in multi-screen mode, show multi-screen view
   if (isMultiScreenMode && screens.length > 0) {
     const { width, height } = Dimensions.get('window');
@@ -364,7 +382,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       className="flex-1 bg-black relative"
     >
       {/* Invisible D-pad navigation zones for Android TV */}
-      {!showEPG && !showEPGGrid && !showChannelList && !showGroupsPlaylists && Platform.OS === 'android' && (
+      {!hasModalOverlay && Platform.OS === 'android' && (
         <>
           {/* Central focusable zone - default focus */}
           <FocusableItem
@@ -414,7 +432,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       )}
       
       {/* Focusable overlay for non-Android platforms */}
-      {!showEPG && !showEPGGrid && !showChannelList && !showGroupsPlaylists && Platform.OS !== 'android' && (
+      {!hasModalOverlay && Platform.OS !== 'android' && (
         <>
           {/* Main overlay for center button press and keyboard navigation */}
           <FocusableItem
@@ -627,7 +645,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       <VolumeIndicator />
 
       {/* Channel Info Bar */}
-      {!showEPGGrid && !showEPG && !showChannelList && !showGroupsPlaylists && (
+      {!showEPGGrid && !showEPG && !showChannelList && !showGroupsPlaylists && !showProgramInfo && !showSleepTimer && !showChannelNumberPad && (
         <ChannelInfoBar
           channel={channel}
           currentProgram={currentProgram}
