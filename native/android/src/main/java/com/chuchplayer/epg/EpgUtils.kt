@@ -19,7 +19,6 @@ fun getRealmConfig(): RealmConfiguration =
         .name("default.realm")
         .schemaVersion(3)
         .deleteRealmIfMigrationNeeded()
-        .modules(Realm.getDefaultModule())
         .build()
 
 fun openRealm(): Realm = Realm.getInstance(getRealmConfig())
