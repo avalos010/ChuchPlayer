@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback, memo } from 'react';
+import React, { useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import {
   View, Text, StyleSheet, Platform, Animated,
 } from 'react-native';
@@ -12,6 +12,8 @@ import { useUIStore } from '../../store/useUIStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { isTvLikePlatform } from '../../utils/platform';
 import { formatClockTime } from '../../utils/time';
+import { useThemeStore } from '../../store/useThemeStore';
+import { Theme } from '../../theme/themes';
 
 interface ChannelInfoBarProps {
   channel: Channel | null;
@@ -37,14 +39,6 @@ const aspectLabel = (m: ResizeMode) =>
 // ─── Control button ───────────────────────────────────────────────────────────
 const ICON_SZ = TV ? 22 : 18;
 
-const BTN_FOCUSED = {
-  backgroundColor: 'rgba(14,165,233,0.2)',
-  borderColor: '#0ea5e9',
-  borderWidth: 2,
-  transform: [] as any[],
-  elevation: 8,
-};
-
 const Ctrl: React.FC<{
   icon: React.ComponentProps<typeof MCI>['name'];
   label: string;
@@ -53,21 +47,32 @@ const Ctrl: React.FC<{
   onBlur: () => void;
   active?: boolean;
   hasTVPreferredFocus?: boolean;
-}> = ({ icon, label, onPress, onFocus, onBlur, active, hasTVPreferredFocus }) => (
-  <FocusableItem
-    onPress={onPress}
-    onFocus={onFocus}
-    onBlur={onBlur}
-    hasTVPreferredFocus={hasTVPreferredFocus}
-    style={[s.btn, active && s.btnActive]}
-    focusedStyle={BTN_FOCUSED}
-  >
-    <View style={s.btnIconWrap}>
-      <MCI name={icon} size={ICON_SZ} color={active ? '#38bdf8' : '#94a3b8'} />
-    </View>
-    <Text style={[s.btnLabel, active && s.btnLabelActive]}>{label}</Text>
-  </FocusableItem>
-);
+}> = ({ icon, label, onPress, onFocus, onBlur, active, hasTVPreferredFocus }) => {
+  const theme = useThemeStore((st) => st.theme);
+  const s = useMemo(() => createStyles(theme), [theme]);
+  const focusedStyle = useMemo(() => ({
+    backgroundColor: theme.cardActive,
+    borderColor: theme.accent,
+    borderWidth: 2,
+    transform: [] as any[],
+    elevation: 8,
+  }), [theme]);
+  return (
+    <FocusableItem
+      onPress={onPress}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      hasTVPreferredFocus={hasTVPreferredFocus}
+      style={[s.btn, active && s.btnActive]}
+      focusedStyle={focusedStyle}
+    >
+      <View style={s.btnIconWrap}>
+        <MCI name={icon} size={ICON_SZ} color={active ? theme.accent : theme.textSub} />
+      </View>
+      <Text style={[s.btnLabel, active && s.btnLabelActive]}>{label}</Text>
+    </FocusableItem>
+  );
+};
 
 // ─── Main component ───────────────────────────────────────────────────────────
 const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
@@ -84,6 +89,9 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   timeoutSeconds = 6,
   clockFormat = '24h',
 }) => {
+  const theme = useThemeStore((st) => st.theme);
+  const s     = useMemo(() => createStyles(theme), [theme]);
+
   const isPlaying       = usePlayerStore((st) => st.isPlaying);
   const resizeMode      = usePlayerStore((st) => st.resizeMode);
   const cycleResizeMode = usePlayerStore((st) => st.cycleResizeMode);
@@ -314,7 +322,7 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
 export default memo(ChannelInfoBar);
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-const s = StyleSheet.create({
+const createStyles = (theme: Theme) => StyleSheet.create({
   container: {
     position: 'absolute',
     bottom: 0,
@@ -326,13 +334,13 @@ const s = StyleSheet.create({
 
   // Single card that rises from the bottom
   main: {
-    backgroundColor: 'rgba(6,8,18,0.97)',
+    backgroundColor: theme.bg,
     borderTopLeftRadius: TV ? 18 : 12,
     borderTopRightRadius: TV ? 18 : 12,
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderColor: 'rgba(30,41,59,0.6)',
+    borderColor: theme.border,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.5,
@@ -354,19 +362,19 @@ const s = StyleSheet.create({
     height: LOGO_SZ,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#111827',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.07)',
+    borderColor: theme.border,
   },
   logo: { width: '100%', height: '100%' },
   logoFallback: {
     flex: 1,
-    backgroundColor: '#0d1117',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
   },
   initials: {
-    color: '#475569',
+    color: theme.textMuted,
     fontSize: TV ? 20 : 15,
     fontWeight: '800',
   },
@@ -383,48 +391,48 @@ const s = StyleSheet.create({
     width: TV ? 7 : 6,
     height: TV ? 7 : 6,
     borderRadius: 4,
-    backgroundColor: '#ef4444',
+    backgroundColor: theme.live,
   },
   chName: {
     flex: 1,
-    color: '#f8fafc',
+    color: theme.text,
     fontSize: TV ? 26 : 18,
     fontWeight: '800',
     letterSpacing: -0.4,
   },
   catchupBadge: {
-    backgroundColor: 'rgba(14,116,144,0.3)',
+    backgroundColor: theme.card,
     borderRadius: 5,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderWidth: 1,
-    borderColor: 'rgba(14,165,233,0.3)',
+    borderColor: theme.accent,
   },
   catchupTxt: {
-    color: '#38bdf8',
+    color: theme.accent,
     fontSize: TV ? 11 : 9,
     fontWeight: '700',
   },
   sleepBadge: {
-    backgroundColor: 'rgba(30,32,60,0.9)',
+    backgroundColor: theme.card,
     borderRadius: 5,
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderWidth: 1,
-    borderColor: 'rgba(14,165,233,0.25)',
+    borderColor: theme.accent,
   },
   sleepTxt: {
-    color: '#0ea5e9',
+    color: theme.accent,
     fontSize: TV ? 11 : 9,
     fontWeight: '700',
   },
   progName: {
-    color: '#94a3b8',
+    color: theme.textSub,
     fontSize: TV ? 16 : 12,
     fontWeight: '500',
   },
   nextProg: {
-    color: '#334155',
+    color: theme.textMuted,
     fontSize: TV ? 12 : 10,
     fontWeight: '500',
   },
@@ -434,13 +442,13 @@ const s = StyleSheet.create({
     minWidth: TV ? 110 : 80,
   },
   timeRange: {
-    color: '#64748b',
+    color: theme.textSub,
     fontSize: TV ? 14 : 11,
     fontWeight: '600',
     letterSpacing: 0.2,
   },
   pct: {
-    color: '#0ea5e9',
+    color: theme.accent,
     fontSize: TV ? 13 : 10,
     fontWeight: '700',
   },
@@ -452,15 +460,15 @@ const s = StyleSheet.create({
   },
   progressBg: {
     height: TV ? 4 : 3,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: theme.border,
     borderRadius: 3,
     overflow: 'hidden',
   },
   progressFg: {
     height: '100%',
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.accent,
     borderRadius: 3,
-    shadowColor: '#0ea5e9',
+    shadowColor: theme.accent,
     shadowOpacity: 0.8,
     shadowRadius: 4,
     elevation: 2,
@@ -469,7 +477,7 @@ const s = StyleSheet.create({
   // ── Divider ───────────────────────────────────────────────────────────────
   divider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: theme.border,
     marginHorizontal: TV ? 24 : 12,
   },
 
@@ -489,24 +497,24 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     gap: TV ? 5 : 3,
     borderRadius: TV ? 14 : 10,
-    backgroundColor: 'rgba(15,20,35,0.95)',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: theme.border,
   },
   btnActive: {
-    backgroundColor: 'rgba(14,165,233,0.12)',
-    borderColor: 'rgba(14,165,233,0.35)',
+    backgroundColor: theme.cardActive,
+    borderColor: theme.accent,
   },
   btnIconWrap: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   btnLabel: {
-    color: '#64748b',
+    color: theme.textMuted,
     fontSize: TV ? 11 : 9,
     fontWeight: '700',
     letterSpacing: 0.2,
     textAlign: 'center',
   },
-  btnLabelActive: { color: '#7dd3fc' },
+  btnLabelActive: { color: theme.accent },
 });

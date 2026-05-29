@@ -8,6 +8,7 @@ import type { PlayerVideoHandle } from '../types/video';
 interface PlayerState {
   // Core Player State
   channel: Channel | null;
+  previousChannel: Channel | null;
   isPlaying: boolean;
   loading: boolean;
   error: string | null;
@@ -61,6 +62,7 @@ interface PlayerState {
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   // Initial Player State
   channel: null,
+  previousChannel: null,
   isPlaying: false,
   loading: false,
   error: null,
@@ -71,7 +73,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   channelNumberInput: '',
 
   // Player State Actions
-  setChannel: (channel) => set({ channel }),
+  setChannel: (channel) => set((s) => ({
+    previousChannel: s.channel && channel && s.channel.id !== channel.id ? s.channel : s.previousChannel,
+    channel,
+  })),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),

@@ -1,67 +1,56 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import {
+  View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, ScrollView, Platform,
+} from 'react-native';
 import { ResizeMode } from 'expo-av';
 import { Channel } from '../../types';
 import type { PlayerPlaybackStatus, PlayerVideoHandle } from '../../types/video';
 import { useMultiScreenStore, type MultiScreen } from '../../store/useMultiScreenStore';
+import { useThemeStore } from '../../store/useThemeStore';
+import { Theme } from '../../theme/themes';
 import FocusableItem from '../FocusableItem';
 import { showError } from '../../utils/toast';
 import AppVideo from './AppVideo';
 
+const KeyEvent = Platform.OS === 'android'
+  ? (require('react-native-keyevent').default ?? require('react-native-keyevent'))
+  : null;
+
 interface MultiScreenPlayerProps {
   screen: MultiScreen;
-  layout: 'grid' | 'split';
-  onFocus: () => void;
-  onRemove: () => void;
+  onOpenMenu: (screenId: string) => void;
+  theme: Theme;
 }
 
-const MultiScreenPlayer: React.FC<MultiScreenPlayerProps> = ({
-  screen,
-  layout,
-  onFocus,
-  onRemove,
-}) => {
+const MultiScreenPlayer: React.FC<MultiScreenPlayerProps> = ({ screen, onOpenMenu, theme }) => {
   const videoRef = useRef<PlayerVideoHandle>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { updateScreen } = useMultiScreenStore();
+  const { updateScreen, setFocusedScreen } = useMultiScreenStore();
 
   useEffect(() => {
     if (videoRef.current && screen.channel.url) {
-      videoRef.current.loadAsync({ uri: screen.channel.url }).then(() => {
-        if (screen.isPlaying) {
-          videoRef.current?.playAsync();
-        }
-      }).catch((err) => {
-        console.error('Error loading channel:', err);
-        setError('Failed to load stream');
-        showError('Failed to load stream', String(err));
-      });
+      setError(null);
+      setLoading(true);
+      videoRef.current
+        .loadAsync({ uri: screen.channel.url })
+        .then(() => { if (screen.isPlaying) videoRef.current?.playAsync(); })
+        .catch((err) => {
+          setError('Failed to load stream');
+          showError('Failed to load stream', String(err));
+        });
     }
-  }, [screen.channel.url]);
+  }, [screen.channel.url]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (videoRef.current) {
-      if (screen.isPlaying) {
-        videoRef.current.playAsync();
-      } else {
-        videoRef.current.pauseAsync();
-      }
-    }
+    if (!videoRef.current) return;
+    if (screen.isPlaying) videoRef.current.playAsync();
+    else videoRef.current.pauseAsync();
   }, [screen.isPlaying]);
-
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.setVolumeAsync(screen.isMuted ? 0 : screen.volume);
-    }
-  }, [screen.volume, screen.isMuted]);
 
   const handlePlaybackStatusUpdate = useCallback((status: PlayerPlaybackStatus) => {
     if (!status.isLoaded) {
-      if (status.error) {
-        setError('Playback error');
-        setLoading(false);
-      }
+      if (status.error) { setError('Playback error'); setLoading(false); }
       return;
     }
     setLoading(status.isBuffering);
@@ -69,213 +58,349 @@ const MultiScreenPlayer: React.FC<MultiScreenPlayerProps> = ({
   }, [screen.id, updateScreen]);
 
   const handlePress = useCallback(() => {
-    onFocus();
-  }, [onFocus]);
-
-  const handleTogglePlayback = useCallback(() => {
-    updateScreen(screen.id, { isPlaying: !screen.isPlaying });
-  }, [screen.id, screen.isPlaying, updateScreen]);
+    setFocusedScreen(screen.id);
+    onOpenMenu(screen.id);
+  }, [screen.id, setFocusedScreen, onOpenMenu]);
 
   const isFocused = screen.isFocused;
-  const isGridLayout = layout === 'grid';
 
   return (
-    <TouchableOpacity
-      activeOpacity={1}
+    <FocusableItem
       onPress={handlePress}
-      style={{
-        flex: isGridLayout ? 1 : undefined,
-        width: isGridLayout ? '50%' : '50%',
-        aspectRatio: isGridLayout ? 16 / 9 : 16 / 9,
-        borderWidth: isFocused ? 3 : 1,
-        borderColor: isFocused ? '#00aaff' : '#333',
-        backgroundColor: '#000',
-        position: 'relative',
-      }}
+      onFocus={() => setFocusedScreen(screen.id)}
+      style={[
+        msp.tile,
+        { borderColor: isFocused ? theme.accent : theme.border, borderWidth: isFocused ? 3 : 1 },
+      ]}
+      focusedStyle={{ borderColor: theme.focused, borderWidth: 3, transform: [] as any[] }}
     >
       <AppVideo
         ref={videoRef}
         source={{ uri: screen.channel.url }}
-        style={{ width: '100%', height: '100%' }}
+        style={msp.video}
         resizeMode={ResizeMode.COVER}
         shouldPlay={screen.isPlaying}
         onLoad={() => setLoading(false)}
-        onError={(err) => {
-          setLoading(false);
-          setError('Failed to load');
-          showError('Video load error', String(err));
-        }}
+        onError={(err) => { setLoading(false); setError('Failed to load'); showError('Video load error', String(err)); }}
         onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
         useNativeControls={false}
         isLooping={false}
         volume={screen.isMuted ? 0 : screen.volume}
       />
 
-      {/* Loading indicator */}
       {loading && !error && (
-        <View className="absolute inset-0 justify-center items-center bg-black/50">
-          <ActivityIndicator size="small" color="#00aaff" />
+        <View style={msp.overlayCenter}>
+          <ActivityIndicator size="small" color={theme.accent} />
         </View>
       )}
-
-      {/* Error state */}
       {error && (
-        <View className="absolute inset-0 justify-center items-center bg-black/70">
-          <Text className="text-white text-xs text-center px-2">{error}</Text>
+        <View style={msp.overlayCenter}>
+          <Text style={[msp.errorTxt, { color: theme.text }]}>{error}</Text>
         </View>
       )}
 
-      {/* Channel info overlay */}
-      {isFocused && (
-        <View className="absolute top-2 left-2 bg-black/70 px-2 py-1 rounded">
-          <Text className="text-white text-xs font-semibold" numberOfLines={1}>
-            {screen.channel.name}
-          </Text>
-        </View>
-      )}
-
-      {/* Remove button */}
-      {isFocused && (
-        <FocusableItem
-          onPress={onRemove}
-          className="absolute top-2 right-2 w-6 h-6 bg-red-600 rounded-full justify-center items-center"
-        >
-          <Text className="text-white text-xs font-bold">×</Text>
-        </FocusableItem>
-      )}
-
-      {/* Play/Pause overlay when focused */}
-      {isFocused && !loading && !error && (
-        <FocusableItem
-          onPress={handleTogglePlayback}
-          className="absolute inset-0 justify-center items-center bg-black/20"
-        >
-          <View className="w-12 h-12 rounded-full bg-black/60 justify-center items-center">
-            <Text className="text-white text-xl">
-              {screen.isPlaying ? '❚❚' : '▶'}
-            </Text>
-          </View>
-        </FocusableItem>
-      )}
-    </TouchableOpacity>
+      <View style={[msp.nameTag, { backgroundColor: 'rgba(0,0,0,0.65)' }]}>
+        <Text style={[msp.nameTxt, { color: theme.text }]} numberOfLines={1}>{screen.channel.name}</Text>
+      </View>
+    </FocusableItem>
   );
 };
+
+const msp = StyleSheet.create({
+  tile: { flex: 1, backgroundColor: '#000', position: 'relative', borderRadius: 6, overflow: 'hidden' },
+  video: { width: '100%', height: '100%' },
+  overlayCenter: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' },
+  errorTxt: { fontSize: 12, textAlign: 'center', paddingHorizontal: 8 },
+  nameTag: { position: 'absolute', top: 6, left: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 5, maxWidth: '80%' },
+  nameTxt: { fontSize: 12, fontWeight: '700' },
+});
 
 interface MultiScreenViewProps {
   channels: Channel[];
   onChannelSelect: (channel: Channel) => void;
 }
 
-const MultiScreenView: React.FC<MultiScreenViewProps> = ({
-  channels,
-  onChannelSelect,
-}) => {
+const MultiScreenView: React.FC<MultiScreenViewProps> = ({ channels }) => {
+  const theme = useThemeStore((s) => s.theme);
+  const st = useMemo(() => createStyles(theme), [theme]);
+  const focusedStyle = useMemo(() => ({ borderColor: theme.focused, borderWidth: 2, transform: [] as any[] }), [theme]);
+
   const {
-    screens,
-    layout,
-    isMultiScreenMode,
-    addScreen,
-    removeScreen,
-    setFocusedScreen,
-    setLayout,
-    getScreenCount,
-    canAddScreen,
-    maxScreens,
+    screens, layout, isMultiScreenMode, featuredScreenId, fullscreenScreenId,
+    addScreen, removeScreen, setLayout, setFeaturedScreen, setFullscreenScreen,
+    setScreenChannel, cycleFullscreen, clearAllScreens, canAddScreen, maxScreens,
   } = useMultiScreenStore();
 
+  const [menuScreenId, setMenuScreenId] = useState<string | null>(null);
+  const [pickerScreenId, setPickerScreenId] = useState<string | null>(null);
+
+  // Android D-pad: right cycles the next screen to fullscreen; left exits fullscreen.
+  useEffect(() => {
+    if (!KeyEvent || !isMultiScreenMode) return;
+    KeyEvent.onKeyDownListener((e: { keyCode: number }) => {
+      if (menuScreenId || pickerScreenId) return;
+      if (e.keyCode === 22) cycleFullscreen();           // DPAD_RIGHT
+      else if (e.keyCode === 21) setFullscreenScreen(null); // DPAD_LEFT
+    });
+    return () => KeyEvent.removeKeyDownListener();
+  }, [isMultiScreenMode, menuScreenId, pickerScreenId, cycleFullscreen, setFullscreenScreen]);
+
+  const availableChannels = useMemo(
+    () => channels.filter((ch) => !screens.some((sc) => sc.channel.id === ch.id)),
+    [channels, screens],
+  );
+
   const handleAddScreen = useCallback(() => {
-    // Show channel selection - for now, just add the first available channel
-    // In a real implementation, you'd show a channel picker
-    if (channels.length > 0) {
-      const availableChannels = channels.filter(
-        ch => !screens.some(s => s.channel.id === ch.id)
-      );
-      if (availableChannels.length > 0) {
-        addScreen(availableChannels[0]);
-      }
-    }
-  }, [channels, screens, addScreen]);
+    if (availableChannels.length > 0) addScreen(availableChannels[0]);
+  }, [availableChannels, addScreen]);
 
-  if (!isMultiScreenMode || screens.length === 0) {
-    return null;
-  }
+  if (!isMultiScreenMode || screens.length === 0) return null;
 
-  const isGridLayout = layout === 'grid';
-  const screenCount = screens.length;
+  const menuScreen = screens.find((s) => s.id === menuScreenId) ?? null;
+  const fullscreenScreen = fullscreenScreenId ? screens.find((s) => s.id === fullscreenScreenId) : null;
 
-  return (
-    <View className="flex-1 bg-black">
-      {/* Layout controls */}
-      <View className="absolute top-4 right-4 z-10 flex-row gap-2">
-        <FocusableItem
-          onPress={() => setLayout('grid')}
-          className={`px-3 py-2 rounded ${layout === 'grid' ? 'bg-accent' : 'bg-card'}`}
-        >
-          <Text className={`text-sm font-semibold ${layout === 'grid' ? 'text-white' : 'text-gray-300'}`}>
-            Grid
-          </Text>
-        </FocusableItem>
-        <FocusableItem
-          onPress={() => setLayout('split')}
-          className={`px-3 py-2 rounded ${layout === 'split' ? 'bg-accent' : 'bg-card'}`}
-        >
-          <Text className={`text-sm font-semibold ${layout === 'split' ? 'text-white' : 'text-gray-300'}`}>
-            Split
-          </Text>
-        </FocusableItem>
+  // ── Layout selection ────────────────────────────────────────────────────────
+  let body: React.ReactNode;
+  if (fullscreenScreen) {
+    body = (
+      <View style={st.fullWrap}>
+        <MultiScreenPlayer screen={fullscreenScreen} onOpenMenu={setMenuScreenId} theme={theme} />
+        <View style={st.fsHint}>
+          <Text style={st.fsHintTxt}>► next  ·  ◄ back to grid</Text>
+        </View>
       </View>
-
-      {/* Multi-screen container */}
-      <View
-        style={{
-          flex: 1,
-          flexDirection: isGridLayout ? 'row' : 'row',
-          flexWrap: isGridLayout ? 'wrap' : 'nowrap',
-          padding: 8,
-          gap: 8,
-        }}
-      >
+    );
+  } else if (featuredScreenId && screens.length > 1) {
+    const featured = screens.find((s) => s.id === featuredScreenId);
+    const rest = screens.filter((s) => s.id !== featuredScreenId);
+    body = (
+      <View style={st.featuredWrap}>
+        <View style={st.featuredMain}>
+          {featured && <MultiScreenPlayer screen={featured} onOpenMenu={setMenuScreenId} theme={theme} />}
+        </View>
+        <View style={st.featuredSide}>
+          {rest.map((screen) => (
+            <View key={screen.id} style={st.featuredSideItem}>
+              <MultiScreenPlayer screen={screen} onOpenMenu={setMenuScreenId} theme={theme} />
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  } else if (screens.length === 2 && layout !== 'grid') {
+    // Side-by-side filling the whole width (TiviMate-style 2-up)
+    body = (
+      <View style={st.rowWrap}>
         {screens.map((screen) => (
-          <MultiScreenPlayer
-            key={screen.id}
-            screen={screen}
-            layout={layout}
-            onFocus={() => setFocusedScreen(screen.id)}
-            onRemove={() => removeScreen(screen.id)}
-          />
+          <View key={screen.id} style={st.rowItem}>
+            <MultiScreenPlayer screen={screen} onOpenMenu={setMenuScreenId} theme={theme} />
+          </View>
         ))}
-
-        {/* Add screen button */}
-        {canAddScreen() && (
-          <TouchableOpacity
-            onPress={handleAddScreen}
-            activeOpacity={0.7}
-            style={{
-              flex: isGridLayout ? 1 : undefined,
-              width: isGridLayout ? '50%' : '50%',
-              aspectRatio: 16 / 9,
-              borderWidth: 2,
-              borderColor: '#555',
-              borderStyle: 'dashed',
-              backgroundColor: '#111',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <Text className="text-white text-2xl">+</Text>
-            <Text className="text-gray-400 text-xs mt-2">Add Screen</Text>
+      </View>
+    );
+  } else {
+    // Grid 2x2
+    body = (
+      <View style={st.gridWrap}>
+        {screens.map((screen) => (
+          <View key={screen.id} style={st.gridItem}>
+            <MultiScreenPlayer screen={screen} onOpenMenu={setMenuScreenId} theme={theme} />
+          </View>
+        ))}
+        {canAddScreen() && availableChannels.length > 0 && (
+          <TouchableOpacity onPress={handleAddScreen} activeOpacity={0.7} style={[st.gridItem, st.addTile]}>
+            <Text style={[st.addPlus, { color: theme.textSub }]}>＋</Text>
+            <Text style={[st.addTxt, { color: theme.textMuted }]}>Add Screen</Text>
           </TouchableOpacity>
         )}
       </View>
+    );
+  }
 
-      {/* Screen info */}
-      <View className="absolute bottom-4 left-4 bg-black/70 px-3 py-2 rounded">
-        <Text className="text-white text-sm">
-          {screenCount} / {maxScreens} screens
-        </Text>
-      </View>
+  return (
+    <View style={st.root}>
+      {/* Top bar */}
+      {!fullscreenScreen && (
+        <View style={st.topBar}>
+          <FocusableItem
+            onPress={() => setLayout(layout === 'grid' ? 'split' : 'grid')}
+            style={st.topBtn}
+            focusedStyle={focusedStyle}
+          >
+            <Text style={st.topBtnTxt}>{layout === 'grid' ? '▦ Grid' : '▤ Split'}</Text>
+          </FocusableItem>
+          <View style={st.topCount}><Text style={st.topCountTxt}>{screens.length}/{maxScreens}</Text></View>
+          <FocusableItem onPress={() => { clearAllScreens(); }} style={st.topBtnDanger} focusedStyle={focusedStyle}>
+            <Text style={st.topBtnDangerTxt}>Exit</Text>
+          </FocusableItem>
+        </View>
+      )}
+
+      {body}
+
+      {/* ── Per-screen context menu ─────────────────────────────────────────── */}
+      <Modal visible={!!menuScreen} transparent animationType="fade" onRequestClose={() => setMenuScreenId(null)}>
+        <View style={st.backdrop}>
+          <View style={st.menuCard}>
+            <Text style={st.menuTitle} numberOfLines={1}>{menuScreen?.channel.name}</Text>
+
+            <FocusableItem
+              onPress={() => { if (menuScreen) setPickerScreenId(menuScreen.id); setMenuScreenId(null); }}
+              hasTVPreferredFocus
+              style={st.menuItem}
+              focusedStyle={focusedStyle}
+            >
+              <Text style={st.menuItemTxt}>Change channel</Text>
+            </FocusableItem>
+
+            <FocusableItem
+              onPress={() => {
+                if (!menuScreen) return;
+                setFeaturedScreen(featuredScreenId === menuScreen.id ? null : menuScreen.id);
+                setMenuScreenId(null);
+              }}
+              style={st.menuItem}
+              focusedStyle={focusedStyle}
+            >
+              <Text style={st.menuItemTxt}>
+                {menuScreen && featuredScreenId === menuScreen.id ? 'Reset size' : 'Make bigger'}
+              </Text>
+            </FocusableItem>
+
+            <FocusableItem
+              onPress={() => { if (menuScreen) setFullscreenScreen(menuScreen.id); setMenuScreenId(null); }}
+              style={st.menuItem}
+              focusedStyle={focusedStyle}
+            >
+              <Text style={st.menuItemTxt}>Fullscreen</Text>
+            </FocusableItem>
+
+            <FocusableItem
+              onPress={() => { if (menuScreen) removeScreen(menuScreen.id); setMenuScreenId(null); }}
+              style={[st.menuItem, st.menuItemDanger]}
+              focusedStyle={focusedStyle}
+            >
+              <Text style={st.menuItemDangerTxt}>Remove screen</Text>
+            </FocusableItem>
+
+            <FocusableItem onPress={() => setMenuScreenId(null)} style={st.menuClose} focusedStyle={focusedStyle}>
+              <Text style={st.menuCloseTxt}>Close</Text>
+            </FocusableItem>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Channel picker (change channel) ─────────────────────────────────── */}
+      <Modal visible={!!pickerScreenId} transparent animationType="fade" onRequestClose={() => setPickerScreenId(null)}>
+        <View style={st.backdrop}>
+          <View style={st.pickerCard}>
+            <Text style={st.menuTitle}>Pick a channel</Text>
+            <ScrollView style={st.pickerList} keyboardShouldPersistTaps="handled">
+              {channels.slice(0, 200).map((ch) => (
+                <FocusableItem
+                  key={ch.id}
+                  onPress={() => {
+                    if (pickerScreenId) setScreenChannel(pickerScreenId, ch);
+                    setPickerScreenId(null);
+                  }}
+                  style={st.pickerRow}
+                  focusedStyle={focusedStyle}
+                >
+                  <Text style={st.pickerRowTxt} numberOfLines={1}>{ch.name}</Text>
+                </FocusableItem>
+              ))}
+            </ScrollView>
+            <FocusableItem onPress={() => setPickerScreenId(null)} style={st.menuClose} focusedStyle={focusedStyle}>
+              <Text style={st.menuCloseTxt}>Cancel</Text>
+            </FocusableItem>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
 
 export default MultiScreenView;
+
+const createStyles = (theme: Theme) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#000' },
+
+  topBar: {
+    position: 'absolute', top: 8, right: 8, zIndex: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+  },
+  topBtn: {
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
+    backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border,
+  },
+  topBtnTxt: { color: theme.textSub, fontSize: 13, fontWeight: '700' },
+  topCount: {
+    paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8,
+    backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border,
+  },
+  topCountTxt: { color: theme.textMuted, fontSize: 12, fontWeight: '700' },
+  topBtnDanger: {
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8,
+    backgroundColor: theme.card, borderWidth: 1, borderColor: theme.live,
+  },
+  topBtnDangerTxt: { color: theme.live, fontSize: 13, fontWeight: '700' },
+
+  // 2-up full width
+  rowWrap: { flex: 1, flexDirection: 'row', padding: 6, gap: 6 },
+  rowItem: { flex: 1 },
+
+  // grid 2x2
+  gridWrap: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', padding: 6, gap: 6 },
+  gridItem: { width: '49%', height: '49%' },
+  addTile: {
+    backgroundColor: theme.surface, borderWidth: 2, borderColor: theme.border,
+    borderStyle: 'dashed', borderRadius: 6, justifyContent: 'center', alignItems: 'center',
+  },
+  addPlus: { fontSize: 30, fontWeight: '300' },
+  addTxt: { fontSize: 12, marginTop: 4, fontWeight: '600' },
+
+  // featured (make bigger)
+  featuredWrap: { flex: 1, flexDirection: 'row', padding: 6, gap: 6 },
+  featuredMain: { flex: 2 },
+  featuredSide: { flex: 1, gap: 6 },
+  featuredSideItem: { flex: 1 },
+
+  // fullscreen
+  fullWrap: { flex: 1, padding: 6 },
+  fsHint: {
+    position: 'absolute', bottom: 14, alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+  },
+  fsHintTxt: { color: theme.textSub, fontSize: 12, fontWeight: '600' },
+
+  // modals
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  menuCard: {
+    width: '80%', maxWidth: 420, backgroundColor: theme.surface, borderRadius: 16,
+    borderWidth: 1, borderColor: theme.border, padding: 18, gap: 10,
+  },
+  menuTitle: { color: theme.text, fontSize: 18, fontWeight: '800', marginBottom: 4 },
+  menuItem: {
+    paddingVertical: 14, paddingHorizontal: 16, borderRadius: 10,
+    backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border,
+  },
+  menuItemTxt: { color: theme.text, fontSize: 15, fontWeight: '600' },
+  menuItemDanger: { borderColor: theme.live },
+  menuItemDangerTxt: { color: theme.live, fontSize: 15, fontWeight: '700' },
+  menuClose: {
+    paddingVertical: 12, borderRadius: 10, alignItems: 'center',
+    backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, marginTop: 2,
+  },
+  menuCloseTxt: { color: theme.textSub, fontSize: 14, fontWeight: '700' },
+
+  pickerCard: {
+    width: '85%', maxWidth: 480, backgroundColor: theme.surface, borderRadius: 16,
+    borderWidth: 1, borderColor: theme.border, padding: 18, gap: 10,
+  },
+  pickerList: { maxHeight: 360 },
+  pickerRow: {
+    paddingVertical: 12, paddingHorizontal: 14, borderRadius: 8, marginBottom: 6,
+    backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border,
+  },
+  pickerRowTxt: { color: theme.textSub, fontSize: 14, fontWeight: '600' },
+});

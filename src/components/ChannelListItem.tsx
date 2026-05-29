@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import FocusableItem from './FocusableItem';
 import { Channel, EPGProgram } from '../types';
 import { useThemeStore } from '../store/useThemeStore';
+import { Theme } from '../theme/themes';
 import { isTvLikePlatform } from '../utils/platform';
 import { formatClockTime } from '../utils/time';
 
@@ -39,6 +40,7 @@ const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
   currentProgram,
 }, ref) => {
   const theme = useThemeStore((s) => s.theme);
+  const s = useMemo(() => createStyles(theme), [theme]);
   const [imgErr, setImgErr] = useState(false);
 
   const handlePress = useCallback(() => onPress(channel),          [channel, onPress]);
@@ -176,7 +178,7 @@ export default ChannelListItem;
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
+const createStyles = (theme: Theme) => StyleSheet.create({
   item: {
     marginHorizontal: 6,
     marginVertical: 2,
@@ -191,9 +193,9 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   itemCurrent: {
-    backgroundColor: 'rgba(14,165,233,0.08)',
-    borderColor: 'rgba(14,165,233,0.2)',
-    borderLeftColor: '#0ea5e9',
+    backgroundColor: theme.cardActive,
+    borderColor: theme.border,
+    borderLeftColor: theme.accent,
   },
   row: {
     flexDirection: 'row',
@@ -203,33 +205,33 @@ const s = StyleSheet.create({
     gap: TV ? 10 : 8,
   },
   num: {
-    color: '#475569',
+    color: theme.textMuted,
     fontSize: TV ? 13 : 11,
     fontWeight: '600',
     width: 30,
     textAlign: 'right',
     fontFamily: TV ? 'monospace' : 'Courier',
   },
-  numActive: { color: '#94a3b8' },
+  numActive: { color: theme.textSub },
   logo: {
     width: LOGO_SZ,
     height: LOGO_SZ,
     borderRadius: 8,
-    backgroundColor: '#111827',
+    backgroundColor: theme.card,
   },
   logoFallback: {
     width: LOGO_SZ,
     height: LOGO_SZ,
     borderRadius: 8,
-    backgroundColor: '#111827',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: '#1e293b',
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logoFallbackActive: { backgroundColor: '#0c1829', borderColor: '#0ea5e940' },
-  initials: { color: '#475569', fontSize: TV ? 16 : 13, fontWeight: '800' },
-  initialsActive: { color: '#94a3b8' },
+  logoFallbackActive: { backgroundColor: theme.cardActive, borderColor: theme.accent },
+  initials: { color: theme.textMuted, fontSize: TV ? 16 : 13, fontWeight: '800' },
+  initialsActive: { color: theme.textSub },
   meta: { flex: 1, gap: 3 },
   nameRow: {
     flexDirection: 'row',
@@ -237,38 +239,38 @@ const s = StyleSheet.create({
     gap: 6,
   },
   name: {
-    color: '#94a3b8',
+    color: theme.textSub,
     fontSize: TV ? 15 : 13,
     fontWeight: '700',
     flex: 1,
   },
-  nameActive: { color: '#f1f5f9' },
+  nameActive: { color: theme.text },
   progTitle: {
-    color: '#64748b',
+    color: theme.textMuted,
     fontSize: TV ? 12 : 10,
     fontWeight: '500',
   },
-  progTitleActive: { color: '#94a3b8' },
+  progTitleActive: { color: theme.textSub },
   progTime: {
-    color: '#475569',
+    color: theme.textMuted,
     fontSize: TV ? 11 : 9,
     fontWeight: '600',
   },
   catchupBadge: {
-    backgroundColor: '#1e3a5f',
+    backgroundColor: theme.card,
     borderRadius: 4,
     paddingHorizontal: 4,
     paddingVertical: 1,
     borderWidth: 1,
-    borderColor: '#0ea5e940',
+    borderColor: theme.accent,
   },
   catchupTxt: {
-    color: '#38bdf8',
+    color: theme.accent,
     fontSize: TV ? 10 : 9,
     fontWeight: '700',
   },
   liveBadge: {
-    backgroundColor: '#dc2626',
+    backgroundColor: theme.live,
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 3,
@@ -284,19 +286,19 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  star: { color: '#334155', fontSize: TV ? 18 : 15 },
-  starActive: { color: '#f59e0b' },
+  star: { color: theme.textMuted, fontSize: TV ? 18 : 15 },
+  starActive: { color: theme.accent },
   progressTrack: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     height: 2,
-    backgroundColor: '#0f172a',
+    backgroundColor: theme.border,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.accent,
     opacity: 0.7,
   },
 

@@ -15,17 +15,23 @@ interface MultiScreenState {
   isMultiScreenMode: boolean;
   maxScreens: number;
   layout: 'grid' | 'split'; // grid = 2x2, split = side-by-side
-  
+  featuredScreenId: string | null;   // when set, this screen is large, others stacked
+  fullscreenScreenId: string | null; // when set, only this screen is shown full-bleed
+
   // Actions
   addScreen: (channel: Channel) => void;
   removeScreen: (screenId: string) => void;
   updateScreen: (screenId: string, updates: Partial<MultiScreen>) => void;
+  setScreenChannel: (screenId: string, channel: Channel) => void;
   setFocusedScreen: (screenId: string) => void;
   toggleMultiScreenMode: () => void;
   setLayout: (layout: 'grid' | 'split') => void;
+  setFeaturedScreen: (screenId: string | null) => void;
+  setFullscreenScreen: (screenId: string | null) => void;
+  cycleFullscreen: () => void;
   clearAllScreens: () => void;
   setMaxScreens: (max: number) => void;
-  
+
   // Helpers
   getFocusedScreen: () => MultiScreen | null;
   getScreenCount: () => number;
@@ -37,7 +43,9 @@ export const useMultiScreenStore = create<MultiScreenState>((set, get) => ({
   isMultiScreenMode: false,
   maxScreens: 4,
   layout: 'grid',
-  
+  featuredScreenId: null,
+  fullscreenScreenId: null,
+
   addScreen: (channel) => {
     const state = get();
     if (state.screens.length >= state.maxScreens) {
@@ -70,18 +78,20 @@ export const useMultiScreenStore = create<MultiScreenState>((set, get) => ({
   removeScreen: (screenId) => {
     const state = get();
     const remainingScreens = state.screens.filter(s => s.id !== screenId);
-    
+
     // If removing the focused screen, focus the first remaining screen
     if (remainingScreens.length > 0 && state.screens.find(s => s.id === screenId)?.isFocused) {
       remainingScreens[0].isFocused = true;
     }
-    
+
     set({
       screens: remainingScreens,
       isMultiScreenMode: remainingScreens.length > 1,
+      featuredScreenId: state.featuredScreenId === screenId ? null : state.featuredScreenId,
+      fullscreenScreenId: state.fullscreenScreenId === screenId ? null : state.fullscreenScreenId,
     });
   },
-  
+
   updateScreen: (screenId, updates) => {
     set((state) => ({
       screens: state.screens.map(s =>
@@ -89,7 +99,15 @@ export const useMultiScreenStore = create<MultiScreenState>((set, get) => ({
       ),
     }));
   },
-  
+
+  setScreenChannel: (screenId, channel) => {
+    set((state) => ({
+      screens: state.screens.map(s =>
+        s.id === screenId ? { ...s, channel, isPlaying: true } : s
+      ),
+    }));
+  },
+
   setFocusedScreen: (screenId) => {
     set((state) => ({
       screens: state.screens.map(s => ({
@@ -106,13 +124,41 @@ export const useMultiScreenStore = create<MultiScreenState>((set, get) => ({
   },
   
   setLayout: (layout) => {
-    set({ layout });
+    set({ layout, featuredScreenId: null });
   },
-  
+
+  setFeaturedScreen: (screenId) => {
+    set({ featuredScreenId: screenId });
+  },
+
+  setFullscreenScreen: (screenId) => {
+    set((state) => ({
+      fullscreenScreenId: screenId,
+      screens: screenId
+        ? state.screens.map((s) => ({ ...s, isFocused: s.id === screenId }))
+        : state.screens,
+    }));
+  },
+
+  // Advance the fullscreen view to the next screen (wraps). Starts from focused.
+  cycleFullscreen: () => {
+    const { screens, fullscreenScreenId } = get();
+    if (screens.length === 0) return;
+    const anchorId = fullscreenScreenId ?? screens.find((s) => s.isFocused)?.id ?? screens[0].id;
+    const idx = screens.findIndex((s) => s.id === anchorId);
+    const next = screens[(idx + 1) % screens.length];
+    set({
+      fullscreenScreenId: next.id,
+      screens: screens.map((s) => ({ ...s, isFocused: s.id === next.id })),
+    });
+  },
+
   clearAllScreens: () => {
     set({
       screens: [],
       isMultiScreenMode: false,
+      featuredScreenId: null,
+      fullscreenScreenId: null,
     });
   },
   
