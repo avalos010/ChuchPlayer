@@ -40,6 +40,10 @@ playwright-report/
 
 # generated native folders
 /ios
-/android
+# android build artifacts (source is tracked)
+/android/build/
+/android/.gradle/
+/android/app/build/
+/android/local.properties
 # Native source code (tracked in git)
 !/native/
