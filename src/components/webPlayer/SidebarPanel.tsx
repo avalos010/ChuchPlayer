@@ -30,13 +30,14 @@ const SidebarPanel: React.FC<SidebarPanelProps> = ({
   const [showGroups, setShowGroups] = useState(false);
 
   return (
-    <View style={s.sidebar}>
+    <View testID="web-sidebar" style={s.sidebar}>
       <View style={s.sidebarHeaderRow}>
         <View style={s.sidebarHeader}>
           <Text style={s.sidebarHeading}>TV</Text>
           <Text style={s.sidebarSub}>{filteredChannels.length} channels</Text>
         </View>
         <TouchableOpacity
+          testID="web-groups-button"
           onPress={() => setShowGroups((value) => !value)}
           style={[s.groupsToggleBtn, showGroups && s.groupsToggleBtnActive]}
         >
@@ -46,12 +47,13 @@ const SidebarPanel: React.FC<SidebarPanelProps> = ({
 
       <View style={s.sidebarBody}>
         {showGroups ? (
-          <View style={s.groupRail}>
+          <View testID="web-group-rail" style={s.groupRail}>
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.groupRailScroll}>
               {groups.map((group) => {
                 const active = selectedGroup === group;
                 return (
                   <TouchableOpacity
+                    testID={`web-group-${group.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`}
                     key={group}
                     onPress={() => {
                       onGroupSelect(group);

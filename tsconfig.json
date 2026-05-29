@@ -2,7 +2,8 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "types": ["react", "react-native"]
+    "types": ["react", "react-native", "jest"],
+    "moduleSuffixes": [".web", ".native", ""]
   },
   "include": [
     "**/*.ts",

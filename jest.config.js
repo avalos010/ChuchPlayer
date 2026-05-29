@@ -1,8 +1,18 @@
 module.exports = {
-  preset: 'jest-expo',
-  setupFilesAfterFramework: ['@testing-library/react-native/extend-expect'],
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  transform: {
+    '^.+\\.(ts|tsx)$': ['ts-jest', {
+      tsconfig: {
+        jsx: 'react',
+        types: ['jest', 'node'],
+      },
+    }],
+  },
   setupFiles: ['./jest.setup.js'],
   moduleNameMapper: {
+    '^@react-native-async-storage/async-storage$':
+      '<rootDir>/node_modules/@react-native-async-storage/async-storage/jest/async-storage-mock.js',
     '^realm$': '<rootDir>/__mocks__/realm.js',
     '^react-native-keyevent$': '<rootDir>/__mocks__/keyevent.js',
   },

@@ -163,13 +163,6 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
       style={[s.container, { transform: [{ translateY: slideAnim }], opacity: opacityAnim }]}
       pointerEvents="box-none"
     >
-      {/* ── Gradient fade zone (video shows through) ─────────────────────── */}
-      <View style={s.fadeZone} pointerEvents="none">
-        <View style={s.fadeRow1} />
-        <View style={s.fadeRow2} />
-        <View style={s.fadeRow3} />
-      </View>
-
       {/* ── Main content ─────────────────────────────────────────────────── */}
       <View style={s.main}>
         {/* ── Info row ─────────────────────────────────────────────────── */}
@@ -328,19 +321,20 @@ const s = StyleSheet.create({
     elevation: 30,
   },
 
-  // Simulated gradient — three translucent rows that get progressively darker
-  fadeZone: {
-    pointerEvents: 'none',
-  },
-  fadeRow1: { height: TV ? 40 : 28, backgroundColor: 'rgba(6,8,18,0.0)'  },
-  fadeRow2: { height: TV ? 44 : 32, backgroundColor: 'rgba(6,8,18,0.45)' },
-  fadeRow3: { height: TV ? 32 : 22, backgroundColor: 'rgba(6,8,18,0.75)' },
-
-  // Solid dark content area
+  // Single card that rises from the bottom
   main: {
     backgroundColor: 'rgba(6,8,18,0.97)',
+    borderTopLeftRadius: TV ? 18 : 12,
+    borderTopRightRadius: TV ? 18 : 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(14,165,233,0.12)',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(30,41,59,0.6)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 12,
   },
 
   // ── Info row ──────────────────────────────────────────────────────────────

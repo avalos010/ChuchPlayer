@@ -15,7 +15,7 @@ const TopOverlay: React.FC<TopOverlayProps> = ({ playlistName, clockLabel, onSet
       {playlistName ? <Text style={s.playlistText} numberOfLines={1}>{playlistName}</Text> : null}
     </View>
     <View style={s.topActions}>
-      <Text style={s.clockText}>{clockLabel}</Text>
+      <Text testID="web-clock" style={s.clockText}>{clockLabel}</Text>
       <TouchableOpacity onPress={onSettings} style={s.chromeBtn}>
         <Text style={s.chromeBtnTxt}>Settings</Text>
       </TouchableOpacity>

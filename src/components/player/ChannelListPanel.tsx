@@ -1,5 +1,5 @@
 import React, {
-  useRef, useEffect, useState, useCallback, useMemo,
+  useRef, useEffect, useState, useCallback, useMemo, useImperativeHandle,
 } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
@@ -54,22 +54,43 @@ interface EpgDetailPanelProps {
   now: number;
 }
 
-const EpgDetailPanel = React.memo<EpgDetailPanelProps>(
-  ({ channel, programs, now }) => {
+const EPG_ROW_H = TV ? 72 : 60;
+
+const ROW_FOCUSED = {
+  backgroundColor: 'rgba(14,165,233,0.15)',
+  borderColor: 'rgba(14,165,233,0.5)',
+  borderWidth: 1,
+  transform: [] as any[],
+  elevation: 4,
+};
+
+const EpgDetailPanelInner = React.forwardRef<ScrollView, EpgDetailPanelProps>(
+  ({ channel, programs, now }, ref) => {
     const scrollRef = useRef<ScrollView>(null);
 
-    // Auto-scroll so current program is visible
+    // Expose the scroll ref so ChannelListPanel can forward it
+    useImperativeHandle(ref, () => scrollRef.current as ScrollView, []);
+
+    // Auto-scroll so current program is near the top when channel changes
     useEffect(() => {
       if (!programs.length) return;
       const idx = programs.findIndex((p) => p.start.getTime() <= now && p.end.getTime() > now);
       if (idx > 1) {
         const t = setTimeout(
-          () => scrollRef.current?.scrollTo({ y: (idx - 1) * 72, animated: false }),
+          () => scrollRef.current?.scrollTo({ y: (idx - 1) * EPG_ROW_H, animated: false }),
           50,
         );
         return () => clearTimeout(t);
       }
     }, [channel?.id, programs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Scroll focused row into view
+    const handleRowFocus = useCallback((index: number) => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, (index - 1) * EPG_ROW_H),
+        animated: true,
+      });
+    }, []);
 
     if (!channel) {
       return (
@@ -83,33 +104,38 @@ const EpgDetailPanel = React.memo<EpgDetailPanelProps>(
 
     return (
       <View style={ep.root}>
-        {/* Channel name header */}
+        {/* Header */}
         <View style={ep.chHeader}>
           <Text style={ep.chName} numberOfLines={1}>{channel.name}</Text>
-          {hasCatchup && <View style={ep.catchupBadge}><Text style={ep.catchupTxt}>⏮ catchup</Text></View>}
+          {hasCatchup && (
+            <View style={ep.catchupBadge}><Text style={ep.catchupTxt}>⏮ catchup</Text></View>
+          )}
         </View>
 
         <ScrollView
           ref={scrollRef}
-          scrollEnabled={false}
+          scrollEnabled
           showsVerticalScrollIndicator={false}
           style={ep.scroll}
         >
           {programs.length === 0 ? (
             <Text style={ep.noProg}>No guide data</Text>
           ) : (
-            programs.map((p) => {
-              const isCurrent = p.start.getTime() <= now && p.end.getTime() > now;
-              const isPast    = p.end.getTime() <= now;
+            programs.map((p, index) => {
+              const isCurrent  = p.start.getTime() <= now && p.end.getTime() > now;
+              const isPast     = p.end.getTime() <= now;
               const canCatchup = isPast && hasCatchup;
               return (
-                <View
+                <FocusableItem
                   key={p.id}
+                  onPress={() => {/* catchup play handled by parent */}}
+                  onFocus={() => handleRowFocus(index)}
                   style={[
                     ep.row,
                     isCurrent && ep.rowCurrent,
                     isPast && !canCatchup && ep.rowPastNoCatchup,
                   ]}
+                  focusedStyle={ROW_FOCUSED}
                 >
                   <View style={ep.rowLeft}>
                     <Text style={[ep.time, isCurrent && ep.timeCurrent, isPast && !canCatchup && ep.timeGray]}>
@@ -129,7 +155,7 @@ const EpgDetailPanel = React.memo<EpgDetailPanelProps>(
                       {fmt(p.start)} – {fmt(p.end)}
                     </Text>
                   </View>
-                </View>
+                </FocusableItem>
               );
             })
           )}
@@ -137,11 +163,14 @@ const EpgDetailPanel = React.memo<EpgDetailPanelProps>(
       </View>
     );
   },
-  (prev, next) =>
-    prev.channel?.id === next.channel?.id &&
-    prev.programs === next.programs &&
-    // only recompute when the "current program" slot may have changed (≥ 1 min diff)
-    Math.abs(prev.now - next.now) < 60_000,
+);
+
+EpgDetailPanelInner.displayName = 'EpgDetailPanel';
+
+const EpgDetailPanel = React.memo(EpgDetailPanelInner, (prev, next) =>
+  prev.channel?.id === next.channel?.id &&
+  prev.programs    === next.programs    &&
+  Math.abs(prev.now - next.now) < 60_000,
 );
 
 // ─── Main component ──────────────────────────────────────────────────────────
@@ -162,7 +191,7 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
   const { recentChannels } = useRecentChannels(channels);
 
   const currentChannelId = channel?.id ?? '';
-  const listRef  = useRef<FlashList<Channel>>(null);
+  const listRef   = useRef<FlashList<Channel>>(null);
   const slideAnim = useRef(new Animated.Value(-TOTAL_W)).current;
 
   // Focus tracking — refs only, no state changes on D-pad nav (prevents FlashList re-renders)
@@ -170,9 +199,9 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
   const focusGivenRef    = useRef(false);
   const [renderKey, setRenderKey] = useState(0);
 
-  const [activeTab,         setActiveTab]         = useState<TabId>('all');
-  const [searchQuery,       setSearchQuery]        = useState('');
-  const [focusedChannelId,  setFocusedChannelId]   = useState<string | null>(null);
+  const [activeTab,        setActiveTab]        = useState<TabId>('all');
+  const [searchQuery,      setSearchQuery]       = useState('');
+  const [focusedChannelId, setFocusedChannelId]  = useState<string | null>(null);
 
   // ── Slide animation ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -280,7 +309,7 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
   useEffect(() => {
     if (!showChannelList || !KeyEvent) return;
     KeyEvent.onKeyDownListener((e: { keyCode: number }) => {
-      if (e.keyCode === 21) openGroups();
+      if (e.keyCode === 21) openGroups(); // DPAD_LEFT → open groups
     });
     return () => KeyEvent.removeKeyDownListener();
   }, [showChannelList, openGroups]);
@@ -427,7 +456,7 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
 
           {/* Focused-channel EPG panel */}
           {getProgramsForChannel && (
-            <View style={st.epgCol} pointerEvents="none">
+            <View style={st.epgCol}>
               <EpgDetailPanel
                 channel={focusedChannel}
                 programs={focusedPrograms}
@@ -617,8 +646,10 @@ const ep = StyleSheet.create({
   },
   emptyTxt: {
     color: '#1e293b',
-    fontSize: TV ? 12 : 10,
+    fontSize: TV ? 11 : 9,
     fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: TV ? 18 : 15,
   },
   chHeader: {
     flexDirection: 'row',

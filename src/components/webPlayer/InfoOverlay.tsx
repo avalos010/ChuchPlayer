@@ -27,7 +27,7 @@ const InfoOverlay: React.FC<InfoOverlayProps> = ({
   onToggleSidebar,
   onToggleGuide,
 }) => (
-  <View style={s.infoOverlay}>
+  <View testID="web-info-overlay" style={s.infoOverlay}>
     <View style={s.infoHeader}>
       <ChannelLogo channel={channel} size={64} />
       <View style={{ flex: 1 }}>
@@ -43,12 +43,13 @@ const InfoOverlay: React.FC<InfoOverlayProps> = ({
       </View>
       <View style={s.infoActions}>
         <TouchableOpacity
+          testID="web-epg-button"
           onPress={onToggleGuide}
           style={[s.infoActionBtn, guideOpen && s.infoActionBtnActive]}
         >
           <Text style={[s.infoActionTxt, guideOpen && s.infoActionTxtActive]}>EPG</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={onToggleSidebar} style={s.infoActionBtn}>
+        <TouchableOpacity testID="web-sidebar-toggle" onPress={onToggleSidebar} style={s.infoActionBtn}>
           <Text style={s.infoActionTxt}>{sidebarOpen ? 'Hide list' : 'Show list'}</Text>
         </TouchableOpacity>
       </View>

@@ -29,7 +29,12 @@ const mockUIState: Record<string, any> = {
 };
 
 jest.mock('../../store/useUIStore', () => ({
-  useUIStore: (selector: any) => selector(mockUIState),
+  useUIStore: Object.assign(
+    (selector: any) => selector(mockUIState),
+    {
+      getState: () => mockUIState,
+    }
+  ),
 }));
 
 const mockSetCurrentProgram = jest.fn();
@@ -62,8 +67,13 @@ const defaultProps = () => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  (require('../../store/usePlayerStore').usePlayerStore as any).getState = jest.fn(() => ({
+    ...mockPlayerState,
+    setState: mockPlayerSetState,
+  }));
   mockPlayerState.channel = null;
   mockPlayerState.channels = [CH1, CH2];
+  mockPlayerState.navigateToChannel = jest.fn();
   mockUIState.showEPGGrid = false;
   mockUIState.showEPG = false;
   mockUIState.showGroupsPlaylists = false;
@@ -150,5 +160,65 @@ describe('D-pad guards', () => {
     });
 
     expect(mockPlayerState.navigateToChannel).not.toHaveBeenCalled();
+  });
+
+  it('handleDownDpad tunes the next channel and exits PIP on Android TV style navigation', async () => {
+    mockPlayerState.channel = CH1;
+    mockPlayerState.channels = [CH1, CH2];
+    mockPlayerState.navigateToChannel = jest.fn().mockReturnValue(CH2);
+    const exitPIP = jest.fn();
+    const props = defaultProps();
+    props.getCurrentProgram.mockReturnValue({ id: 'prog-2', channelId: CH2.id, title: 'Next', start: new Date(), end: new Date() });
+
+    const { result } = renderHook(() => useChannelNavigation(props));
+
+    await act(async () => {
+      await result.current.handleDownDpad(exitPIP);
+    });
+
+    expect(mockPlayerState.navigateToChannel).toHaveBeenCalledWith('next', [CH1, CH2], CH1.id);
+    expect(exitPIP).toHaveBeenCalledTimes(1);
+    expect(mockPlayerSetState).toHaveBeenCalledWith(
+      expect.objectContaining({ loading: true, error: null, isPlaying: false, channel: CH2 })
+    );
+    expect(mockSetCurrentProgram).toHaveBeenCalledWith(expect.objectContaining({ channelId: CH2.id }));
+  });
+
+  it('handleChannelSelect closes the TV guide grid when selecting from an overlay', async () => {
+    mockUIState.showEPGGrid = true;
+    mockPlayerState.channel = CH1;
+    (require('../../store/usePlayerStore').usePlayerStore.getState as jest.Mock) = jest.fn(() => ({
+      channel: CH1,
+    }));
+
+    const props = defaultProps();
+    const { result } = renderHook(() => useChannelNavigation(props));
+
+    await act(async () => {
+      await result.current.handleChannelSelect(CH2);
+    });
+
+    expect(mockUIState.setShowChannelList).toHaveBeenCalledWith(false);
+    expect(mockUIState.setShowEPGGrid).toHaveBeenCalledWith(false);
+    expect(mockPlayerSetState).toHaveBeenCalledWith(
+      expect.objectContaining({ loading: true, error: null, isPlaying: false, channel: CH2 })
+    );
+  });
+
+  it('handleUpDpad does not tune underneath the groups overlay', async () => {
+    mockUIState.showGroupsPlaylists = true;
+    mockPlayerState.channel = CH2;
+    mockPlayerState.channels = [CH1, CH2];
+    mockPlayerState.navigateToChannel = jest.fn().mockReturnValue(CH1);
+
+    const props = defaultProps();
+    const { result } = renderHook(() => useChannelNavigation(props));
+
+    await act(async () => {
+      await result.current.handleUpDpad();
+    });
+
+    expect(mockPlayerState.navigateToChannel).not.toHaveBeenCalled();
+    expect(mockPlayerSetState).not.toHaveBeenCalled();
   });
 });

@@ -51,7 +51,7 @@ const MainEpgGuide: React.FC<MainEpgGuideProps> = ({
   );
 
   return (
-    <View style={s.mainGuide}>
+    <View testID="web-main-epg" style={s.mainGuide}>
       <View style={s.mainGuideHeader}>
         <View style={s.mainGuideTitleBlock}>
           <Text style={s.mainGuideEyebrow}>EPG</Text>
@@ -59,12 +59,12 @@ const MainEpgGuide: React.FC<MainEpgGuideProps> = ({
         </View>
 
         {currentChannel ? (
-          <View style={s.mainGuidePip}>
+          <View testID="web-main-epg-pip" style={s.mainGuidePip}>
             <WebVideo uri={currentChannel.url} isPlaying={isPlaying} />
           </View>
         ) : null}
 
-        <TouchableOpacity onPress={onClose} style={s.mainGuideCloseBtn}>
+        <TouchableOpacity testID="web-main-epg-close" onPress={onClose} style={s.mainGuideCloseBtn}>
           <Text style={s.mainGuideCloseTxt}>Close</Text>
         </TouchableOpacity>
       </View>
@@ -80,6 +80,7 @@ const MainEpgGuide: React.FC<MainEpgGuideProps> = ({
               ]}
             >
               <TouchableOpacity
+                testID={`web-main-epg-channel-${channel.id}`}
                 style={s.mainGuideChannelCell}
                 onPress={() => onChannelSelect(channel)}
                 activeOpacity={0.82}
@@ -111,6 +112,7 @@ const MainEpgGuide: React.FC<MainEpgGuideProps> = ({
 
                     return (
                       <TouchableOpacity
+                        testID={`web-main-epg-program-${channel.id}-${program.id}`}
                         key={program.id}
                         disabled={!canPlayCatchup}
                         onPress={() => onCatchupSelect(channel, program)}

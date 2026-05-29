@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to AI coding agents working with this repository.
 
 ## Quick Start
 
@@ -70,11 +70,13 @@ npx expo start --dev-client --android
 - `useMultiScreenStore`: Multi-window support state
 
 **EPG System**:
-- Realm database stores programs and metadata (`epgDatabase.ts`)
+- Realm database (schema v3) stores programs; `@Index` on `playlistId`, `channelId`, `start`, `end`
 - Native Kotlin module (`native/android/src/main/java/com/chuchplayer/epg/`) parses XMLTV in background thread
 - `nativeEpgIngestion.ts` bridges JavaScript to native module
 - `epgParser.ts` handles fallback XML parsing on non-Android platforms
 - Background sync via `useDataRefreshScheduler` hook
+- **Cold-boot guard**: `useEPGManagement` writes last ingest `{ sig, ts }` to AsyncStorage; on app open, if signature matches and age < 4h, programs are loaded from Realm only (no network round-trip)
+- **EpgGridView.kt**: 72h catchup window, `cursorMs` for time-selection, `EPG_CATCHUP_SELECT` event builds Xtream timeshift URLs
 
 **Playlist Support**:
 - M3U format: Parsed with `m3uParser.ts`
@@ -90,13 +92,13 @@ npx expo start --dev-client --android
 - Player controls wired through keyboard navigation
 - Achieves 1-2s stream start (vs 15s default)
 
-## Performance Optimizations (TiviMate-Level Smoothness)
+## Performance Optimizations
 
 The app implements three layers of optimizations for near-instant channel switching and smooth scrolling:
 
 ### Part A: Native ExoPlayer (Instant Stream Start)
 - **ExoPlayerModule.kt** (`native/android/src/main/java/com/chuchplayer/player/`): Direct Media3/ExoPlayer integration
-- Buffer config: `minBufferMs=1s, maxBufferMs=30s` (TiviMate-style)
+- Buffer config: `minBufferMs=1s, maxBufferMs=30s`
 - Methods: `loadSource`, `play`, `pause`, `stop`, `seek`, `preloadSource`
 - Events: `PLAYER_STATE_CHANGED`, `PLAYER_ERROR`, `PLAYER_PROGRESS`
 - JS bridge: `ExoPlayerView.tsx`, `useExoPlayerPlayback.ts`

@@ -12,12 +12,22 @@ interface WebVideoProps {
 const isHlsUri = (uri: string) =>
   uri.includes('.m3u8') || uri.includes('m3u8') || uri.includes('/hls/');
 
+const isE2E = process.env.EXPO_PUBLIC_E2E === '1';
+
 const WebVideo: React.FC<WebVideoProps> = ({ uri, isPlaying, onError, onLoad }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef   = useRef<Hls | null>(null);
+  const e2eLoadedUriRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isE2E || e2eLoadedUriRef.current === uri) return;
+    e2eLoadedUriRef.current = uri;
+    onLoad?.();
+  }, [onLoad, uri]);
 
   // Attach source whenever URI changes
   useEffect(() => {
+    if (isE2E) return;
     const v = videoRef.current;
     if (!v || !uri) return;
 
@@ -65,6 +75,7 @@ const WebVideo: React.FC<WebVideoProps> = ({ uri, isPlaying, onError, onLoad }) 
 
   // Sync play/pause without re-mounting
   useEffect(() => {
+    if (isE2E) return;
     const v = videoRef.current;
     if (!v) return;
     if (isPlaying) {
@@ -74,10 +85,21 @@ const WebVideo: React.FC<WebVideoProps> = ({ uri, isPlaying, onError, onLoad }) 
     }
   }, [isPlaying]);
 
+  if (isE2E) {
+    return (
+      <View
+        testID="web-video-fake"
+        style={[s.container, s.fakeVideo]}
+        accessibilityLabel={isPlaying ? 'Fake video playing' : 'Fake video paused'}
+      />
+    );
+  }
+
   return (
     <View style={s.container}>
       {/* @ts-ignore – raw HTML element, valid in React Native Web */}
       <video
+        data-testid="web-video"
         ref={videoRef}
         style={videoStyle}
         controls
@@ -101,4 +123,8 @@ const videoStyle = {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
+  fakeVideo: {
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.35)',
+  },
 });

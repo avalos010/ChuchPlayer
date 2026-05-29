@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { InteractionManager } from "react-native";
+import { InteractionManager, Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { EPGProgram } from "../types";
 import { usePlayerStore } from "../store/usePlayerStore";
 import {
@@ -22,7 +23,37 @@ type ProgramsByChannel = Record<string, EPGProgram[]>;
 
 const INITIAL_PREFETCH_COUNT = 12;
 const PRUNE_LOWER_BOUND_HOURS = 12;
-const DEFAULT_REFRESH_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
+const DEFAULT_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const STARTUP_SKIP_INTERVAL_MS   = 4 * 60 * 60 * 1000; // skip full reload within 4h on cold boot
+const E2E_PROGRAMS_STORAGE_KEY = "@chuchPlayer:e2ePrograms";
+const EPG_LAST_INGEST_KEY = "@chuchPlayer:epgLastIngest";
+const isE2EWeb = Platform.OS === "web" && process.env.EXPO_PUBLIC_E2E === "1";
+
+const loadE2EPrograms = (): ProgramsByChannel | null => {
+  if (!isE2EWeb || typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(E2E_PROGRAMS_STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as Record<string, Array<Omit<EPGProgram, "start" | "end"> & {
+      start: string;
+      end: string;
+    }>>;
+
+    return Object.entries(parsed).reduce<ProgramsByChannel>((acc, [channelId, programs]) => {
+      acc[channelId] = programs.map((program) => ({
+        ...program,
+        start: new Date(program.start),
+        end: new Date(program.end),
+      }));
+      return acc;
+    }, {});
+  } catch (error) {
+    console.warn("[EPG] Failed to load E2E programs", error);
+    return null;
+  }
+};
 
 const buildXtreamXmltvUrl = (
   serverUrl: string,
@@ -59,6 +90,16 @@ export const useEPGManagement = () => {
     () => channels.map((channel) => channel.id).join("|"),
     [channels],
   );
+
+  useEffect(() => {
+    const e2ePrograms = loadE2EPrograms();
+    if (!e2ePrograms) return;
+
+    setProgramsByChannel(e2ePrograms);
+    setEpgStatus({ loading: false, error: null });
+    setEpgLastUpdated(Date.now());
+    loadedChannelsRef.current = new Set(Object.keys(e2ePrograms));
+  }, [channelsSignature]);
 
   const channelIdSet = useMemo(
     () => new Set(channels.map((channel) => channel.id)),
@@ -181,9 +222,15 @@ export const useEPGManagement = () => {
   useEffect(() => {
     if (!datasetSignature) {
       loadedSignatureRef.current = null;
-      setProgramsByChannel({});
+      if (!isE2EWeb) setProgramsByChannel({});
       setEpgStatus({ loading: false, error: null });
       setEpgLastUpdated(Date.now());
+      return;
+    }
+
+    if (isE2EWeb) {
+      loadedSignatureRef.current = datasetSignature;
+      setEpgStatus({ loading: false, error: null });
       return;
     }
 
@@ -235,6 +282,31 @@ export const useEPGManagement = () => {
 
     const loadEpg = async () => {
       lastFetchTimeRef.current = Date.now();
+
+      // ── Persistent cold-boot guard ─────────────────────────────────────────
+      // loadedSignatureRef resets to null on every app open, so without this
+      // check loadEpg() always runs even when the Realm DB has fresh data.
+      // AsyncStorage survives cold boots — if the last ingest was recent and
+      // used the same signature, load from Realm and skip the network round-trip.
+      try {
+        const stored = await AsyncStorage.getItem(EPG_LAST_INGEST_KEY);
+        if (stored) {
+          const { sig, ts } = JSON.parse(stored) as { sig: string; ts: number };
+          if (sig === datasetSignature && Date.now() - ts < STARTUP_SKIP_INTERVAL_MS) {
+            if (cancelled) return;
+            const initialIds = channels.slice(0, INITIAL_PREFETCH_COUNT).map((c) => c.id);
+            await loadProgramsForChannels(initialIds, { force: true });
+            if (cancelled) return;
+            loadedSignatureRef.current = datasetSignature;
+            setEpgLastUpdated(ts);
+            setEpgStatus({ loading: false, error: null });
+            console.log("[EPG] Cold boot: cache fresh, skipped network ingest");
+            return;
+          }
+        }
+      } catch {
+        // AsyncStorage failure is non-fatal — fall through to normal load
+      }
       const errors: string[] = [];
 
       try {
@@ -260,6 +332,11 @@ export const useEPGManagement = () => {
           const timeSinceLastUpdate = Date.now() - existingMetadata.lastUpdated;
           if (timeSinceLastUpdate < DEFAULT_REFRESH_INTERVAL_MS) {
             console.log("[EPG] Cache fresh, skipping re-ingest");
+            // Persist so next cold boot takes the fast path
+            AsyncStorage.setItem(
+              EPG_LAST_INGEST_KEY,
+              JSON.stringify({ sig: datasetSignature, ts: existingMetadata.lastUpdated }),
+            ).catch(() => {/* non-fatal */});
             return;
           }
           console.log("[EPG] Cache stale, re-ingesting in background");
@@ -379,6 +456,12 @@ export const useEPGManagement = () => {
 
         loadedSignatureRef.current = datasetSignature;
         setEpgLastUpdated(timestamp);
+
+        // Persist so the next cold boot can skip the network ingest
+        AsyncStorage.setItem(
+          EPG_LAST_INGEST_KEY,
+          JSON.stringify({ sig: datasetSignature, ts: timestamp }),
+        ).catch(() => {/* non-fatal */});
 
         const errorMessage =
           errors.length > 0 && errors.length === urlsToIngest.length

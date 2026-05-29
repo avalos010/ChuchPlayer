@@ -24,6 +24,7 @@ const ChannelRow: React.FC<ChannelRowProps> = ({
   onPress,
 }) => (
   <TouchableOpacity
+    testID={`web-channel-row-${channel.id}`}
     onPress={onPress}
     style={[
       s.channelRow,
