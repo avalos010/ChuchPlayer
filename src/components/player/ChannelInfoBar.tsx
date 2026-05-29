@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import React, { useEffect, useRef, useCallback, memo } from 'react';
 import {
-  View, Text, StyleSheet, Platform, Animated, ScrollView,
+  View, Text, StyleSheet, Platform, Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { ResizeMode } from 'expo-av';
+import { MaterialCommunityIcons as MCI } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FocusableItem from '../FocusableItem';
 import { Channel, EPGProgram, RootStackParamList } from '../../types';
@@ -14,6 +15,7 @@ import { isTvLikePlatform } from '../../utils/platform';
 interface ChannelInfoBarProps {
   channel: Channel | null;
   currentProgram: EPGProgram | null;
+  nextProgram?: EPGProgram | null;
   isFavorite: boolean;
   onToggleFavorite: () => void;
   onTogglePlayback: () => void;
@@ -25,42 +27,44 @@ interface ChannelInfoBarProps {
 }
 
 const TV = isTvLikePlatform;
-const LOGO_SZ = TV ? 56 : 42;
+const LOGO_SZ = TV ? 60 : 44;
 
-const fmt = (d: Date) =>
+const fmtTime = (d: Date) =>
   d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 const aspectLabel = (m: ResizeMode) =>
   m === ResizeMode.COVER ? 'Cover' : m === ResizeMode.CONTAIN ? 'Fit' : 'Fill';
 
-// ─── Focused style for every button ──────────────────────────────────────────
+// ─── Control button ───────────────────────────────────────────────────────────
+const ICON_SZ = TV ? 22 : 18;
+
 const BTN_FOCUSED = {
-  backgroundColor: '#0ea5e9',
+  backgroundColor: 'rgba(14,165,233,0.2)',
   borderColor: '#0ea5e9',
   borderWidth: 2,
   transform: [] as any[],
   elevation: 8,
 };
 
-// ─── Single control button ────────────────────────────────────────────────────
 const Ctrl: React.FC<{
-  icon: string;
+  icon: React.ComponentProps<typeof MCI>['name'];
   label: string;
   onPress: () => void;
   onFocus: () => void;
   onBlur: () => void;
   active?: boolean;
-  iconStyle?: object;
-}> = ({ icon, label, onPress, onFocus, onBlur, active, iconStyle }) => (
+}> = ({ icon, label, onPress, onFocus, onBlur, active }) => (
   <FocusableItem
     onPress={onPress}
     onFocus={onFocus}
     onBlur={onBlur}
-    style={[s.ctrlBtn, active ? s.ctrlBtnActive : null]}
+    style={[s.btn, active && s.btnActive]}
     focusedStyle={BTN_FOCUSED}
   >
-    <Text style={[s.ctrlIcon, iconStyle]}>{icon}</Text>
-    <Text style={s.ctrlLabel}>{label}</Text>
+    <View style={s.btnIconWrap}>
+      <MCI name={icon} size={ICON_SZ} color={active ? '#38bdf8' : '#94a3b8'} />
+    </View>
+    <Text style={[s.btnLabel, active && s.btnLabelActive]}>{label}</Text>
   </FocusableItem>
 );
 
@@ -68,6 +72,7 @@ const Ctrl: React.FC<{
 const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   channel,
   currentProgram,
+  nextProgram,
   isFavorite,
   onToggleFavorite,
   onTogglePlayback,
@@ -80,21 +85,19 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   const isPlaying       = usePlayerStore((st) => st.isPlaying);
   const resizeMode      = usePlayerStore((st) => st.resizeMode);
   const cycleResizeMode = usePlayerStore((st) => st.cycleResizeMode);
+  const showInfoBar     = useUIStore((st) => st.showInfoBar);
+  const setShowInfoBar  = useUIStore((st) => st.setShowInfoBar);
 
-  const showInfoBar    = useUIStore((st) => st.showInfoBar);
-  const setShowInfoBar = useUIStore((st) => st.setShowInfoBar);
-
-  const slideAnim   = useRef(new Animated.Value(200)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
-  const hideTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const [progress,      setProgress]      = React.useState(0);
-  const [focused,       setFocused]        = React.useState(false);
-  const [imgErr,        setImgErr]         = React.useState(false);
+  const slideAnim    = useRef(new Animated.Value(300)).current;
+  const opacityAnim  = useRef(new Animated.Value(0)).current;
+  const hideTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const animationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const [progress, setProgress] = React.useState(0);
+  const [focused, setFocused]   = React.useState(false);
+  const [imgErr, setImgErr]     = React.useState(false);
 
   React.useEffect(() => { setImgErr(false); }, [channel?.id]);
 
-  // ── auto-hide ──────────────────────────────────────────────────────────────
   const cancelHide = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
   }, []);
@@ -103,33 +106,34 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
     cancelHide();
     if (timeoutSeconds === 0 || focused) return;
     hideTimer.current = setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(slideAnim,   { toValue: 200, duration: 350, useNativeDriver: true }),
-        Animated.timing(opacityAnim, { toValue: 0,   duration: 350, useNativeDriver: true }),
-      ]).start(() => setShowInfoBar(false));
+      animationRef.current?.stop();
+      animationRef.current = Animated.parallel([
+        Animated.timing(slideAnim,   { toValue: 300, duration: 300, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 0,   duration: 300, useNativeDriver: true }),
+      ]);
+      animationRef.current.start(() => {
+        animationRef.current = null;
+        setShowInfoBar(false);
+      });
     }, timeoutSeconds * 1000);
   }, [focused, timeoutSeconds, cancelHide, slideAnim, opacityAnim, setShowInfoBar]);
 
   useEffect(() => {
-    if (!showInfoBar) {
-      cancelHide();
-      return;
-    }
-    Animated.parallel([
-      Animated.spring(slideAnim,   { toValue: 0, tension: 60, friction: 10, useNativeDriver: true }),
-      Animated.timing(opacityAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
-    ]).start();
+    if (!showInfoBar) { cancelHide(); animationRef.current?.stop(); return; }
+    animationRef.current?.stop();
+    animationRef.current = Animated.parallel([
+      Animated.spring(slideAnim,   { toValue: 0, tension: 55, friction: 11, useNativeDriver: true }),
+      Animated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]);
+    animationRef.current.start(() => { animationRef.current = null; });
     scheduleHide();
-    return cancelHide;
+    return () => { cancelHide(); animationRef.current?.stop(); };
   }, [showInfoBar]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // restart hide timer when focus leaves buttons
   useEffect(() => {
-    if (!focused) scheduleHide();
-    else cancelHide();
+    if (!focused) scheduleHide(); else cancelHide();
   }, [focused]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── progress bar ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!currentProgram) { setProgress(0); return; }
     const tick = () => {
@@ -143,105 +147,170 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
     return () => clearInterval(id);
   }, [currentProgram]);
 
-  const onFocus = useCallback(() => { setFocused(true);  }, []);
-  const onBlur  = useCallback(() => { setFocused(false); }, []);
+  const onFocus = useCallback(() => setFocused(true),  []);
+  const onBlur  = useCallback(() => setFocused(false), []);
 
   if (!showInfoBar || !channel) return null;
+
+  const initials = channel.name.substring(0, 2).toUpperCase();
+  const pct = Math.round(progress * 100);
+  const minsLeft = currentProgram
+    ? Math.max(0, Math.round((currentProgram.end.getTime() - Date.now()) / 60_000))
+    : null;
 
   return (
     <Animated.View
       style={[s.container, { transform: [{ translateY: slideAnim }], opacity: opacityAnim }]}
       pointerEvents="box-none"
     >
-      {/* ── Info row ──────────────────────────────────────────────────────── */}
-      <View style={s.infoRow}>
-        {/* Logo */}
-        <View style={s.logoWrap}>
-          {channel.logo && !imgErr ? (
-            <Image
-              source={{ uri: channel.logo }}
-              style={s.logo}
-              contentFit="contain"
-              cachePolicy="disk"
-              onError={() => setImgErr(true)}
+      {/* ── Gradient fade zone (video shows through) ─────────────────────── */}
+      <View style={s.fadeZone} pointerEvents="none">
+        <View style={s.fadeRow1} />
+        <View style={s.fadeRow2} />
+        <View style={s.fadeRow3} />
+      </View>
+
+      {/* ── Main content ─────────────────────────────────────────────────── */}
+      <View style={s.main}>
+        {/* ── Info row ─────────────────────────────────────────────────── */}
+        <View style={s.infoRow}>
+          {/* Logo */}
+          <View style={s.logoWrap}>
+            {channel.logo && !imgErr ? (
+              <Image
+                source={{ uri: channel.logo }}
+                style={s.logo}
+                contentFit="contain"
+                cachePolicy="disk"
+                onError={() => setImgErr(true)}
+              />
+            ) : (
+              <View style={s.logoFallback}>
+                <Text style={s.initials}>{initials}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Text */}
+          <View style={s.textBlock}>
+            <View style={s.nameRow}>
+              <View style={s.liveDot} />
+              <Text style={s.chName} numberOfLines={1}>{channel.name}</Text>
+              {channel.catchupAvailable && (
+                <View style={s.catchupBadge}><Text style={s.catchupTxt}>⏮</Text></View>
+              )}
+              {sleepLabel && (
+                <View style={s.sleepBadge}><Text style={s.sleepTxt}>💤 {sleepLabel}</Text></View>
+              )}
+            </View>
+
+            {currentProgram ? (
+              <Text style={s.progName} numberOfLines={1}>{currentProgram.title}</Text>
+            ) : (
+              <Text style={s.progName}>Live TV</Text>
+            )}
+
+            {nextProgram ? (
+              <Text style={s.nextProg} numberOfLines={1}>
+                Next · {fmtTime(nextProgram.start)} · {nextProgram.title}
+              </Text>
+            ) : null}
+          </View>
+
+          {/* Time + progress % */}
+          <View style={s.rightBlock}>
+            {currentProgram ? (
+              <>
+                <Text style={s.timeRange}>
+                  {fmtTime(currentProgram.start)} – {fmtTime(currentProgram.end)}
+                </Text>
+                {minsLeft !== null && (
+                  <Text style={s.pct}>{minsLeft}m left</Text>
+                )}
+              </>
+            ) : null}
+          </View>
+        </View>
+
+        {/* ── Progress bar ─────────────────────────────────────────────── */}
+        <View style={s.progressWrap} pointerEvents="none">
+          <View style={s.progressBg}>
+            <View style={[s.progressFg, { width: `${pct}%` as any }]} />
+          </View>
+        </View>
+
+        {/* ── Divider ──────────────────────────────────────────────────── */}
+        <View style={s.divider} />
+
+        {/* ── Controls ─────────────────────────────────────────────────── */}
+        <View style={s.controls}>
+          <Ctrl
+            icon={isPlaying ? 'pause' : 'play'}
+            label={isPlaying ? 'Pause' : 'Play'}
+            onPress={onTogglePlayback}
+            onFocus={onFocus}
+            onBlur={onBlur}
+            active={isPlaying}
+          />
+
+          <Ctrl
+            icon="aspect-ratio"
+            label={aspectLabel(resizeMode)}
+            onPress={cycleResizeMode}
+            onFocus={onFocus}
+            onBlur={onBlur}
+          />
+
+          <Ctrl
+            icon={isFavorite ? 'star' : 'star-outline'}
+            label="Favorite"
+            onPress={onToggleFavorite}
+            onFocus={onFocus}
+            onBlur={onBlur}
+            active={isFavorite}
+          />
+
+          {onMultiScreen && (
+            <Ctrl
+              icon="picture-in-picture-top-right"
+              label="Multi"
+              onPress={onMultiScreen}
+              onFocus={onFocus}
+              onBlur={onBlur}
             />
-          ) : (
-            <View style={s.logoFallback}>
-              <Text style={s.logoInitials}>{channel.name.substring(0, 2).toUpperCase()}</Text>
-            </View>
           )}
-        </View>
 
-        {/* Channel + program text */}
-        <View style={s.textBlock}>
-          <Text style={s.chName} numberOfLines={1}>{channel.name}</Text>
-          {currentProgram ? (
-            <Text style={s.progName} numberOfLines={1}>{currentProgram.title}</Text>
-          ) : null}
-        </View>
+          <Ctrl
+            icon="television-guide"
+            label="Guide"
+            onPress={() => {
+              setShowInfoBar(false);
+              useUIStore.getState().setShowEPGGrid(true);
+            }}
+            onFocus={onFocus}
+            onBlur={onBlur}
+          />
 
-        {/* Right side — time + sleep badge */}
-        <View style={s.rightBlock}>
-          {currentProgram ? (
-            <Text style={s.timeRange}>{fmt(currentProgram.start)} – {fmt(currentProgram.end)}</Text>
-          ) : null}
-          {sleepLabel ? (
-            <View style={s.sleepPill}>
-              <Text style={s.sleepPillTxt}>💤 {sleepLabel}</Text>
-            </View>
-          ) : null}
+          <Ctrl
+            icon="sleep"
+            label="Sleep"
+            onPress={onSleepTimer}
+            onFocus={onFocus}
+            onBlur={onBlur}
+          />
+
+          <Ctrl
+            icon="cog-outline"
+            label="Settings"
+            onPress={() => {
+              setShowInfoBar(false);
+              setTimeout(() => navigation?.navigate('Settings', { focusTarget: 'interface' }), 80);
+            }}
+            onFocus={onFocus}
+            onBlur={onBlur}
+          />
         </View>
       </View>
-
-      {/* ── Progress bar ──────────────────────────────────────────────────── */}
-      <View style={s.progressBg} pointerEvents="none">
-        <View style={[s.progressFg, { width: `${progress * 100}%` as any }]} />
-      </View>
-
-      {/* ── Separator ─────────────────────────────────────────────────────── */}
-      <View style={s.sep} />
-
-      {/* ── Controls row ──────────────────────────────────────────────────── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={s.ctrlsRow}
-        pointerEvents="box-none"
-      >
-        <Ctrl icon={isPlaying ? '⏸' : '▶'} label={isPlaying ? 'Pause' : 'Play'}
-          onPress={onTogglePlayback} onFocus={onFocus} onBlur={onBlur} active={isPlaying} />
-
-        <Ctrl icon="▦" label={aspectLabel(resizeMode)}
-          onPress={cycleResizeMode} onFocus={onFocus} onBlur={onBlur} />
-
-        <Ctrl icon="CC" label="Captions"
-          onPress={() => { setShowInfoBar(false); setTimeout(() => navigation?.navigate('Settings', { focusTarget: 'interface' }), 80); }}
-          onFocus={onFocus} onBlur={onBlur} />
-
-        {onMultiScreen ? (
-          <Ctrl icon="📺" label="Multi" onPress={onMultiScreen} onFocus={onFocus} onBlur={onBlur} />
-        ) : null}
-
-        <Ctrl
-          icon={isFavorite ? '★' : '☆'}
-          label="Fav"
-          onPress={onToggleFavorite}
-          onFocus={onFocus}
-          onBlur={onBlur}
-          active={isFavorite}
-          iconStyle={isFavorite ? s.favIcon : undefined}
-        />
-
-        <Ctrl icon="💤" label="Sleep" onPress={onSleepTimer} onFocus={onFocus} onBlur={onBlur} />
-
-        <Ctrl icon="📅" label="Guide"
-          onPress={() => { setShowInfoBar(false); useUIStore.getState().setShowEPGGrid(true); }}
-          onFocus={onFocus} onBlur={onBlur} />
-
-        <Ctrl icon="⚙" label="Settings"
-          onPress={() => { setShowInfoBar(false); setTimeout(() => navigation?.navigate('Settings', { focusTarget: 'interface' }), 80); }}
-          onFocus={onFocus} onBlur={onBlur} />
-      </ScrollView>
     </Animated.View>
   );
 };
@@ -255,131 +324,192 @@ const s = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(6, 8, 18, 0.97)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.07)',
     zIndex: 30,
     elevation: 30,
   },
 
-  // Info row
+  // Simulated gradient — three translucent rows that get progressively darker
+  fadeZone: {
+    pointerEvents: 'none',
+  },
+  fadeRow1: { height: TV ? 40 : 28, backgroundColor: 'rgba(6,8,18,0.0)'  },
+  fadeRow2: { height: TV ? 44 : 32, backgroundColor: 'rgba(6,8,18,0.45)' },
+  fadeRow3: { height: TV ? 32 : 22, backgroundColor: 'rgba(6,8,18,0.75)' },
+
+  // Solid dark content area
+  main: {
+    backgroundColor: 'rgba(6,8,18,0.97)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(14,165,233,0.12)',
+  },
+
+  // ── Info row ──────────────────────────────────────────────────────────────
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: TV ? 28 : 16,
-    paddingTop: TV ? 18 : 12,
-    paddingBottom: TV ? 12 : 8,
-    gap: TV ? 16 : 10,
+    paddingHorizontal: TV ? 32 : 16,
+    paddingTop: TV ? 20 : 12,
+    paddingBottom: TV ? 10 : 6,
+    gap: TV ? 18 : 12,
   },
   logoWrap: {
     width: LOGO_SZ,
     height: LOGO_SZ,
-    borderRadius: 10,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
   },
   logo: { width: '100%', height: '100%' },
   logoFallback: {
     flex: 1,
-    backgroundColor: '#1e2130',
+    backgroundColor: '#0d1117',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  logoInitials: {
-    color: '#94a3b8',
-    fontSize: TV ? 18 : 14,
-    fontWeight: '800',
-  },
-  textBlock: { flex: 1, gap: 3 },
-  chName: {
-    color: '#f1f5f9',
-    fontSize: TV ? 22 : 16,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  progName: {
-    color: '#64748b',
-    fontSize: TV ? 14 : 11,
-    fontWeight: '500',
-  },
-  rightBlock: {
-    alignItems: 'flex-end',
-    gap: 5,
-  },
-  timeRange: {
+  initials: {
     color: '#475569',
-    fontSize: TV ? 14 : 11,
-    fontWeight: '600',
+    fontSize: TV ? 20 : 15,
+    fontWeight: '800',
   },
-  sleepPill: {
-    backgroundColor: '#1e2130',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  textBlock: {
+    flex: 1,
+    gap: TV ? 4 : 2,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  liveDot: {
+    width: TV ? 7 : 6,
+    height: TV ? 7 : 6,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+  },
+  chName: {
+    flex: 1,
+    color: '#f8fafc',
+    fontSize: TV ? 26 : 18,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+  },
+  catchupBadge: {
+    backgroundColor: 'rgba(14,116,144,0.3)',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderWidth: 1,
-    borderColor: '#0ea5e9',
+    borderColor: 'rgba(14,165,233,0.3)',
   },
-  sleepPillTxt: {
+  catchupTxt: {
+    color: '#38bdf8',
+    fontSize: TV ? 11 : 9,
+    fontWeight: '700',
+  },
+  sleepBadge: {
+    backgroundColor: 'rgba(30,32,60,0.9)',
+    borderRadius: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(14,165,233,0.25)',
+  },
+  sleepTxt: {
     color: '#0ea5e9',
     fontSize: TV ? 11 : 9,
     fontWeight: '700',
   },
+  progName: {
+    color: '#94a3b8',
+    fontSize: TV ? 16 : 12,
+    fontWeight: '500',
+  },
+  nextProg: {
+    color: '#334155',
+    fontSize: TV ? 12 : 10,
+    fontWeight: '500',
+  },
+  rightBlock: {
+    alignItems: 'flex-end',
+    gap: 4,
+    minWidth: TV ? 110 : 80,
+  },
+  timeRange: {
+    color: '#64748b',
+    fontSize: TV ? 14 : 11,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  pct: {
+    color: '#0ea5e9',
+    fontSize: TV ? 13 : 10,
+    fontWeight: '700',
+  },
 
-  // Progress
+  // ── Progress bar ──────────────────────────────────────────────────────────
+  progressWrap: {
+    paddingHorizontal: TV ? 32 : 16,
+    paddingBottom: TV ? 6 : 4,
+  },
   progressBg: {
-    height: 3,
-    backgroundColor: '#1e293b',
-    marginHorizontal: TV ? 28 : 16,
-    borderRadius: 2,
+    height: TV ? 4 : 3,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 3,
     overflow: 'hidden',
   },
   progressFg: {
     height: '100%',
     backgroundColor: '#0ea5e9',
-    borderRadius: 2,
+    borderRadius: 3,
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 2,
   },
 
-  // Separator
-  sep: {
+  // ── Divider ───────────────────────────────────────────────────────────────
+  divider: {
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.05)',
-    marginTop: TV ? 14 : 10,
+    marginHorizontal: TV ? 24 : 12,
   },
 
-  // Controls row
-  ctrlsRow: {
+  // ── Controls ──────────────────────────────────────────────────────────────
+  controls: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: TV ? 20 : 12,
-    paddingVertical: TV ? 14 : 10,
+    justifyContent: 'center',
+    paddingHorizontal: TV ? 24 : 12,
+    paddingVertical: TV ? 12 : 8,
     gap: TV ? 10 : 7,
   },
-  ctrlBtn: {
+  btn: {
+    width: TV ? 88 : 68,
+    height: TV ? 72 : 58,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: TV ? 12 : 8,
-    paddingHorizontal: TV ? 20 : 14,
-    minWidth: TV ? 84 : 62,
-    borderRadius: 10,
-    backgroundColor: '#0d1117',
+    gap: TV ? 5 : 3,
+    borderRadius: TV ? 14 : 10,
+    backgroundColor: 'rgba(15,20,35,0.95)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
-    gap: TV ? 5 : 3,
   },
-  ctrlBtnActive: {
-    backgroundColor: '#0c1829',
+  btnActive: {
+    backgroundColor: 'rgba(14,165,233,0.12)',
     borderColor: 'rgba(14,165,233,0.35)',
   },
-  ctrlIcon: {
-    color: '#cbd5e1',
-    fontSize: TV ? 20 : 16,
-    fontWeight: '700',
+  btnIconWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  ctrlLabel: {
-    color: '#475569',
+  btnLabel: {
+    color: '#64748b',
     fontSize: TV ? 11 : 9,
-    fontWeight: '600',
+    fontWeight: '700',
     letterSpacing: 0.2,
+    textAlign: 'center',
   },
-  favIcon: { color: '#f59e0b' },
+  btnLabelActive: { color: '#7dd3fc' },
 });

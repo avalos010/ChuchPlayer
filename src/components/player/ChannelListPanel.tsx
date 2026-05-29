@@ -63,8 +63,11 @@ const EpgDetailPanel = React.memo<EpgDetailPanelProps>(
       if (!programs.length) return;
       const idx = programs.findIndex((p) => p.start.getTime() <= now && p.end.getTime() > now);
       if (idx > 1) {
-        // each row ≈ 72px, scroll so current program is near top with 1 past row visible
-        setTimeout(() => scrollRef.current?.scrollTo({ y: (idx - 1) * 72, animated: false }), 50);
+        const t = setTimeout(
+          () => scrollRef.current?.scrollTo({ y: (idx - 1) * 72, animated: false }),
+          50,
+        );
+        return () => clearTimeout(t);
       }
     }, [channel?.id, programs]); // eslint-disable-line react-hooks/exhaustive-deps
 

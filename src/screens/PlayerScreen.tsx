@@ -263,6 +263,11 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     return getProgramsForChannel(channel.id);
   }, [channel?.id, getProgramsForChannel, epgLastUpdated]);
 
+  const nextProgram = useMemo(() => {
+    const now = new Date();
+    return currentChannelPrograms.find((p) => p.start > now) ?? null;
+  }, [currentChannelPrograms]);
+
   // EPG auto-hide
   useEPGAutoHide();
 
@@ -645,6 +650,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
         <ChannelInfoBar
           channel={channel}
           currentProgram={currentProgram}
+          nextProgram={nextProgram}
           isFavorite={channel ? isFavorite(channel.id) : false}
           onToggleFavorite={() => channel && toggleFavorite(channel)}
           onTogglePlayback={handleTogglePlayback}
