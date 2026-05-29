@@ -8,6 +8,8 @@ import AppNavigator from './src/navigation/AppNavigator';
 import './global.css';
 import { useDataRefreshScheduler } from './src/hooks/useDataRefreshScheduler';
 import { useThemeStore } from './src/store/useThemeStore';
+import { useAppUpdater } from './src/hooks/useAppUpdater';
+import AppUpdateDialog from './src/components/AppUpdateDialog';
 
 // Verify NativeWind installation
 if (__DEV__) {
@@ -25,6 +27,8 @@ const App = () => {
   const theme = useThemeStore((s) => s.theme);
   useEffect(() => { loadPersistedTheme(); }, []);
 
+  const { state: updateState, startUpdate, dismiss } = useAppUpdater();
+
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.bg }}>
       <SafeAreaProvider>
@@ -33,6 +37,16 @@ const App = () => {
         <View className="absolute inset-0 z-[9999]" style={{ elevation: 9999 }} pointerEvents="box-none">
           <Toast />
         </View>
+        {(updateState.phase === 'available' || updateState.phase === 'downloading') && (
+          <AppUpdateDialog
+            visible
+            versionName={updateState.remote.versionName}
+            releaseNotes={updateState.remote.releaseNotes}
+            progress={updateState.phase === 'downloading' ? updateState.progress : null}
+            onUpdate={startUpdate}
+            onDismiss={dismiss}
+          />
+        )}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

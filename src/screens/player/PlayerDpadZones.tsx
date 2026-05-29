@@ -7,6 +7,7 @@ interface PlayerDpadZonesProps {
   centerZoneRef: React.RefObject<any>;
   onCenterPress: () => void;
   onLeftPress: () => void;
+  onRightPress: () => void;
   onUpPress: () => void;
   onUpFocus: () => void;
   onDownPress: () => void;
@@ -48,6 +49,15 @@ const DPAD_LEFT_STYLE = {
   zIndex: 2,
   backgroundColor: 'transparent' as const,
 };
+const DPAD_RIGHT_STYLE = {
+  position: 'absolute' as const,
+  top: 0,
+  right: 0,
+  width: 100,
+  bottom: 0,
+  zIndex: 2,
+  backgroundColor: 'transparent' as const,
+};
 const DPAD_TOP_STYLE = {
   position: 'absolute' as const,
   top: 0,
@@ -72,6 +82,7 @@ const PlayerDpadZones: React.FC<PlayerDpadZonesProps> = ({
   centerZoneRef,
   onCenterPress,
   onLeftPress,
+  onRightPress,
   onUpPress,
   onUpFocus,
   onDownPress,
@@ -103,6 +114,16 @@ const PlayerDpadZones: React.FC<PlayerDpadZonesProps> = ({
           onFocus={onLeftPress}
           className=""
           style={DPAD_LEFT_STYLE}
+          focusedStyle={DPAD_INVISIBLE_FOCUSED_STYLE}
+        >
+          <View style={TRANSPARENT_FLEX} />
+        </FocusableItem>
+
+        <FocusableItem
+          onPress={onRightPress}
+          onFocus={onRightPress}
+          className=""
+          style={DPAD_RIGHT_STYLE}
           focusedStyle={DPAD_INVISIBLE_FOCUSED_STYLE}
         >
           <View style={TRANSPARENT_FLEX} />

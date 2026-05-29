@@ -51,7 +51,11 @@ export const useChannelNavigation = ({
       }
     }
 
-    usePlayerStore.setState({ loading: true, error: null, isPlaying: false, channel: selectedChannel });
+    usePlayerStore.setState({
+      loading: true, error: null, isPlaying: false,
+      previousChannel: currentChannel && currentChannel.id !== selectedChannel.id ? currentChannel : usePlayerStore.getState().previousChannel,
+      channel: selectedChannel,
+    });
     setShowChannelList(false);
     setShowChannelInfoCard?.(true);
 
@@ -93,7 +97,12 @@ export const useChannelNavigation = ({
 
       exitPIP?.();
 
-      usePlayerStore.setState({ loading: true, error: null, isPlaying: false, channel: newChannel });
+      const prevChannel = usePlayerStore.getState().channel;
+      usePlayerStore.setState({
+        loading: true, error: null, isPlaying: false,
+        previousChannel: prevChannel && prevChannel.id !== newChannel.id ? prevChannel : usePlayerStore.getState().previousChannel,
+        channel: newChannel,
+      });
       const program = getCurrentProgram(newChannel.id);
       setCurrentProgram(program);
       setShowChannelInfoCard?.(true);

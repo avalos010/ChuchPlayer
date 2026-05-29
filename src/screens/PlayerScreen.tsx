@@ -75,6 +75,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const showProgramInfo = useUIStore((state) => state.showProgramInfo);
   const showSleepTimer = useUIStore((state) => state.showSleepTimer);
   const showChannelNumberPad = useUIStore((state) => state.showChannelNumberPad);
+  const showInfoBar = useUIStore((state) => state.showInfoBar);
   
   // EPG store state
   const currentProgram = useEPGStore((state) => state.currentProgram);
@@ -112,6 +113,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     handleChannelSelect,
     handleUpDpad,
     handleDownDpad,
+    switchChannel,
   } = useChannelNavigation({
     videoRef,
     getCurrentProgram,
@@ -245,6 +247,25 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     setShowMultiScreenControls(true);
   }, []);
 
+  // D-pad right: single screen → jump to previously-watched channel.
+  // Multi-screen → cycle the next screen to fullscreen.
+  const handleRightDpad = useCallback(() => {
+    const { showEPGGrid, showEPG, showChannelList, showGroupsPlaylists } = useUIStore.getState();
+    if (showEPGGrid || showEPG || showChannelList || showGroupsPlaylists) return;
+
+    const ms = useMultiScreenStore.getState();
+    if (ms.isMultiScreenMode && ms.screens.length > 0) {
+      ms.cycleFullscreen();
+      centerZoneRef.current?.focus?.();
+      return;
+    }
+
+    const { previousChannel, channel } = usePlayerStore.getState();
+    if (previousChannel && previousChannel.id !== channel?.id) {
+      switchChannel(previousChannel, exitPIP);
+    }
+  }, [switchChannel, exitPIP]);
+
   const handleMultiScreenClose = useCallback(() => setShowMultiScreenControls(false), []);
 
   const handleEPGOverlayBack = useCallback(() => {
@@ -290,6 +311,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     showProgramInfo,
     showSleepTimer,
     showChannelNumberPad,
+    showInfoBar,
   });
 
   // If in multi-screen mode, show multi-screen view
@@ -314,6 +336,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
         centerZoneRef={centerZoneRef}
         onCenterPress={handleCenterPress}
         onLeftPress={handleLeftDpad}
+        onRightPress={handleRightDpad}
         onUpPress={handleUpDpadPress}
         onUpFocus={handleUpDpadFocus}
         onDownPress={handleDownDpadPress}
@@ -421,6 +444,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       {/* Channel List Panel */}
       <ChannelListPanel
         onChannelSelect={handleChannelSelect}
+        onCatchupSelect={handleCatchupSelect}
         getCurrentProgram={getCurrentProgram}
         getProgramsForChannel={getProgramsForChannel}
         epgLastUpdated={epgLastUpdated}

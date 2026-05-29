@@ -6,6 +6,7 @@ export interface PlayerModalOverlayState {
   showProgramInfo: boolean;
   showSleepTimer: boolean;
   showChannelNumberPad: boolean;
+  showInfoBar: boolean;
 }
 
 export const hasPlayerModalOverlay = (state: PlayerModalOverlayState) =>
@@ -15,4 +16,5 @@ export const hasPlayerModalOverlay = (state: PlayerModalOverlayState) =>
   state.showGroupsPlaylists ||
   state.showProgramInfo ||
   state.showSleepTimer ||
-  state.showChannelNumberPad;
+  state.showChannelNumberPad ||
+  state.showInfoBar;

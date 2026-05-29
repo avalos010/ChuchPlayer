@@ -17,6 +17,7 @@ import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
 import com.chuchplayer.epg.EpgIngestionPackage
 import com.chuchplayer.player.ExoPlayerPackage
+import com.chuchplayer.updater.AppUpdaterPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -30,6 +31,7 @@ class MainApplication : Application(), ReactApplication {
             
               add(EpgIngestionPackage())
               add(ExoPlayerPackage())
+              add(AppUpdaterPackage())
             }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"

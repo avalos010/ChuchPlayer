@@ -20,9 +20,12 @@ import { useFavorites } from '../../hooks/useFavorites';
 import { useRecentChannels } from '../../hooks/useRecentChannels';
 import { isTvLikePlatform } from '../../utils/platform';
 import { formatClockTime } from '../../utils/time';
+import { useThemeStore } from '../../store/useThemeStore';
+import { Theme } from '../../theme/themes';
 
 interface ChannelListPanelProps {
   onChannelSelect: (channel: Channel) => void;
+  onCatchupSelect?: (channelId: string, startMs: number, endMs: number, programTitle: string) => void;
   getCurrentProgram?: (channelId: string) => EPGProgram | null;
   getProgramsForChannel?: (channelId: string) => EPGProgram[];
   epgLastUpdated?: number;
@@ -44,30 +47,28 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'recent', label: '🕒 Recent' },
 ];
 
-const TAB_FOCUSED     = { backgroundColor: 'rgba(30,41,59,0.9)', borderColor: '#334155', borderWidth: 1.5, transform: [] as any[], elevation: 3 };
-const TAB_ACT_FOCUSED = { backgroundColor: 'rgba(2,132,199,0.9)', borderColor: '#0ea5e9', borderWidth: 1.5, transform: [] as any[], elevation: 4 };
-const GRP_FOCUSED     = { backgroundColor: 'rgba(30,41,59,0.9)', borderColor: '#334155', borderWidth: 1.5, transform: [] as any[], elevation: 3 };
-
 // ─── Focused-channel EPG panel ────────────────────────────────────────────────
 interface EpgDetailPanelProps {
   channel: Channel | null;
   programs: EPGProgram[];
   now: number;
   clockFormat: '12h' | '24h';
+  onCatchupSelect?: (channelId: string, startMs: number, endMs: number, programTitle: string) => void;
 }
 
 const EPG_ROW_H = TV ? 72 : 60;
 
-const ROW_FOCUSED = {
-  backgroundColor: 'rgba(14,165,233,0.15)',
-  borderColor: 'rgba(14,165,233,0.5)',
-  borderWidth: 1,
-  transform: [] as any[],
-  elevation: 4,
-};
-
 const EpgDetailPanelInner = React.forwardRef<ScrollView, EpgDetailPanelProps>(
-  ({ channel, programs, now, clockFormat }, ref) => {
+  ({ channel, programs, now, clockFormat, onCatchupSelect }, ref) => {
+    const theme = useThemeStore((s) => s.theme);
+    const ep = useMemo(() => createEpgStyles(theme), [theme]);
+    const ROW_FOCUSED = useMemo(() => ({
+      backgroundColor: theme.card,
+      borderColor: theme.focused,
+      borderWidth: 1,
+      transform: [] as any[],
+      elevation: 4,
+    }), [theme]);
     const scrollRef = useRef<ScrollView>(null);
 
     // Expose the scroll ref so ChannelListPanel can forward it
@@ -130,7 +131,7 @@ const EpgDetailPanelInner = React.forwardRef<ScrollView, EpgDetailPanelProps>(
               return (
                 <FocusableItem
                   key={p.id}
-                  onPress={() => {/* catchup play handled by parent */}}
+                  onPress={() => { if (canCatchup && channel) onCatchupSelect?.(channel.id, p.start.getTime(), p.end.getTime(), p.title); }}
                   onFocus={() => handleRowFocus(index)}
                   style={[
                     ep.row,
@@ -170,21 +171,29 @@ const EpgDetailPanelInner = React.forwardRef<ScrollView, EpgDetailPanelProps>(
 EpgDetailPanelInner.displayName = 'EpgDetailPanel';
 
 const EpgDetailPanel = React.memo(EpgDetailPanelInner, (prev, next) =>
-  prev.channel?.id === next.channel?.id &&
-  prev.programs    === next.programs    &&
-  prev.clockFormat === next.clockFormat &&
+  prev.channel?.id        === next.channel?.id        &&
+  prev.programs           === next.programs           &&
+  prev.clockFormat        === next.clockFormat        &&
+  prev.onCatchupSelect    === next.onCatchupSelect    &&
   Math.abs(prev.now - next.now) < 60_000,
 );
 
 // ─── Main component ──────────────────────────────────────────────────────────
 const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
   onChannelSelect,
+  onCatchupSelect,
   getCurrentProgram,
   getProgramsForChannel,
   epgLastUpdated,
   showChannelNumbers = false,
   clockFormat = '24h',
 }) => {
+  const theme = useThemeStore((s) => s.theme);
+  const st    = useMemo(() => createStyles(theme), [theme]);
+  const TAB_FOCUSED     = useMemo(() => ({ backgroundColor: theme.card, borderColor: theme.focused, borderWidth: 1.5, transform: [] as any[], elevation: 3 }), [theme]);
+  const TAB_ACT_FOCUSED = useMemo(() => ({ backgroundColor: theme.cardActive, borderColor: theme.accent, borderWidth: 1.5, transform: [] as any[], elevation: 4 }), [theme]);
+  const GRP_FOCUSED     = useMemo(() => ({ backgroundColor: theme.card, borderColor: theme.focused, borderWidth: 1.5, transform: [] as any[], elevation: 3 }), [theme]);
+
   const showGroupsPlaylists    = useUIStore((s) => s.showGroupsPlaylists);
   const setShowGroupsPlaylists = useUIStore((s) => s.setShowGroupsPlaylists);
   const selectedGroup          = useUIStore((s) => s.selectedGroup);
@@ -299,6 +308,11 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
     if (!showGroupsPlaylists) setShowGroupsPlaylists(true);
   }, [showGroupsPlaylists, setShowGroupsPlaylists]);
 
+  const handleCatchupSelect = useCallback((channelId: string, startMs: number, endMs: number, programTitle: string) => {
+    setShowChannelList(false);
+    onCatchupSelect?.(channelId, startMs, endMs, programTitle);
+  }, [setShowChannelList, onCatchupSelect]);
+
   useEffect(() => {
     if (!showChannelList || !KeyEvent) return;
     KeyEvent.onKeyDownListener((e: { keyCode: number }) => {
@@ -380,7 +394,7 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
             <TextInput
               style={st.searchInput}
               placeholder="Search channels..."
-              placeholderTextColor="#475569"
+              placeholderTextColor={theme.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCorrect={false}
@@ -457,6 +471,7 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
                 programs={focusedPrograms}
                 now={nowMs}
                 clockFormat={clockFormat}
+                onCatchupSelect={handleCatchupSelect}
               />
             </View>
           )}
@@ -469,7 +484,7 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
 export default ChannelListPanel;
 
 // ─── Panel styles ─────────────────────────────────────────────────────────────
-const st = StyleSheet.create({
+const createStyles = (theme: Theme) => StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
@@ -481,16 +496,16 @@ const st = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: TOTAL_W,
-    backgroundColor: 'rgba(8,12,20,0.93)',
+    backgroundColor: theme.bg,
     borderRightWidth: 1,
-    borderRightColor: 'rgba(30,41,59,0.7)',
+    borderRightColor: theme.border,
     zIndex: 20,
     elevation: 20,
   },
   header: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(30,41,59,0.8)',
+    borderBottomColor: theme.border,
   },
   headerLeft: {
     width: PANEL_W,
@@ -507,11 +522,11 @@ const st = StyleSheet.create({
     paddingHorizontal: TV ? 12 : 10,
     paddingBottom: TV ? 10 : 8,
     borderLeftWidth: 1,
-    borderLeftColor: 'rgba(30,41,59,0.6)',
-    backgroundColor: 'rgba(6,10,16,0.5)',
+    borderLeftColor: theme.border,
+    backgroundColor: theme.surface,
   },
   headerEpgTxt: {
-    color: '#334155',
+    color: theme.textMuted,
     fontSize: TV ? 10 : 9,
     fontWeight: '800',
     letterSpacing: 2,
@@ -520,27 +535,27 @@ const st = StyleSheet.create({
     width: TV ? 34 : 28,
     height: TV ? 34 : 28,
     borderRadius: 8,
-    backgroundColor: 'rgba(13,17,23,0.8)',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: 'rgba(30,41,59,0.9)',
+    borderColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
   groupsArrowTxt: {
-    color: '#64748b',
+    color: theme.textSub,
     fontSize: TV ? 22 : 18,
     fontWeight: '700',
     lineHeight: TV ? 26 : 22,
   },
   headerTitle: {
-    color: '#e2e8f0',
+    color: theme.text,
     fontSize: TV ? 16 : 14,
     fontWeight: '800',
     flex: 1,
     letterSpacing: -0.3,
   },
   headerCount: {
-    color: '#475569',
+    color: theme.textMuted,
     fontSize: TV ? 12 : 10,
     fontWeight: '700',
   },
@@ -550,7 +565,7 @@ const st = StyleSheet.create({
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(13,17,23,0.8)',
+    backgroundColor: theme.card,
     borderRadius: 8,
     marginHorizontal: TV ? 10 : 8,
     marginTop: TV ? 8 : 6,
@@ -559,17 +574,17 @@ const st = StyleSheet.create({
     gap: 6,
     height: TV ? 36 : 30,
     borderWidth: 1,
-    borderColor: 'rgba(30,41,59,0.9)',
+    borderColor: theme.border,
   },
   searchIcon: { fontSize: 12 },
   searchInput: {
     flex: 1,
-    color: '#94a3b8',
+    color: theme.textSub,
     fontSize: TV ? 13 : 11,
     fontWeight: '500',
     paddingVertical: 0,
   },
-  clearBtn: { color: '#475569', fontSize: 11, fontWeight: '700', padding: 4 },
+  clearBtn: { color: theme.textMuted, fontSize: 11, fontWeight: '700', padding: 4 },
   tabsArea: {
     width: PANEL_W,
   },
@@ -583,28 +598,28 @@ const st = StyleSheet.create({
     flex: 1,
     paddingVertical: TV ? 6 : 4,
     borderRadius: 6,
-    backgroundColor: 'rgba(13,17,23,0.8)',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: 'rgba(30,41,59,0.9)',
+    borderColor: theme.border,
     alignItems: 'center',
   },
   tabActive: {
-    backgroundColor: 'rgba(12,34,64,0.95)',
-    borderColor: '#0ea5e9',
+    backgroundColor: theme.cardActive,
+    borderColor: theme.accent,
   },
-  tabTxt: { color: '#475569', fontSize: TV ? 11 : 9, fontWeight: '700' },
-  tabTxtActive: { color: '#38bdf8' },
+  tabTxt: { color: theme.textMuted, fontSize: TV ? 11 : 9, fontWeight: '700' },
+  tabTxtActive: { color: theme.accent },
   groupsBtn: {
     paddingVertical: TV ? 6 : 4,
     paddingHorizontal: TV ? 8 : 6,
     borderRadius: 6,
-    backgroundColor: 'rgba(13,17,23,0.8)',
+    backgroundColor: theme.card,
     borderWidth: 1,
-    borderColor: 'rgba(30,41,59,0.9)',
+    borderColor: theme.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  groupsBtnTxt: { color: '#475569', fontSize: TV ? 11 : 9, fontWeight: '700' },
+  groupsBtnTxt: { color: theme.textMuted, fontSize: TV ? 11 : 9, fontWeight: '700' },
   content: {
     flex: 1,
     flexDirection: 'row',
@@ -616,13 +631,13 @@ const st = StyleSheet.create({
   epgCol: {
     flex: 1,
     borderLeftWidth: 1,
-    borderLeftColor: 'rgba(30,41,59,0.6)',
-    backgroundColor: 'rgba(6,10,16,0.5)',
+    borderLeftColor: theme.border,
+    backgroundColor: theme.surface,
     overflow: 'hidden',
   },
   emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   emptyTxt: {
-    color: '#475569',
+    color: theme.textMuted,
     fontSize: TV ? 13 : 11,
     fontWeight: '500',
     textAlign: 'center',
@@ -631,7 +646,7 @@ const st = StyleSheet.create({
 });
 
 // ─── EpgDetailPanel styles ────────────────────────────────────────────────────
-const ep = StyleSheet.create({
+const createEpgStyles = (theme: Theme) => StyleSheet.create({
   root: {
     flex: 1,
   },
@@ -641,7 +656,7 @@ const ep = StyleSheet.create({
     alignItems: 'center',
   },
   emptyTxt: {
-    color: '#1e293b',
+    color: theme.textMuted,
     fontSize: TV ? 11 : 9,
     fontWeight: '600',
     textAlign: 'center',
@@ -654,25 +669,25 @@ const ep = StyleSheet.create({
     paddingHorizontal: TV ? 12 : 10,
     paddingVertical: TV ? 10 : 8,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(30,41,59,0.6)',
-    backgroundColor: 'rgba(6,10,16,0.4)',
+    borderBottomColor: theme.border,
+    backgroundColor: theme.surface,
   },
   chName: {
     flex: 1,
-    color: '#94a3b8',
+    color: theme.textSub,
     fontSize: TV ? 14 : 12,
     fontWeight: '700',
   },
   catchupBadge: {
-    backgroundColor: 'rgba(14,116,144,0.3)',
+    backgroundColor: theme.card,
     borderRadius: 4,
     paddingHorizontal: 5,
     paddingVertical: 2,
     borderWidth: 1,
-    borderColor: 'rgba(14,165,233,0.3)',
+    borderColor: theme.accent,
   },
   catchupTxt: {
-    color: '#38bdf8',
+    color: theme.accent,
     fontSize: TV ? 9 : 8,
     fontWeight: '700',
   },
@@ -680,7 +695,7 @@ const ep = StyleSheet.create({
     flex: 1,
   },
   noProg: {
-    color: '#1e293b',
+    color: theme.textMuted,
     fontSize: TV ? 11 : 9,
     fontWeight: '500',
     padding: 16,
@@ -691,14 +706,14 @@ const ep = StyleSheet.create({
     paddingHorizontal: TV ? 10 : 8,
     paddingVertical: TV ? 8 : 6,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(15,23,42,0.6)',
+    borderBottomColor: theme.border,
     minHeight: 72,
     alignItems: 'flex-start',
   },
   rowCurrent: {
-    backgroundColor: 'rgba(14,165,233,0.1)',
+    backgroundColor: theme.cardActive,
     borderLeftWidth: 3,
-    borderLeftColor: '#0ea5e9',
+    borderLeftColor: theme.accent,
   },
   rowPastNoCatchup: {
     opacity: 0.35,
@@ -710,22 +725,22 @@ const ep = StyleSheet.create({
     paddingTop: 2,
   },
   time: {
-    color: '#475569',
+    color: theme.textMuted,
     fontSize: TV ? 10 : 9,
     fontWeight: '700',
     textAlign: 'center',
   },
-  timeCurrent: { color: '#0ea5e9' },
-  timeGray: { color: '#1e293b' },
+  timeCurrent: { color: theme.accent },
+  timeGray: { color: theme.textMuted },
   catchupDot: {
     fontSize: TV ? 9 : 8,
-    color: '#38bdf8',
+    color: theme.accent,
   },
   nowDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#0ea5e9',
+    backgroundColor: theme.accent,
   },
   rowRight: {
     flex: 1,
@@ -733,17 +748,17 @@ const ep = StyleSheet.create({
     paddingLeft: TV ? 6 : 4,
   },
   title: {
-    color: '#64748b',
+    color: theme.textSub,
     fontSize: TV ? 13 : 11,
     fontWeight: '600',
     lineHeight: TV ? 17 : 15,
   },
-  titleCurrent: { color: '#e2e8f0' },
-  titleGray: { color: '#1e293b' },
+  titleCurrent: { color: theme.text },
+  titleGray: { color: theme.textMuted },
   dur: {
-    color: '#1e293b',
+    color: theme.textMuted,
     fontSize: TV ? 10 : 9,
     fontWeight: '500',
   },
-  durCurrent: { color: '#475569' },
+  durCurrent: { color: theme.textSub },
 });
