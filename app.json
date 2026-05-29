@@ -8,7 +8,7 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/chuch-banner-androidtv.png",
       "resizeMode": "contain",
       "backgroundColor": "#1a1a1a"
     },
@@ -25,7 +25,7 @@
       "permissions": [
         "INTERNET"
       ],
-      "tvBanner": "./assets/icon.png",
+      "tvBanner": "./assets/chuch-banner-androidtv.png",
       "backgroundColor": "#1a1a1a"
     },
     "web": {
