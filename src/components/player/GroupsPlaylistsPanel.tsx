@@ -10,13 +10,14 @@ import { useThemeStore } from '../../store/useThemeStore';
 import { Theme } from '../../theme/themes';
 import { getPlaylists } from '../../utils/storage';
 import { groupChannelsByCategory } from '../../utils/m3uParser';
+import { isTvLikePlatform } from '../../utils/platform';
 
 interface GroupsPlaylistsPanelProps {
   onGroupSelect?: (group: string | null) => void;
   onPlaylistSelect?: (playlist: Playlist) => void;
 }
 
-const TV = Platform.OS === 'android';
+const TV = isTvLikePlatform;
 const PANEL_W = TV ? 260 : 220;
 
 type ListItem =

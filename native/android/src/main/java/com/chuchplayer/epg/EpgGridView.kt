@@ -29,8 +29,10 @@ class EpgGridView(context: Context) : View(context) {
     companion object {
         private const val TAG = "EpgGridView"
         const val EVENT_CHANNEL_SELECT = "EPG_CHANNEL_SELECT"
+        const val EVENT_CATCHUP_SELECT = "EPG_CATCHUP_SELECT"
         const val EVENT_PROGRAM_INFO   = "EPG_PROGRAM_INFO"
         const val EVENT_CHANNEL_FOCUS  = "EPG_CHANNEL_FOCUS"
+        private const val WIN_CATCHUP_H = 72  // how far back users can scroll (3 days)
     }
 
     private val dp = context.resources.displayMetrics.density
@@ -47,10 +49,10 @@ class EpgGridView(context: Context) : View(context) {
     private val BLOCK_R = 2f * dp
     private val LOGO_R  = 17f * dp
 
-    // ── Time window: now−1h … now+11h ────────────────────────────────────────
-    private val WIN_BEFORE_H = 1
+    // ── Time window: WIN_CATCHUP_H back … now+11h ────────────────────────────
+    private val WIN_BEFORE_H = WIN_CATCHUP_H  // window starts 3 days back
     private val WIN_TOTAL_H  = 12
-    private var windowStartMs = System.currentTimeMillis() - WIN_BEFORE_H * 3_600_000L
+    private var windowStartMs = System.currentTimeMillis() - WIN_CATCHUP_H * 3_600_000L
 
     // ── State ─────────────────────────────────────────────────────────────────
     private var channels    = emptyList<EpgChannel>()
@@ -60,6 +62,9 @@ class EpgGridView(context: Context) : View(context) {
     private var focusedRow  = 0
     private var epgOffsetX  = 0f
     private var epgOffsetY  = 0f
+    // cursorMs: the time position the user navigated to with left/right D-pad.
+    // Starts at "now". Moving left goes into the past for catchup browsing.
+    private var cursorMs: Long = System.currentTimeMillis()
 
     private val scope       = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -132,8 +137,15 @@ class EpgGridView(context: Context) : View(context) {
     private val tBTime     = buildText(0xFF4A6478.toInt(), 10f)
     private val tBTimeN    = buildText(0xFF7AAACE.toInt(), 10f)
     private val tNoData    = buildText(0xFF304050.toInt(), 11f)
-    private val pCatchupBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF1B3D5A.toInt() }
-    private val tCatchup   = buildText(0xFF5AAAD0.toInt(), 8.5f, bold = true, center = true)
+    private val pCatchupBg   = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF1B3D5A.toInt() }
+    private val tCatchup     = buildText(0xFF5AAAD0.toInt(), 8.5f, bold = true, center = true)
+    // Past programs on catchup channels — teal tint to signal they're playable
+    private val pBlockCatchupPast = Paint().apply { color = 0xFF0E2E38.toInt() }
+    private val tBTCatchup   = buildText(0xFF5AAAD0.toInt(), 12f)   // catchup block title
+    private val tBTimeCatchup= buildText(0xFF3A7A95.toInt(), 10f)   // catchup block time
+    // Cursor (movable time selection line)
+    private val pCursor      = Paint().apply { color = 0xCCFFFFFF.toInt(); strokeWidth = 2f * dp }
+    private val pCursorHl    = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x22FFFFFF; style = Paint.Style.FILL }
 
     private fun buildText(
         color: Int, spSize: Float, bold: Boolean = false, center: Boolean = false
@@ -177,6 +189,19 @@ class EpgGridView(context: Context) : View(context) {
                 (Color.red(c)   * 0.6f + 100 * 0.4f).toInt().coerceIn(0,255),
                 (Color.green(c) * 0.6f + 150 * 0.4f).toInt().coerceIn(0,255),
                 (Color.blue(c)  * 0.6f + 180 * 0.4f).toInt().coerceIn(0,255))
+            // Catchup-past blocks: dark tint of accent
+            pBlockCatchupPast.color = Color.argb(0xFF,
+                (Color.red(c)   * 0.08f).toInt(),
+                (Color.green(c) * 0.12f).toInt(),
+                (Color.blue(c)  * 0.20f).toInt())
+            tBTCatchup.color = Color.argb(0xFF,
+                (Color.red(c)   * 0.55f + 60  * 0.45f).toInt().coerceIn(0,255),
+                (Color.green(c) * 0.55f + 130 * 0.45f).toInt().coerceIn(0,255),
+                (Color.blue(c)  * 0.55f + 180 * 0.45f).toInt().coerceIn(0,255))
+            tBTimeCatchup.color = Color.argb(0xBB,
+                (Color.red(c)   * 0.4f + 40  * 0.6f).toInt().coerceIn(0,255),
+                (Color.green(c) * 0.4f + 100 * 0.6f).toInt().coerceIn(0,255),
+                (Color.blue(c)  * 0.4f + 140 * 0.6f).toInt().coerceIn(0,255))
             // Tint block-now with accent
             pBlockNow.color = Color.argb(0xFF,
                 (Color.red(c)   * 0.18f + 15  * 0.82f).toInt(),
@@ -267,7 +292,7 @@ class EpgGridView(context: Context) : View(context) {
             try {
                 val realm = openRealm()
                 val now   = System.currentTimeMillis()
-                val lower = Date(now - HOURS_BEFORE * 3_600_000L)
+                val lower = Date(now - WIN_CATCHUP_H * 3_600_000L)
                 val upper = Date(now + HOURS_AFTER  * 3_600_000L)
                 val result = mutableMapOf<String, List<EpgProgram>>()
                 try {
@@ -310,6 +335,11 @@ class EpgGridView(context: Context) : View(context) {
         if (nowX in CH_COL.toFloat()..vw) {
             canvas.drawLine(nowX, HDR_H.toFloat(), nowX, vh, pNowLine)
         }
+        // User cursor line (only shown when it differs from now by >1 min)
+        val cursorX = cursorLineX()
+        if (kotlin.math.abs(cursorMs - now) > 60_000L && cursorX in CH_COL.toFloat()..vw) {
+            canvas.drawLine(cursorX, HDR_H.toFloat(), cursorX, vh, pCursor)
+        }
         canvas.restore()
 
         // Fixed left column overlay
@@ -326,6 +356,10 @@ class EpgGridView(context: Context) : View(context) {
         if (nowX in CH_COL.toFloat()..vw) {
             canvas.drawCircle(nowX, HDR_H.toFloat(), 5f * dp, pNowDot)
         }
+        // Cursor dot at header bottom (only when in past/future)
+        if (kotlin.math.abs(cursorMs - now) > 60_000L && cursorX in CH_COL.toFloat()..vw) {
+            canvas.drawCircle(cursorX, HDR_H.toFloat(), 4f * dp, pCursor)
+        }
 
         // Redraw channel cells on top of the left column
         canvas.save()
@@ -340,6 +374,9 @@ class EpgGridView(context: Context) : View(context) {
 
     private fun nowLineX(now: Long) =
         CH_COL + (now - windowStartMs) / 3_600_000f * SLOT_W - epgOffsetX
+
+    private fun cursorLineX() =
+        CH_COL + (cursorMs - windowStartMs) / 3_600_000f * SLOT_W - epgOffsetX
 
     // ── Header: date label left, 30-min time slots right ─────────────────────
 
@@ -513,9 +550,16 @@ class EpgGridView(context: Context) : View(context) {
             val bx2 = CH_COL + (prog.endMs   - windowStartMs) / 3_600_000f * SLOT_W - epgOffsetX
             if (bx2 < CH_COL || bx1 > vw) continue
 
-            val isNow  = prog.startMs <= now && prog.endMs > now
-            val isPast = prog.endMs < now
-            val bp     = when { isNow -> pBlockNow; isPast -> pBlockPast; else -> pBlockFut }
+            val isNow         = prog.startMs <= now && prog.endMs > now
+            val isPast        = prog.endMs < now
+            val isCatchupPast = isPast && ch.catchupAvailable
+            val isUnderCursor = prog.startMs <= cursorMs && prog.endMs > cursorMs && isFocused
+            val bp = when {
+                isNow         -> pBlockNow
+                isCatchupPast -> pBlockCatchupPast   // selectable past on catchup channel
+                isPast        -> pBlockPast           // dim — not available
+                else          -> pBlockFut
+            }
 
             blockRf.set(
                 max(bx1, CH_COL.toFloat()) + dp,
@@ -528,6 +572,11 @@ class EpgGridView(context: Context) : View(context) {
             canvas.drawRoundRect(blockRf, BLOCK_R, BLOCK_R, bp)
             canvas.drawRoundRect(blockRf, BLOCK_R, BLOCK_R, pBlockBrd)
 
+            // Cursor highlight overlay on the selected block
+            if (isUnderCursor) {
+                canvas.drawRoundRect(blockRf, BLOCK_R, BLOCK_R, pCursorHl)
+            }
+
             // Progress fill for current program
             if (isNow && prog.endMs > prog.startMs) {
                 val frac = ((now - prog.startMs).toFloat() / (prog.endMs - prog.startMs)).coerceIn(0f, 1f)
@@ -537,8 +586,8 @@ class EpgGridView(context: Context) : View(context) {
 
             val tx     = blockRf.left + PAD * 0.6f
             val bw     = blockRf.width() - PAD * 1.2f
-            val titleP = if (isNow) tBTNow else tBT
-            val timeP  = if (isNow) tBTimeN else tBTime
+            val titleP = when { isNow -> tBTNow; isCatchupPast -> tBTCatchup; else -> tBT }
+            val timeP  = when { isNow -> tBTimeN; isCatchupPast -> tBTimeCatchup; else -> tBTime }
             val ty1    = blockRf.top + titleP.textSize + 2f * dp
             drawEllipsis(canvas, prog.title, tx, ty1, bw, titleP)
 
@@ -567,8 +616,22 @@ class EpgGridView(context: Context) : View(context) {
         invalidate()
     }
 
-    private fun maxOffX() = max(0, CH_COL + WIN_TOTAL_H * SLOT_W - width)
+    private fun maxOffX() = max(0, (WIN_CATCHUP_H + WIN_TOTAL_H).toInt() * SLOT_W + CH_COL - width)
     private fun maxOffY() = max(0, channels.size * ROW_H - (height - HDR_H))
+
+    // Keep cursor on-screen after a D-pad left/right move.
+    private fun scrollToCursor() {
+        val targetX = (cursorMs - windowStartMs) / 3_600_000f * SLOT_W
+        val margin  = SLOT_W * 1.5f
+        val viewW   = width.toFloat()
+        epgOffsetX = when {
+            targetX - epgOffsetX < margin ->
+                (targetX - margin).coerceIn(0f, maxOffX().toFloat())
+            targetX - epgOffsetX > viewW - CH_COL - margin ->
+                (targetX - (viewW - CH_COL) + margin).coerceIn(0f, maxOffX().toFloat())
+            else -> epgOffsetX
+        }
+    }
 
     private fun ensureVisible(idx: Int) {
         val top  = idx * ROW_H
@@ -607,10 +670,19 @@ class EpgGridView(context: Context) : View(context) {
                 return true
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
-                epgOffsetX = (epgOffsetX - SLOT_W / 2f).coerceAtLeast(0f); invalidate(); return true
+                // Move cursor 30 min back, as far back as the catchup window allows
+                cursorMs = (cursorMs - 1_800_000L).coerceAtLeast(windowStartMs)
+                scrollToCursor()
+                invalidate()
+                return true
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                epgOffsetX = (epgOffsetX + SLOT_W / 2f).coerceAtMost(maxOffX().toFloat()); invalidate(); return true
+                // Move cursor 30 min forward, cap at end of guide window
+                cursorMs = (cursorMs + 1_800_000L)
+                    .coerceAtMost(windowStartMs + (WIN_CATCHUP_H + WIN_TOTAL_H) * 3_600_000L)
+                scrollToCursor()
+                invalidate()
+                return true
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                 fireSelect(); return true
@@ -623,8 +695,27 @@ class EpgGridView(context: Context) : View(context) {
     }
 
     private fun fireSelect() {
-        val ch = channels.getOrNull(focusedRow) ?: return
-        val rc = context as? ReactContext ?: return
+        val ch  = channels.getOrNull(focusedRow) ?: return
+        val rc  = context as? ReactContext ?: return
+        val now = System.currentTimeMillis()
+
+        // If cursor is in the past and this channel has catchup, fire a catchup event
+        if (cursorMs < now - 60_000L && ch.catchupAvailable) {
+            val prog = programs[ch.id]?.find { it.startMs <= cursorMs && it.endMs > cursorMs }
+            if (prog != null) {
+                rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                    .emit(EVENT_CATCHUP_SELECT, Arguments.createMap().apply {
+                        putString("channelId",    ch.id)
+                        putString("channelName",  ch.name)
+                        putDouble("startMs",      prog.startMs.toDouble())
+                        putDouble("endMs",        prog.endMs.toDouble())
+                        putString("programTitle", prog.title)
+                    })
+                return
+            }
+        }
+
+        // Normal live channel select
         rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit(EVENT_CHANNEL_SELECT, Arguments.createMap().apply {
                 putString("channelId", ch.id)
@@ -655,31 +746,37 @@ class EpgGridView(context: Context) : View(context) {
         val ch  = channels.getOrNull(row) ?: return
         val rc  = context as? ReactContext ?: return
         val now = System.currentTimeMillis()
-        val prog = if (touchX != null) {
-            val tMs = windowStartMs + ((touchX - CH_COL + epgOffsetX) / SLOT_W * 3_600_000f).toLong()
-            programs[ch.id]?.find { it.startMs <= tMs && it.endMs > tMs }
-                ?: programs[ch.id]?.find { it.startMs <= now && it.endMs > now }
-        } else {
-            programs[ch.id]?.find { it.startMs <= now && it.endMs > now }
-        } ?: return
+        // Use touched time or cursor position to find the right program
+        val lookupMs = if (touchX != null)
+            windowStartMs + ((touchX - CH_COL + epgOffsetX) / SLOT_W * 3_600_000f).toLong()
+        else
+            cursorMs
+        val prog = programs[ch.id]?.find { it.startMs <= lookupMs && it.endMs > lookupMs }
+            ?: programs[ch.id]?.find { it.startMs <= now && it.endMs > now }
+            ?: return
+        val isPast = prog.endMs < now
         rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit(EVENT_PROGRAM_INFO, Arguments.createMap().apply {
-                putString("channelId",  ch.id)
-                putString("channelName", ch.name)
-                putString("programId",  prog.id)
-                putString("title",      prog.title)
-                putString("description", prog.desc)
-                putDouble("startMs",    prog.startMs.toDouble())
-                putDouble("endMs",      prog.endMs.toDouble())
-                putBoolean("catchupAvailable", false)
+                putString("channelId",       ch.id)
+                putString("channelName",     ch.name)
+                putString("programId",       prog.id)
+                putString("title",           prog.title)
+                putString("description",     prog.desc)
+                putDouble("startMs",         prog.startMs.toDouble())
+                putDouble("endMs",           prog.endMs.toDouble())
+                putBoolean("catchupAvailable", isPast && ch.catchupAvailable)
             })
     }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         requestFocus()
-        windowStartMs = System.currentTimeMillis() - WIN_BEFORE_H * 3_600_000L
-        epgOffsetX = (WIN_BEFORE_H * SLOT_W).toFloat().coerceIn(0f, maxOffX().toFloat())
+        val now = System.currentTimeMillis()
+        windowStartMs = now - WIN_CATCHUP_H * 3_600_000L
+        cursorMs = now
+        // Scroll so "now" is ~1.5 slots from the left edge of the timeline
+        epgOffsetX = (WIN_CATCHUP_H * SLOT_W - SLOT_W * 1.5f)
+            .coerceIn(0f, maxOffX().toFloat())
         maybeLoad()
     }
 

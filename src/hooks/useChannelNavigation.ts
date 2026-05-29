@@ -1,12 +1,12 @@
 import { useCallback, useRef } from 'react';
-import { Video } from 'expo-av';
 import { Channel, EPGProgram } from '../types';
+import type { PlayerVideoHandle } from '../types/video';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
 import { useEPGStore } from '../store/useEPGStore';
 
 interface UseChannelNavigationProps {
-  videoRef: React.RefObject<Video | null>;
+  videoRef: React.RefObject<PlayerVideoHandle | null>;
   getCurrentProgram: (channelId: string) => EPGProgram | null;
   setHasUserInteracted: (value: boolean) => void;
   hasUserInteracted: boolean;
@@ -154,4 +154,3 @@ export const useChannelNavigation = ({
     channelSwitchTimeoutRef,
   };
 };
-

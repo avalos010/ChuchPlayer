@@ -1,10 +1,12 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { ResizeMode } from 'expo-av';
 import { Channel } from '../../types';
+import type { PlayerPlaybackStatus, PlayerVideoHandle } from '../../types/video';
 import { useMultiScreenStore, type MultiScreen } from '../../store/useMultiScreenStore';
 import FocusableItem from '../FocusableItem';
 import { showError } from '../../utils/toast';
+import AppVideo from './AppVideo';
 
 interface MultiScreenPlayerProps {
   screen: MultiScreen;
@@ -19,7 +21,7 @@ const MultiScreenPlayer: React.FC<MultiScreenPlayerProps> = ({
   onFocus,
   onRemove,
 }) => {
-  const videoRef = useRef<Video>(null);
+  const videoRef = useRef<PlayerVideoHandle>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { updateScreen } = useMultiScreenStore();
@@ -54,7 +56,7 @@ const MultiScreenPlayer: React.FC<MultiScreenPlayerProps> = ({
     }
   }, [screen.volume, screen.isMuted]);
 
-  const handlePlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
+  const handlePlaybackStatusUpdate = useCallback((status: PlayerPlaybackStatus) => {
     if (!status.isLoaded) {
       if (status.error) {
         setError('Playback error');
@@ -91,7 +93,7 @@ const MultiScreenPlayer: React.FC<MultiScreenPlayerProps> = ({
         position: 'relative',
       }}
     >
-      <Video
+      <AppVideo
         ref={videoRef}
         source={{ uri: screen.channel.url }}
         style={{ width: '100%', height: '100%' }}
@@ -277,4 +279,3 @@ const MultiScreenView: React.FC<MultiScreenViewProps> = ({
 };
 
 export default MultiScreenView;
-

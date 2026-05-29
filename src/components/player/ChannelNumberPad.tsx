@@ -4,8 +4,9 @@ import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { Theme } from '../../theme/themes';
+import { isTvLikePlatform } from '../../utils/platform';
 
-const TV = Platform.OS === 'android';
+const TV = isTvLikePlatform;
 
 const ChannelNumberPad: React.FC = () => {
   const theme  = useThemeStore((s) => s.theme);
@@ -49,7 +50,6 @@ function createStyles(theme: Theme) {
     wrap: {
       position: 'absolute',
       top: '40%' as any,
-      alignSelf: 'center',
       left: 0, right: 0,
       width: TV ? 200 : 160,
       alignSelf: 'center',

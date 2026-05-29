@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, AppState } from 'react-native';
-import { Video, AVPlaybackStatus } from 'expo-av';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
-import { getSettings, AppSettings } from '../utils/storage';
+import type { PlayerPlaybackStatus, PlayerVideoHandle } from '../types/video';
+import type { Settings } from '../types';
+import { getSettings } from '../utils/storage';
 import { showError } from '../utils/toast';
 
-export const useVideoPlayback = (videoRef: React.RefObject<Video | null>) => {
+export const useVideoPlayback = (videoRef: React.RefObject<PlayerVideoHandle | null>) => {
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
-  const settingsRef = useRef<AppSettings | null>(null);
+  const settingsRef = useRef<Settings | null>(null);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const setIsPlaying = usePlayerStore((state) => state.setIsPlaying);
   const setLoading = usePlayerStore((state) => state.setLoading);
@@ -62,7 +63,7 @@ export const useVideoPlayback = (videoRef: React.RefObject<Video | null>) => {
     }
   }, [isPlaying, setIsPlaying, channel, setShowEPG, hasUserInteracted, videoRef]);
 
-  const handlePlaybackStatusUpdateWithError = useCallback((status: AVPlaybackStatus) => {
+  const handlePlaybackStatusUpdateWithError = useCallback((status: PlayerPlaybackStatus) => {
     if (!status.isLoaded) {
       if (status.error) {
         console.error('Playback error:', status.error);
@@ -206,4 +207,3 @@ export const useVideoPlayback = (videoRef: React.RefObject<Video | null>) => {
     handleVideoError,
   };
 };
-

@@ -8,8 +8,9 @@ import { useUIStore } from '../../store/useUIStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { Theme } from '../../theme/themes';
+import { isTvLikePlatform } from '../../utils/platform';
 
-const TV = Platform.OS === 'android';
+const TV = isTvLikePlatform;
 
 const fmtTime = (d: Date) =>
   d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

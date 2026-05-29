@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import FocusableItem from './FocusableItem';
 import { Channel, EPGProgram } from '../types';
 import { useThemeStore } from '../store/useThemeStore';
+import { isTvLikePlatform } from '../utils/platform';
 
 interface ChannelListItemProps {
   channel: Channel;
@@ -18,7 +19,7 @@ interface ChannelListItemProps {
   currentProgram?: EPGProgram | null;
 }
 
-const TV = Platform.OS === 'android';
+const TV = isTvLikePlatform;
 const LOGO_SZ = TV ? 46 : 38;
 const ROW_H   = TV ? 76 : 62;
 
@@ -145,7 +146,7 @@ const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
         ) : null}
       </View>
 
-      {/* Program progress bar — only when there's a current program */}
+      {/* Program progress bar */}
       {currentProgram && progress > 0 && (
         <View style={s.progressTrack} pointerEvents="none">
           <View style={[s.progressFill, { width: `${progress * 100}%` as any }]} />
@@ -158,15 +159,15 @@ const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
 ChannelListItemComponent.displayName = 'ChannelListItem';
 
 const ChannelListItem = React.memo(ChannelListItemComponent, (prev, next) =>
-  prev.channel.id         === next.channel.id &&
-  prev.channel.name       === next.channel.name &&
-  prev.channel.logo       === next.channel.logo &&
-  prev.isCurrentChannel   === next.isCurrentChannel &&
-  prev.hasTVPreferredFocus=== next.hasTVPreferredFocus &&
-  prev.isFavorite         === next.isFavorite &&
-  prev.showNumbers        === next.showNumbers &&
-  prev.index              === next.index &&
-  prev.currentProgram?.id === next.currentProgram?.id
+  prev.channel.id          === next.channel.id &&
+  prev.channel.name        === next.channel.name &&
+  prev.channel.logo        === next.channel.logo &&
+  prev.isCurrentChannel    === next.isCurrentChannel &&
+  prev.hasTVPreferredFocus === next.hasTVPreferredFocus &&
+  prev.isFavorite          === next.isFavorite &&
+  prev.showNumbers         === next.showNumbers &&
+  prev.index               === next.index &&
+  prev.currentProgram?.id  === next.currentProgram?.id
 );
 
 export default ChannelListItem;
@@ -205,7 +206,7 @@ const s = StyleSheet.create({
     fontWeight: '600',
     width: 30,
     textAlign: 'right',
-    fontFamily: Platform.OS === 'android' ? 'monospace' : 'Courier',
+    fontFamily: TV ? 'monospace' : 'Courier',
   },
   numActive: { color: '#94a3b8' },
   logo: {
@@ -234,20 +235,20 @@ const s = StyleSheet.create({
     gap: 6,
   },
   name: {
-    color: '#64748b',
+    color: '#94a3b8',
     fontSize: TV ? 15 : 13,
     fontWeight: '700',
     flex: 1,
   },
-  nameActive: { color: '#e2e8f0' },
+  nameActive: { color: '#f1f5f9' },
   progTitle: {
-    color: '#334155',
+    color: '#64748b',
     fontSize: TV ? 12 : 10,
     fontWeight: '500',
   },
-  progTitleActive: { color: '#64748b' },
+  progTitleActive: { color: '#94a3b8' },
   progTime: {
-    color: '#1e293b',
+    color: '#475569',
     fontSize: TV ? 11 : 9,
     fontWeight: '600',
   },
@@ -296,4 +297,5 @@ const s = StyleSheet.create({
     backgroundColor: '#0ea5e9',
     opacity: 0.7,
   },
+
 });

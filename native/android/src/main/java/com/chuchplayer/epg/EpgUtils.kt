@@ -17,7 +17,7 @@ const val BATCH_SIZE = 2000
 fun getRealmConfig(): RealmConfiguration =
     RealmConfiguration.Builder()
         .name("default.realm")
-        .schemaVersion(2)
+        .schemaVersion(3)
         .deleteRealmIfMigrationNeeded()
         .modules(Realm.getDefaultModule())
         .build()

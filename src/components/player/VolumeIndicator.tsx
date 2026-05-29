@@ -4,8 +4,9 @@ import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { Theme } from '../../theme/themes';
+import { isTvLikePlatform } from '../../utils/platform';
 
-const TV = Platform.OS === 'android';
+const TV = isTvLikePlatform;
 
 const VolumeIndicator: React.FC = () => {
   const theme  = useThemeStore((s) => s.theme);
@@ -43,7 +44,6 @@ function createStyles(theme: Theme) {
     pill: {
       position: 'absolute',
       top: TV ? 24 : 16,
-      alignSelf: 'center',
       left: 0, right: 0,
       marginHorizontal: 'auto' as any,
       width: TV ? 220 : 180,

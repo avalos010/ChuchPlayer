@@ -9,6 +9,7 @@ import FocusableItem from '../FocusableItem';
 import { Channel, EPGProgram, RootStackParamList } from '../../types';
 import { useUIStore } from '../../store/useUIStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
+import { isTvLikePlatform } from '../../utils/platform';
 
 interface ChannelInfoBarProps {
   channel: Channel | null;
@@ -23,7 +24,7 @@ interface ChannelInfoBarProps {
   timeoutSeconds?: number;
 }
 
-const TV = Platform.OS === 'android';
+const TV = isTvLikePlatform;
 const LOGO_SZ = TV ? 56 : 42;
 
 const fmt = (d: Date) =>

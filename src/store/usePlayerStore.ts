@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { Channel, Playlist } from '../types';
-import { ResizeMode, AVPlaybackStatus, Video } from 'expo-av';
+import { ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { Animated, Dimensions, Platform } from 'react-native';
 import { useUIStore } from './useUIStore';
+import type { PlayerVideoHandle } from '../types/video';
 
 interface PlayerState {
   // Core Player State
@@ -33,8 +34,8 @@ interface PlayerState {
 
   // Volume actions (accept videoRef as parameter)
   // Note: UI store handles showing volume indicator
-  adjustVolume: (delta: number, videoRef: React.RefObject<Video | null>) => void;
-  toggleMute: (videoRef: React.RefObject<Video | null>) => void;
+  adjustVolume: (delta: number, videoRef: React.RefObject<PlayerVideoHandle | null>) => void;
+  toggleMute: (videoRef: React.RefObject<PlayerVideoHandle | null>) => void;
 
   // Channel navigation
   navigateToChannel: (
@@ -231,4 +232,3 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set({ resizeMode: nextMode });
   },
 }));
-

@@ -16,6 +16,7 @@ import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useEPGStore } from '../../store/useEPGStore';
 import { RootStackParamList, EPGProgram } from '../../types';
+import { isTvLikePlatform } from '../../utils/platform';
 
 interface EPGOverlayProps {
   onTogglePlayback: () => void;
@@ -28,7 +29,7 @@ interface EPGOverlayProps {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const TV = Platform.OS === 'android';
+const TV = isTvLikePlatform;
 const TS = TV ? 1.15 : 1;
 
 const BTN_FOCUSED = {

@@ -37,6 +37,7 @@ interface Props {
   bgColor?: string;
   dataVersion?: number;
   onChannelSelect: (channelId: string, channelName: string) => void;
+  onCatchupSelect?: (channelId: string, startMs: number, endMs: number, programTitle: string) => void;
 }
 
 const NativeEpgGrid: React.FC<Props> = ({
@@ -48,16 +49,23 @@ const NativeEpgGrid: React.FC<Props> = ({
   bgColor,
   dataVersion,
   onChannelSelect,
+  onCatchupSelect,
 }) => {
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener(
+    const liveSub = DeviceEventEmitter.addListener(
       'EPG_CHANNEL_SELECT',
       (data: { channelId: string; channelName: string }) => {
         onChannelSelect(data.channelId, data.channelName);
       }
     );
-    return () => sub.remove();
-  }, [onChannelSelect]);
+    const catchupSub = DeviceEventEmitter.addListener(
+      'EPG_CATCHUP_SELECT',
+      (data: { channelId: string; channelName: string; startMs: number; endMs: number; programTitle: string }) => {
+        onCatchupSelect?.(data.channelId, data.startMs, data.endMs, data.programTitle);
+      }
+    );
+    return () => { liveSub.remove(); catchupSub.remove(); };
+  }, [onChannelSelect, onCatchupSelect]);
 
   const channelsJson = useMemo(
     () =>
@@ -67,6 +75,7 @@ const NativeEpgGrid: React.FC<Props> = ({
           name: ch.name,
           logo: ch.logo ?? '',
           tvgId: ch.tvgId ?? '',
+          catchupAvailable: ch.catchupAvailable ?? false,
         }))
       ),
     [channels]

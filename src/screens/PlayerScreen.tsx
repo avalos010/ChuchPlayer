@@ -10,9 +10,10 @@ import {
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
-import { Video, ResizeMode } from 'expo-av';
+import { ResizeMode } from 'expo-av';
 import FocusableItem from '../components/FocusableItem';
 import { RootStackParamList } from '../types';
+import type { PlayerVideoHandle } from '../types/video';
 import EPGOverlay from '../components/player/EPGOverlay';
 import EPGGridView from '../components/player/EPGGridView';
 import ChannelListPanel from '../components/player/ChannelListPanel';
@@ -25,6 +26,7 @@ import MultiScreenControls from '../components/player/MultiScreenControls';
 import ChannelInfoBar from '../components/player/ChannelInfoBar';
 import ProgramInfoModal from '../components/player/ProgramInfoModal';
 import SleepTimerModal from '../components/player/SleepTimerModal';
+import AppVideo from '../components/player/AppVideo';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
 import { useEPGStore } from '../store/useEPGStore';
@@ -102,7 +104,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const { channel: initialChannel } = route.params || {};
 
   // Refs
-  const videoRef = useRef<Video>(null);
+  const videoRef = useRef<PlayerVideoHandle>(null);
   const mainViewRef = useRef<View>(null);
   const centerZoneRef = useRef<any>(null);
 
@@ -210,6 +212,29 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     });
     return () => sub.remove();
   }, [channels]);
+
+  // Build Xtream Codes timeshift URL from a live stream URL + time window
+  const buildCatchupUrl = useCallback((channel: { url: string }, startMs: number, endMs: number): string | null => {
+    // Xtream Codes live URL pattern: {server}/live/{user}/{pass}/{id}.m3u8
+    const m = channel.url.match(/^(https?:\/\/[^/]+)\/live\/([^/]+)\/([^/]+)\/(\d+)\.m3u8/i);
+    if (!m) return null;
+    const [, server, user, pass, streamId] = m;
+    const durationMin = Math.ceil((endMs - startMs) / 60_000);
+    const d = new Date(startMs);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}:${pad(d.getHours())}-${pad(d.getMinutes())}`;
+    return `${server}/timeshift/${user}/${pass}/${durationMin}/${dateStr}/${streamId}.m3u8`;
+  }, []);
+
+  // Handle EPG_CATCHUP_SELECT — load the timeshift stream for the selected past program
+  const handleCatchupSelect = useCallback((channelId: string, startMs: number, endMs: number, programTitle: string) => {
+    const ch = channels.find((c) => c.id === channelId);
+    if (!ch) return;
+    const url = buildCatchupUrl(ch, startMs, endMs);
+    if (!url) return;
+    useUIStore.getState().setShowEPGGrid(false);
+    usePlayerStore.getState().setChannel({ ...ch, url, name: `${ch.name} — ${programTitle}` });
+  }, [channels, buildCatchupUrl]);
 
   // Ensure a focus target is available on Android TV when overlays are closed
   useEffect(() => {
@@ -470,7 +495,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
             focusable={false}
             importantForAccessibility="no"
           >
-            <Video
+            <AppVideo
               key={`video-${channel.id}-${channel.url}`}
               ref={videoRef}
               source={{ uri: channel.url }}
@@ -591,6 +616,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
           getProgramsForChannel={getProgramsForChannel}
           prefetchProgramsForChannels={prefetchProgramsForChannels}
           onChannelSelect={handleChannelSelect}
+          onCatchupSelect={handleCatchupSelect}
           onExitPIP={exitPIP}
           navigation={navigation}
           epgLoading={epgLoading}
@@ -604,6 +630,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       <ChannelListPanel
         onChannelSelect={handleChannelSelect}
         getCurrentProgram={getCurrentProgram}
+        getProgramsForChannel={getProgramsForChannel}
         epgLastUpdated={epgLastUpdated}
       />
 

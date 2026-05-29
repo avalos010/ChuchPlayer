@@ -7,8 +7,9 @@ import { useUIStore } from '../../store/useUIStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { Theme } from '../../theme/themes';
 import { useSleepTimer } from '../../hooks/useSleepTimer';
+import { isTvLikePlatform } from '../../utils/platform';
 
-const TV = Platform.OS === 'android';
+const TV = isTvLikePlatform;
 
 const OPTIONS = [
   { label: 'Off',    minutes: 0  },

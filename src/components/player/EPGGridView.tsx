@@ -26,8 +26,9 @@ import { useUIStore } from '../../store/useUIStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { groupChannelsByCategory } from '../../utils/m3uParser';
 import NativeEpgGrid, { isNativeEpgGridAvailable } from './NativeEpgGrid';
+import { isTvLikePlatform } from '../../utils/platform';
 
-const TV = Platform.OS === 'android';
+const TV = isTvLikePlatform;
 const USE_NATIVE_GRID = isNativeEpgGridAvailable;
 
 // ─── Info Panel ───────────────────────────────────────────────────────────────
@@ -42,7 +43,7 @@ interface FocusedInfo {
   programEnd?: number;
 }
 
-const INFO_H = Platform.OS === 'android' ? 140 : 96;
+const INFO_H = TV ? 140 : 96;
 
 const fmtAmPm = (ms?: number) => {
   if (!ms) return '';
@@ -73,6 +74,10 @@ const EpgInfoPanel = memo<{
   const isLive = displayChannel?.id === channel?.id;
   const [imgErr, setImgErr] = useState(false);
   const initials = displayChannel?.name.substring(0, 2).toUpperCase() ?? '';
+
+  useEffect(() => {
+    setImgErr(false);
+  }, [displayChannel?.id]);
 
   const panelStyles = useMemo(() => ({
     panel: {
@@ -129,7 +134,7 @@ const EpgInfoPanel = memo<{
               {info?.channelNumber}
             </Text>
           )}
-          <Text style={{ color: theme.textMuted, fontSize: TV ? 13 : 11, fontWeight: '600' }} numberOfLines={1}>
+          <Text style={{ color: theme.text, fontSize: TV ? 15 : 12, fontWeight: '700' }} numberOfLines={1}>
             {displayChannel?.name ?? ''}
           </Text>
           {isLive && (
@@ -177,6 +182,7 @@ interface EPGGridViewProps {
   getProgramsForChannel?: (channelId: string) => EPGProgram[];
   prefetchProgramsForChannels?: (channelIds: string[]) => void;
   onChannelSelect: (channel: Channel) => void;
+  onCatchupSelect?: (channelId: string, startMs: number, endMs: number, programTitle: string) => void;
   onExitPIP?: () => void;
   navigation?: NativeStackNavigationProp<RootStackParamList>;
   epgLoading?: boolean;
@@ -431,6 +437,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   getProgramsForChannel,
   prefetchProgramsForChannels,
   onChannelSelect,
+  onCatchupSelect,
   onExitPIP,
   navigation,
   epgLoading = false,
@@ -455,6 +462,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   const loadedIdsRef = useRef<Set<string>>(new Set());
   const [epgVersion, setEpgVersion]     = useState(0);
   const [focusedInfo, setFocusedInfo]   = useState<FocusedInfo | null>(null);
+  const horizontalScrollXRef = useRef(0);
 
   // Keep a stable ref to the current channel's group so the open-effect
   // can read it without taking `channel` as a dep (avoids scroll-jump loops).
@@ -651,6 +659,84 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
 
   const keyExtractor = useCallback((item: ChannelRowData) => item.channel.id, []);
 
+  const buildFocusedInfo = useCallback((channelId: string): FocusedInfo | null => {
+    const target = channels.find((c) => c.id === channelId);
+    if (!target) return null;
+
+    const programs = getProgramsForChannel ? getProgramsForChannel(channelId) : [];
+    const activeProgram = programs.find((p) => p.start <= new Date() && p.end > new Date()) ?? programs[0] ?? null;
+
+    return {
+      channelId: target.id,
+      channelName: target.name,
+      channelNumber: channels.indexOf(target) + 1,
+      programTitle: activeProgram?.title ?? 'No guide data',
+      programDesc: activeProgram?.description,
+      programStart: activeProgram?.start?.getTime(),
+      programEnd: activeProgram?.end?.getTime(),
+    };
+  }, [channels, getProgramsForChannel]);
+
+  useEffect(() => {
+    if (!showEPGGrid || Platform.OS !== 'web') return undefined;
+
+    const handleGridKeyDown = (e: KeyboardEvent) => {
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(e.key)) {
+        return;
+      }
+
+      if (!filteredChannels.length) return;
+
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const nextX = Math.max(
+          0,
+          horizontalScrollXRef.current + (e.key === 'ArrowRight' ? SLOT_W : -SLOT_W),
+        );
+        horizontalScrollXRef.current = nextX;
+        hScrollRef.current?.scrollTo({ x: nextX, animated: true });
+        return;
+      }
+
+      const currentId = focusedId ?? channel?.id ?? filteredChannels[0]?.id;
+      const currentIndex = Math.max(0, filteredChannels.findIndex((c) => c.id === currentId));
+
+      if (e.key === 'Enter') {
+        const selected = filteredChannels[currentIndex];
+        if (selected) onChannelSelect(selected);
+        return;
+      }
+
+      const nextIndex =
+        e.key === 'ArrowUp'
+          ? Math.max(0, currentIndex - 1)
+          : Math.min(filteredChannels.length - 1, currentIndex + 1);
+
+      const nextChannel = filteredChannels[nextIndex];
+      if (!nextChannel) return;
+
+      setFocusedId(nextChannel.id);
+      setInitFocusId(nextChannel.id);
+      setFocusedInfo(buildFocusedInfo(nextChannel.id));
+      flashRef.current?.scrollToIndex({ index: nextIndex, animated: true, viewPosition: 0.3 });
+      loadEpgFor(
+        filteredChannels
+          .slice(Math.max(0, nextIndex - 5), Math.min(filteredChannels.length, nextIndex + 6))
+          .map((c) => c.id),
+      );
+    };
+
+    window.addEventListener('keydown', handleGridKeyDown);
+    return () => window.removeEventListener('keydown', handleGridKeyDown);
+  }, [
+    buildFocusedInfo,
+    channel?.id,
+    filteredChannels,
+    focusedId,
+    loadEpgFor,
+    onChannelSelect,
+    showEPGGrid,
+  ]);
+
   if (!showEPGGrid || !channels.length || !navigation) return null;
 
   // Only show the blocking overlay when we genuinely have nothing to display.
@@ -662,7 +748,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     <View style={s.root}>
       {/* ── Info panel ───────────────────────────────────────────────── */}
       <EpgInfoPanel
-        info={focusedInfo}
+        info={focusedInfo ?? (channel ? buildFocusedInfo(channel.id) : null)}
         channel={channel}
         channels={channels}
         theme={theme}
@@ -755,6 +841,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
             const ch = channels.find((c) => c.id === channelId);
             if (ch) onChannelSelect(ch);
           }}
+          onCatchupSelect={onCatchupSelect}
         />
       ) : (
         <ScrollView
@@ -763,6 +850,9 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
           horizontal
           showsHorizontalScrollIndicator={false}
           scrollEventThrottle={32}
+          onScroll={(event) => {
+            horizontalScrollXRef.current = event.nativeEvent.contentOffset.x;
+          }}
         >
           <View style={{ flex: 1 }}>
             <TimeHeader currentTimePosition={timePos} />
