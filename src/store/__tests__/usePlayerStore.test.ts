@@ -90,6 +90,29 @@ describe('store setState batch', () => {
   });
 });
 
+describe('setChannel previous-channel tracking', () => {
+  it('records the prior channel as previousChannel when switching', () => {
+    const a = makeChannel('prev-a');
+    const b = makeChannel('prev-b');
+
+    usePlayerStore.setState({ channel: a, previousChannel: null });
+    usePlayerStore.getState().setChannel(b);
+
+    expect(usePlayerStore.getState().channel?.id).toBe('prev-b');
+    expect(usePlayerStore.getState().previousChannel?.id).toBe('prev-a');
+  });
+
+  it('does not overwrite previousChannel when re-selecting the same channel', () => {
+    const a = makeChannel('same-a');
+    const b = makeChannel('same-b');
+
+    usePlayerStore.setState({ channel: a, previousChannel: b });
+    usePlayerStore.getState().setChannel(a);
+
+    expect(usePlayerStore.getState().previousChannel?.id).toBe('same-b');
+  });
+});
+
 describe('togglePlayback', () => {
   it('flips isPlaying state', () => {
     usePlayerStore.setState({ isPlaying: false });
