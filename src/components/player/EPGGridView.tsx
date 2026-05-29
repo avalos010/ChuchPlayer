@@ -27,6 +27,7 @@ import { useThemeStore } from '../../store/useThemeStore';
 import { groupChannelsByCategory } from '../../utils/m3uParser';
 import NativeEpgGrid, { isNativeEpgGridAvailable } from './NativeEpgGrid';
 import { isTvLikePlatform } from '../../utils/platform';
+import { formatClockTime } from '../../utils/time';
 
 const TV = isTvLikePlatform;
 const USE_NATIVE_GRID = isNativeEpgGridAvailable;
@@ -45,19 +46,17 @@ interface FocusedInfo {
 
 const INFO_H = TV ? 140 : 96;
 
-const fmtAmPm = (ms?: number) => {
-  if (!ms) return '';
-  const d = new Date(ms);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-};
+const fmtAmPm = (ms?: number, clockFormat: '12h' | '24h' = '24h') =>
+  formatClockTime(ms, clockFormat, { hour: 'numeric', minute: '2-digit' });
 
 const EpgInfoPanel = memo<{
   info: FocusedInfo | null;
   channel: Channel | null;
   channels: Channel[];
   theme: any;
-}>(({ info, channel, channels, theme }) => {
+  showChannelNumbers: boolean;
+  clockFormat: '12h' | '24h';
+}>(({ info, channel, channels, theme, showChannelNumbers, clockFormat }) => {
   const displayChannel = useMemo(() =>
     channels.find(c => c.id === (info?.channelId ?? channel?.id)) ?? channel,
     [channels, info?.channelId, channel],
@@ -129,7 +128,7 @@ const EpgInfoPanel = memo<{
       <View style={{ flex: 1, gap: 4 }}>
         {/* Channel number + name row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          {(info?.channelNumber ?? 0) > 0 && (
+          {showChannelNumbers && (info?.channelNumber ?? 0) > 0 && (
             <Text style={{ color: theme.accent, fontSize: TV ? 13 : 11, fontWeight: '800' }}>
               {info?.channelNumber}
             </Text>
@@ -155,7 +154,7 @@ const EpgInfoPanel = memo<{
         {progStart && progEnd ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <Text style={{ color: theme.textMuted, fontSize: TV ? 12 : 10, fontWeight: '500' }}>
-              {fmtAmPm(progStart)} – {fmtAmPm(progEnd)}
+              {fmtAmPm(progStart, clockFormat)} – {fmtAmPm(progEnd, clockFormat)}
             </Text>
             {remaining !== null && (
               <Text style={{ color: theme.textSub, fontSize: TV ? 12 : 10, fontWeight: '600' }}>
@@ -189,6 +188,8 @@ interface EPGGridViewProps {
   epgError?: string | null;
   epgLastUpdated?: number;
   handleManualEpgRefresh?: () => void;
+  clockFormat?: '12h' | '24h';
+  showChannelNumbers?: boolean;
 }
 
 interface ChannelRowData {
@@ -220,12 +221,8 @@ const HDR_BTN_FOCUSED = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const fmtTime = (d?: Date | null) => {
-  if (!d) return '';
-  const dt = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(dt.getTime())) return '';
-  return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
+const fmtTime = (d?: Date | null, clockFormat: '12h' | '24h' = '24h') =>
+  formatClockTime(d, clockFormat);
 
 // ─── Channel Row ─────────────────────────────────────────────────────────────
 
@@ -236,7 +233,9 @@ const ChannelRow = memo<{
   isFocused?: boolean;
   hasTVPreferredFocus?: boolean;
   currentTimePosition?: number;
-}>(({ data, onChannelSelect, onFocus, isFocused = false, hasTVPreferredFocus = false, currentTimePosition }) => {
+  showChannelNumbers?: boolean;
+  clockFormat: '12h' | '24h';
+}>(({ data, onChannelSelect, onFocus, isFocused = false, hasTVPreferredFocus = false, currentTimePosition, showChannelNumbers = false, clockFormat }) => {
   const { channel, isCurrent, programs } = data;
   const accent = useThemeStore((st) => st.theme.accent);
   const [imgErr, setImgErr] = useState(false);
@@ -315,7 +314,7 @@ const ChannelRow = memo<{
                 {b.p.title}
               </Text>
               <Text style={[s.blockTime, { color: timeColor }]}>
-                {fmtTime(b.p.start)} – {fmtTime(b.p.end)}
+                {fmtTime(b.p.start, clockFormat)} – {fmtTime(b.p.end, clockFormat)}
               </Text>
               {isFocused && b.isNow && typeof b.p.description === 'string' && b.p.description.trim() ? (
                 <Text style={s.blockDesc} numberOfLines={2}>{b.p.description.trim()}</Text>
@@ -334,6 +333,11 @@ const ChannelRow = memo<{
         pointerEvents="none"
         style={[s.chCol, { backgroundColor: isFocused ? '#1a3d6b' : (isCurrent ? '#162840' : '#0d1521') }]}
       >
+        {showChannelNumbers && (
+          <Text style={s.channelNumber}>
+            {channel.number ?? ''}
+          </Text>
+        )}
         {channel.logo && !imgErr ? (
           <Image
             source={{ uri: channel.logo }}
@@ -380,6 +384,8 @@ const ChannelRow = memo<{
   prev.isFocused         === next.isFocused         &&
   prev.hasTVPreferredFocus === next.hasTVPreferredFocus &&
   prev.currentTimePosition === next.currentTimePosition &&
+  prev.showChannelNumbers === next.showChannelNumbers &&
+  prev.clockFormat      === next.clockFormat &&
   prev.onFocus           === next.onFocus,
 );
 ChannelRow.displayName = 'ChannelRow';
@@ -444,6 +450,8 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   epgError = null,
   epgLastUpdated = 0,
   handleManualEpgRefresh,
+  clockFormat = '24h',
+  showChannelNumbers = false,
 }) => {
   const theme        = useThemeStore((st) => st.theme);
   const showEPGGrid  = useUIStore((st) => st.showEPGGrid);
@@ -654,8 +662,10 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
       isFocused={item.channel.id === focusedId}
       hasTVPreferredFocus={item.channel.id === initFocusId}
       currentTimePosition={timePos}
+      showChannelNumbers={showChannelNumbers}
+      clockFormat={clockFormat}
     />
-  ), [onChannelSelect, handleRowFocus, focusedId, initFocusId, timePos]);
+  ), [onChannelSelect, handleRowFocus, focusedId, initFocusId, timePos, showChannelNumbers, clockFormat]);
 
   const keyExtractor = useCallback((item: ChannelRowData) => item.channel.id, []);
 
@@ -752,6 +762,8 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
         channel={channel}
         channels={channels}
         theme={theme}
+        showChannelNumbers={showChannelNumbers}
+        clockFormat={clockFormat}
       />
 
       {/* ── Full-screen loading overlay (only when no data at all) ────── */}
@@ -1033,6 +1045,14 @@ const s = StyleSheet.create({
     paddingHorizontal: TV ? 16 : 10, gap: 12,
     shadowColor: '#000', shadowOffset: { width: 4, height: 0 },
     shadowOpacity: 0.7, shadowRadius: 12, elevation: 8,
+  },
+  channelNumber: {
+    color: '#38bdf8',
+    fontSize: TV ? 14 : 11,
+    fontWeight: '800',
+    minWidth: TV ? 34 : 28,
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
   },
   chMeta: { flex: 1 },
   chName: {

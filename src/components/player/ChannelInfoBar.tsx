@@ -11,6 +11,7 @@ import { Channel, EPGProgram, RootStackParamList } from '../../types';
 import { useUIStore } from '../../store/useUIStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { isTvLikePlatform } from '../../utils/platform';
+import { formatClockTime } from '../../utils/time';
 
 interface ChannelInfoBarProps {
   channel: Channel | null;
@@ -24,13 +25,11 @@ interface ChannelInfoBarProps {
   sleepLabel: string | null;
   navigation?: NativeStackNavigationProp<RootStackParamList>;
   timeoutSeconds?: number;
+  clockFormat?: '12h' | '24h';
 }
 
 const TV = isTvLikePlatform;
 const LOGO_SZ = TV ? 60 : 44;
-
-const fmtTime = (d: Date) =>
-  d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 const aspectLabel = (m: ResizeMode) =>
   m === ResizeMode.COVER ? 'Cover' : m === ResizeMode.CONTAIN ? 'Fit' : 'Fill';
@@ -53,11 +52,13 @@ const Ctrl: React.FC<{
   onFocus: () => void;
   onBlur: () => void;
   active?: boolean;
-}> = ({ icon, label, onPress, onFocus, onBlur, active }) => (
+  hasTVPreferredFocus?: boolean;
+}> = ({ icon, label, onPress, onFocus, onBlur, active, hasTVPreferredFocus }) => (
   <FocusableItem
     onPress={onPress}
     onFocus={onFocus}
     onBlur={onBlur}
+    hasTVPreferredFocus={hasTVPreferredFocus}
     style={[s.btn, active && s.btnActive]}
     focusedStyle={BTN_FOCUSED}
   >
@@ -81,6 +82,7 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   sleepLabel,
   navigation,
   timeoutSeconds = 6,
+  clockFormat = '24h',
 }) => {
   const isPlaying       = usePlayerStore((st) => st.isPlaying);
   const resizeMode      = usePlayerStore((st) => st.resizeMode);
@@ -204,9 +206,9 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
             )}
 
             {nextProgram ? (
-              <Text style={s.nextProg} numberOfLines={1}>
-                Next · {fmtTime(nextProgram.start)} · {nextProgram.title}
-              </Text>
+                <Text style={s.nextProg} numberOfLines={1}>
+                Next · {formatClockTime(nextProgram.start, clockFormat)} · {nextProgram.title}
+                </Text>
             ) : null}
           </View>
 
@@ -215,7 +217,7 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
             {currentProgram ? (
               <>
                 <Text style={s.timeRange}>
-                  {fmtTime(currentProgram.start)} – {fmtTime(currentProgram.end)}
+                  {formatClockTime(currentProgram.start, clockFormat)} – {formatClockTime(currentProgram.end, clockFormat)}
                 </Text>
                 {minsLeft !== null && (
                   <Text style={s.pct}>{minsLeft}m left</Text>
@@ -244,6 +246,7 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
             onFocus={onFocus}
             onBlur={onBlur}
             active={isPlaying}
+            hasTVPreferredFocus={TV}
           />
 
           <Ctrl

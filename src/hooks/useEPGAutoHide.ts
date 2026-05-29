@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useUIStore } from '../store/useUIStore';
 
-export const useEPGAutoHide = () => {
+export const useEPGAutoHide = (timeoutSeconds: number) => {
   const showEPG = useUIStore((state) => state.showEPG);
   const setShowEPG = useUIStore((state) => state.setShowEPG);
   const epgAutoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -9,6 +9,7 @@ export const useEPGAutoHide = () => {
   // Function to reset the EPG auto-hide timer
   const resetEPGAutoHideTimer = useCallback(() => {
     if (!showEPG) return;
+    if (timeoutSeconds <= 0) return;
 
     // Clear existing timer
     if (epgAutoHideTimerRef.current) {
@@ -19,8 +20,8 @@ export const useEPGAutoHide = () => {
     epgAutoHideTimerRef.current = setTimeout(() => {
       setShowEPG(false);
       epgAutoHideTimerRef.current = null;
-    }, 5000);
-  }, [showEPG, setShowEPG]);
+    }, timeoutSeconds * 1000);
+  }, [showEPG, setShowEPG, timeoutSeconds]);
 
   // Auto-hide EPG overlay after 5 seconds of inactivity
   useEffect(() => {
@@ -44,4 +45,3 @@ export const useEPGAutoHide = () => {
     };
   }, [showEPG, resetEPGAutoHideTimer]);
 };
-

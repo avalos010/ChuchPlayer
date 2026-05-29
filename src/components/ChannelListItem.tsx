@@ -5,6 +5,7 @@ import FocusableItem from './FocusableItem';
 import { Channel, EPGProgram } from '../types';
 import { useThemeStore } from '../store/useThemeStore';
 import { isTvLikePlatform } from '../utils/platform';
+import { formatClockTime } from '../utils/time';
 
 interface ChannelListItemProps {
   channel: Channel;
@@ -15,6 +16,7 @@ interface ChannelListItemProps {
   isFavorite?: boolean;
   onToggleFavorite?: (channel: Channel) => void;
   showNumbers?: boolean;
+  clockFormat?: '12h' | '24h';
   index?: number;
   currentProgram?: EPGProgram | null;
 }
@@ -22,8 +24,6 @@ interface ChannelListItemProps {
 const TV = isTvLikePlatform;
 const LOGO_SZ = TV ? 46 : 38;
 const ROW_H   = TV ? 76 : 62;
-
-const fmt = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
   channel,
@@ -34,6 +34,7 @@ const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
   isFavorite = false,
   onToggleFavorite,
   showNumbers = false,
+  clockFormat = '24h',
   index,
   currentProgram,
 }, ref) => {
@@ -122,7 +123,7 @@ const ChannelListItemComponent = forwardRef<any, ChannelListItemProps>(({
             <Text style={[s.progTitle, isCurrentChannel && s.progTitleActive]} numberOfLines={1}>
               {currentProgram.title}
               {currentProgram.start ? (
-                <Text style={s.progTime}>  {fmt(currentProgram.start)}</Text>
+                <Text style={s.progTime}>  {formatClockTime(currentProgram.start, clockFormat)}</Text>
               ) : null}
             </Text>
           ) : null}
@@ -166,6 +167,7 @@ const ChannelListItem = React.memo(ChannelListItemComponent, (prev, next) =>
   prev.hasTVPreferredFocus === next.hasTVPreferredFocus &&
   prev.isFavorite          === next.isFavorite &&
   prev.showNumbers         === next.showNumbers &&
+  prev.clockFormat         === next.clockFormat &&
   prev.index               === next.index &&
   prev.currentProgram?.id  === next.currentProgram?.id
 );

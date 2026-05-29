@@ -7,7 +7,7 @@ const FAVORITES_KEY = '@chuchPlayer:favorites';
 const LAST_CHANNEL_KEY = '@chuchPlayer:lastChannel';
 const RECENT_CHANNELS_KEY = '@chuchPlayer:recentChannels';
 
-const DEFAULT_SETTINGS: Settings = {
+export const DEFAULT_SETTINGS: Settings = {
   autoPlay: true,
   showEPG: false,
   theme: 'dark',

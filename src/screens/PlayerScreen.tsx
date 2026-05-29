@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
   DeviceEventEmitter,
   Dimensions,
   Platform,
@@ -11,7 +10,6 @@ import {
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { ResizeMode } from 'expo-av';
-import FocusableItem from '../components/FocusableItem';
 import { RootStackParamList } from '../types';
 import type { PlayerVideoHandle } from '../types/video';
 import EPGOverlay from '../components/player/EPGOverlay';
@@ -21,12 +19,10 @@ import GroupsPlaylistsPanel from '../components/player/GroupsPlaylistsPanel';
 import ChannelNumberPad from '../components/player/ChannelNumberPad';
 import VolumeIndicator from '../components/player/VolumeIndicator';
 import VideoControls from '../components/player/VideoControls';
-import MultiScreenView from '../components/player/MultiScreenView';
 import MultiScreenControls from '../components/player/MultiScreenControls';
 import ChannelInfoBar from '../components/player/ChannelInfoBar';
 import ProgramInfoModal from '../components/player/ProgramInfoModal';
 import SleepTimerModal from '../components/player/SleepTimerModal';
-import AppVideo from '../components/player/AppVideo';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
 import { useEPGStore } from '../store/useEPGStore';
@@ -43,62 +39,17 @@ import { useEPGManagement } from '../hooks/useEPGManagement';
 import { useFavorites } from '../hooks/useFavorites';
 import { useRecentChannels } from '../hooks/useRecentChannels';
 import { useSleepTimer } from '../hooks/useSleepTimer';
+import { useInterfacePreferences } from '../hooks/interfacePreferences/useInterfacePreferences';
+import PlayerDpadZones from './player/PlayerDpadZones';
+import PlayerVideoStage from './player/PlayerVideoStage';
+import PlayerMultiScreenStage from './player/PlayerMultiScreenStage';
+import { hasPlayerModalOverlay } from './player/usePlayerModalOverlay';
 
 
 interface PlayerScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Player'>;
   route: RouteProp<RootStackParamList, 'Player'>;
 }
-
-// Static styles defined outside component — never recreated on re-render
-const TRANSPARENT_FLEX = { flex: 1, backgroundColor: 'transparent' as const };
-const DPAD_INVISIBLE_FOCUSED_STYLE = {
-  backgroundColor: 'transparent' as const,
-  borderWidth: 0,
-  borderColor: 'transparent' as const,
-  transform: [] as any[],
-  elevation: 0,
-  shadowColor: 'transparent' as const,
-  shadowOffset: { width: 0, height: 0 },
-  shadowOpacity: 0,
-  shadowRadius: 0,
-};
-const DPAD_CENTER_STYLE = {
-  position: 'absolute' as const,
-  top: '25%' as any,
-  left: '25%' as any,
-  right: '25%' as any,
-  bottom: '25%' as any,
-  zIndex: 2,
-  backgroundColor: 'transparent' as const,
-};
-const DPAD_LEFT_STYLE = {
-  position: 'absolute' as const,
-  top: 0,
-  left: 0,
-  width: 100,
-  bottom: 0,
-  zIndex: 2,
-  backgroundColor: 'transparent' as const,
-};
-const DPAD_TOP_STYLE = {
-  position: 'absolute' as const,
-  top: 0,
-  left: 100,
-  right: 100,
-  height: 100,
-  zIndex: 2,
-  backgroundColor: 'transparent' as const,
-};
-const DPAD_BOTTOM_STYLE = {
-  position: 'absolute' as const,
-  bottom: 0,
-  left: 100,
-  right: 100,
-  height: 100,
-  zIndex: 2,
-  backgroundColor: 'transparent' as const,
-};
 
 const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const { channel: initialChannel } = route.params || {};
@@ -121,11 +72,9 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const showEPGGrid = useUIStore((state) => state.showEPGGrid);
   const showChannelList = useUIStore((state) => state.showChannelList);
   const showGroupsPlaylists = useUIStore((state) => state.showGroupsPlaylists);
-  const showInfoBar = useUIStore((state) => state.showInfoBar);
   const showProgramInfo = useUIStore((state) => state.showProgramInfo);
   const showSleepTimer = useUIStore((state) => state.showSleepTimer);
   const showChannelNumberPad = useUIStore((state) => state.showChannelNumberPad);
-  const setShowChannelList = useUIStore((state) => state.setShowChannelList);
   
   // EPG store state
   const currentProgram = useEPGStore((state) => state.currentProgram);
@@ -145,6 +94,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     prefetchProgramsForChannels,
     forceRefresh: forceEpgRefresh,
   } = useEPGManagement();
+  const interfacePreferences = useInterfacePreferences();
   const { pipAnim, pipScale, enterPIP, exitPIP } = usePIPMode();
   const { setShowChannelInfoCard } = useChannelInfo({ showOnInitialLoad: true });
   const { toggleFavorite, isFavorite } = useFavorites(channels);
@@ -171,7 +121,6 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     setShowChannelInfoCard,
   });
   const {
-    handleScreenPress,
     handleCenterPress,
     handleLeftDpad,
     handleBack,
@@ -269,7 +218,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   }, [currentChannelPrograms]);
 
   // EPG auto-hide
-  useEPGAutoHide();
+  useEPGAutoHide(interfacePreferences.infoBarTimeoutSeconds);
 
   // Stable wrappers that bundle exitPIP so useKeyboardNavigation doesn't need it directly
   const handleUpDpadWithPIP = useCallback(() => handleUpDpad(exitPIP), [handleUpDpad, exitPIP]);
@@ -297,10 +246,6 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   }, []);
 
   const handleMultiScreenClose = useCallback(() => setShowMultiScreenControls(false), []);
-
-  const handleEPGInfoPress = useCallback(() => {
-    useUIStore.getState().setShowEPG(true);
-  }, []);
 
   const handleEPGOverlayBack = useCallback(() => {
     if (navigation.canGoBack()) navigation.goBack();
@@ -337,38 +282,25 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     setTimeout(() => centerZoneRef.current?.focus?.(), 10);
   }, [handleDownDpad, exitPIP]);
 
-  const hasModalOverlay =
-    showEPG ||
-    showEPGGrid ||
-    showChannelList ||
-    showGroupsPlaylists ||
-    showProgramInfo ||
-    showSleepTimer ||
-    showChannelNumberPad;
+  const hasModalOverlay = hasPlayerModalOverlay({
+    showEPG,
+    showEPGGrid,
+    showChannelList,
+    showGroupsPlaylists,
+    showProgramInfo,
+    showSleepTimer,
+    showChannelNumberPad,
+  });
 
   // If in multi-screen mode, show multi-screen view
   if (isMultiScreenMode && screens.length > 0) {
-    const { width, height } = Dimensions.get('window');
     return (
-      <View 
-        className="flex-1 bg-black w-full h-full absolute inset-0"
-        style={Platform.OS === 'web' ? {
-          width,
-          height,
-          minHeight: height,
-        } as any : undefined}
-      >
-        <MultiScreenView
-          channels={channels}
-          onChannelSelect={handleChannelSelect}
-        />
-        <MultiScreenControls
-          channels={channels}
-          onChannelSelect={handleChannelSelect}
-          isVisible={showMultiScreenControls}
-          onClose={handleMultiScreenClose}
-        />
-      </View>
+      <PlayerMultiScreenStage
+        channels={channels}
+        onChannelSelect={handleChannelSelect}
+        showControls={showMultiScreenControls}
+        onCloseControls={handleMultiScreenClose}
+      />
     );
   }
 
@@ -377,193 +309,45 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       ref={mainViewRef}
       className="flex-1 bg-black relative"
     >
-      {/* Invisible D-pad navigation zones for Android TV */}
-      {!hasModalOverlay && Platform.OS === 'android' && (
-        <>
-          {/* Central focusable zone - default focus */}
-          <FocusableItem
-            ref={centerZoneRef}
-            onPress={handleCenterPress}
-            hasTVPreferredFocus={true}
-            className=""
-            style={DPAD_CENTER_STYLE}
-            focusedStyle={DPAD_INVISIBLE_FOCUSED_STYLE}
-          >
-            <View style={TRANSPARENT_FLEX} />
-          </FocusableItem>
+      <PlayerDpadZones
+        hasModalOverlay={hasModalOverlay}
+        centerZoneRef={centerZoneRef}
+        onCenterPress={handleCenterPress}
+        onLeftPress={handleLeftDpad}
+        onUpPress={handleUpDpadPress}
+        onUpFocus={handleUpDpadFocus}
+        onDownPress={handleDownDpadPress}
+        onDownFocus={handleDownDpadFocus}
+        hasUserInteracted={hasUserInteracted}
+        isPlaying={isPlaying}
+        onFirstInteraction={() => {
+          if (Platform.OS !== 'web' || hasUserInteracted) return;
+          setHasUserInteracted(true);
+          if (videoRef.current) {
+            videoRef.current.playAsync().catch((err) => {
+              console.log('Play failed:', err);
+            });
+          }
+        }}
+        showControlsOnFocus={showControlsOnFocus}
+      />
 
-          {/* Left edge - opens channel list */}
-          <FocusableItem
-            onPress={handleLeftDpad}
-            onFocus={handleLeftDpad}
-            className=""
-            style={DPAD_LEFT_STYLE}
-            focusedStyle={DPAD_INVISIBLE_FOCUSED_STYLE}
-          >
-            <View style={TRANSPARENT_FLEX} />
-          </FocusableItem>
-
-          {/* Top edge - previous channel */}
-          <FocusableItem
-            onPress={handleUpDpadPress}
-            onFocus={handleUpDpadFocus}
-            className=""
-            style={DPAD_TOP_STYLE}
-            focusedStyle={DPAD_INVISIBLE_FOCUSED_STYLE}
-          >
-            <View style={TRANSPARENT_FLEX} />
-          </FocusableItem>
-
-          {/* Bottom edge - next channel */}
-          <FocusableItem
-            onPress={handleDownDpadPress}
-            onFocus={handleDownDpadFocus}
-            className=""
-            style={DPAD_BOTTOM_STYLE}
-            focusedStyle={DPAD_INVISIBLE_FOCUSED_STYLE}
-          >
-            <View style={TRANSPARENT_FLEX} />
-          </FocusableItem>
-        </>
-      )}
-      
-      {/* Focusable overlay for non-Android platforms */}
-      {!hasModalOverlay && Platform.OS !== 'android' && (
-        <>
-          {/* Main overlay for center button press and keyboard navigation */}
-          <FocusableItem
-            onPress={() => {
-              // Mark user interaction for autoplay on web
-              if (Platform.OS === 'web' && !hasUserInteracted) {
-                setHasUserInteracted(true);
-                // Try to play if autoplay is enabled
-                if (isPlaying && videoRef.current) {
-                  videoRef.current.playAsync().catch(err => {
-                    console.log('Play failed:', err);
-                  });
-                }
-              }
-              handleCenterPress();
-            }}
-            onFocus={() => {
-              showControlsOnFocus();
-            }}
-            className="absolute inset-0 bg-transparent"
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 2,
-              backgroundColor: 'transparent',
-            }}
-          >
-            <View className="absolute inset-0 bg-transparent" />
-          </FocusableItem>
-        </>
-      )}
-
-
-      {/* Video Container - Minimized to top-right when EPG grid is shown */}
       {channel && (
-        <Animated.View
-          style={{
-            flex: showEPGGrid ? undefined : 1,
-            position: showEPGGrid ? 'absolute' : 'relative',
-            top: showEPGGrid ? 48 : undefined,
-            right: showEPGGrid ? 48 : undefined,
-            width: showEPGGrid ? pipPreviewWidth : undefined,
-            height: showEPGGrid ? pipPreviewHeight : undefined,
-            zIndex: showEPGGrid ? 40 : 1,
-            elevation: showEPGGrid ? 40 : 1,
-            borderRadius: showEPGGrid ? 20 : 0,
-            overflow: 'hidden',
-            borderWidth: showEPGGrid ? 1 : 0,
-            borderColor: showEPGGrid ? 'rgba(148, 163, 184, 0.45)' : 'transparent',
-            backgroundColor: showEPGGrid ? '#0f172a' : 'transparent',
-            shadowColor: showEPGGrid ? '#0ea5e9' : 'transparent',
-            shadowOffset: showEPGGrid ? { width: 0, height: 12 } : { width: 0, height: 0 },
-            shadowOpacity: showEPGGrid ? 0.3 : 0,
-            shadowRadius: showEPGGrid ? 24 : 0,
-            transform: showEPGGrid ? [] : [
-              { translateX: pipAnim.x },
-              { translateY: pipAnim.y },
-              { scale: pipScale },
-            ],
-          }}
-          focusable={false}
-          importantForAccessibility="no"
-        >
-          <View 
-            style={{ flex: 1, position: 'relative', backgroundColor: '#020617' }}
-            focusable={false}
-            importantForAccessibility="no"
-          >
-            <AppVideo
-              key={`video-${channel.id}-${channel.url}`}
-              ref={videoRef}
-              source={{ uri: channel.url }}
-              style={{
-                flex: 1,
-                width: Platform.OS === 'web' ? '-webkit-fill-available' : '100%',
-                height: '100%',
-                margin: Platform.OS === 'web' ? 'auto' : 0,
-                backgroundColor: '#020617',
-              } as any}
-              focusable={false}
-              resizeMode={resizeMode}
-              shouldPlay={isPlaying}
-              onLoad={handleVideoReadyWithPlayback}
-              onError={handleVideoError}
-              onPlaybackStatusUpdate={handlePlaybackStatusUpdateWithError}
-              progressUpdateIntervalMillis={1000}
-              useNativeControls={false}
-              isLooping={false}
-              volume={1.0}
-              isMuted={false}
-            />
-          </View>
-          {/* Channel name overlay when minimized */}
-          {showEPGGrid && (
-            <View
-              style={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                backgroundColor: 'rgba(15, 23, 42, 0.85)',
-                paddingHorizontal: 16,
-                paddingVertical: 12,
-              }}
-              pointerEvents="none"
-            >
-              <Text
-                style={{
-                  color: '#fff',
-                  fontSize: 16,
-                  fontWeight: '700',
-                }}
-                numberOfLines={1}
-              >
-                {channel.name}
-              </Text>
-              {currentProgram && (
-                <Text
-                  style={{
-                    color: '#bae6fd',
-                    fontSize: 12,
-                    fontWeight: '600',
-                    marginTop: 4,
-                  }}
-                  numberOfLines={1}
-                >
-                  {currentProgram.title}
-                </Text>
-              )}
-            </View>
-          )}
-        </Animated.View>
+        <PlayerVideoStage
+          channel={channel}
+          currentProgram={currentProgram}
+          showEPGGrid={showEPGGrid}
+          pipAnim={pipAnim}
+          pipScale={pipScale}
+          pipPreviewWidth={pipPreviewWidth}
+          pipPreviewHeight={pipPreviewHeight}
+          videoRef={videoRef}
+          resizeMode={resizeMode}
+          isPlaying={isPlaying}
+          onLoad={handleVideoReadyWithPlayback}
+          onError={handleVideoError}
+          onPlaybackStatusUpdate={handlePlaybackStatusUpdateWithError}
+        />
       )}
 
       {loading && !error && (
@@ -611,6 +395,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
           programs={currentChannelPrograms}
           epgLoading={epgLoading}
           epgError={epgError}
+          clockFormat={interfacePreferences.clockFormat}
         />
       )}
 
@@ -628,6 +413,8 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
           epgError={epgError}
           epgLastUpdated={epgLastUpdated}
           handleManualEpgRefresh={handleManualEpgRefresh}
+          clockFormat={interfacePreferences.clockFormat}
+          showChannelNumbers={interfacePreferences.showChannelNumbers}
         />
       )}
 
@@ -637,6 +424,8 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
         getCurrentProgram={getCurrentProgram}
         getProgramsForChannel={getProgramsForChannel}
         epgLastUpdated={epgLastUpdated}
+        showChannelNumbers={interfacePreferences.showChannelNumbers}
+        clockFormat={interfacePreferences.clockFormat}
       />
 
       {/* Groups & Playlists Panel */}
@@ -658,6 +447,8 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
           onSleepTimer={() => useUIStore.getState().setShowSleepTimer(true)}
           sleepLabel={sleepLabel}
           navigation={navigation}
+          timeoutSeconds={interfacePreferences.infoBarTimeoutSeconds}
+          clockFormat={interfacePreferences.clockFormat}
         />
       )}
 

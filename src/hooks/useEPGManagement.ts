@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { InteractionManager, Platform } from "react-native";
+import { InteractionManager } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { EPGProgram } from "../types";
 import { usePlayerStore } from "../store/usePlayerStore";
@@ -9,62 +9,22 @@ import {
   getPlaylistMetadata,
   setPlaylistMetadata,
   pruneOldPrograms,
-  debugDatabaseContents,
 } from "../database/epgDatabase";
-import { ingestXmltvToDatabase } from "../utils/epgParser";
+import { isNativeIngestionAvailable } from "../services/nativeEpgIngestion";
 import {
-  isNativeIngestionAvailable,
-  startNativeEpgIngestion,
-  IngestionEventListener,
-  IngestionProgress,
-} from "../services/nativeEpgIngestion";
-
-type ProgramsByChannel = Record<string, EPGProgram[]>;
-
-const INITIAL_PREFETCH_COUNT = 12;
-const PRUNE_LOWER_BOUND_HOURS = 12;
-const DEFAULT_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4 hours
-const STARTUP_SKIP_INTERVAL_MS   = 4 * 60 * 60 * 1000; // skip full reload within 4h on cold boot
-const E2E_PROGRAMS_STORAGE_KEY = "@chuchPlayer:e2ePrograms";
-const EPG_LAST_INGEST_KEY = "@chuchPlayer:epgLastIngest";
-const isE2EWeb = Platform.OS === "web" && process.env.EXPO_PUBLIC_E2E === "1";
-
-const loadE2EPrograms = (): ProgramsByChannel | null => {
-  if (!isE2EWeb || typeof window === "undefined") return null;
-
-  try {
-    const raw = window.localStorage.getItem(E2E_PROGRAMS_STORAGE_KEY);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw) as Record<string, Array<Omit<EPGProgram, "start" | "end"> & {
-      start: string;
-      end: string;
-    }>>;
-
-    return Object.entries(parsed).reduce<ProgramsByChannel>((acc, [channelId, programs]) => {
-      acc[channelId] = programs.map((program) => ({
-        ...program,
-        start: new Date(program.start),
-        end: new Date(program.end),
-      }));
-      return acc;
-    }, {});
-  } catch (error) {
-    console.warn("[EPG] Failed to load E2E programs", error);
-    return null;
-  }
-};
-
-const buildXtreamXmltvUrl = (
-  serverUrl: string,
-  username: string,
-  password: string,
-): string => {
-  const baseUrl = serverUrl.replace(/\/$/, "");
-  return `${baseUrl}/xmltv.php?username=${encodeURIComponent(
-    username,
-  )}&password=${encodeURIComponent(password)}`;
-};
+  DEFAULT_REFRESH_INTERVAL_MS,
+  EPG_LAST_INGEST_KEY,
+  INITIAL_PREFETCH_COUNT,
+  MIN_TIME_BETWEEN_FETCHES_MS,
+  PRUNE_LOWER_BOUND_HOURS,
+  STARTUP_SKIP_INTERVAL_MS,
+} from "./epgManagement/constants";
+import { loadE2EPrograms, isE2EWebMode, ProgramsByChannel } from "./epgManagement/e2e";
+import { ingestEpgData } from "./epgManagement/ingestion";
+import {
+  buildDatasetSignature,
+  getActiveEpgUrls,
+} from "./epgManagement/signatures";
 
 export const useEPGManagement = () => {
   const channels = usePlayerStore((state) => state.channels);
@@ -106,37 +66,15 @@ export const useEPGManagement = () => {
     [channels],
   );
 
-  const activeEpgUrls = useMemo(() => {
-    if (!playlist) return [];
-    const explicit =
-      playlist.epgUrls && playlist.epgUrls.length > 0 ? playlist.epgUrls : [];
-    if (explicit.length > 0) {
-      return Array.from(
-        new Set(explicit.map((url) => url.trim()).filter(Boolean)),
-      );
-    }
-
-    if (playlist.sourceType === "xtream" && playlist.xtreamCredentials) {
-      const { serverUrl, username, password } = playlist.xtreamCredentials;
-      return [buildXtreamXmltvUrl(serverUrl, username, password)];
-    }
-
-    return [];
-  }, [playlist]);
+  const activeEpgUrls = useMemo(() => getActiveEpgUrls(playlist), [playlist]);
 
   const datasetSignature = useMemo(() => {
-    if (!playlist) return null;
-    const updatedAt =
-      playlist.updatedAt instanceof Date
-        ? playlist.updatedAt.getTime()
-        : new Date(playlist.updatedAt).getTime();
-
     // Keep ref in sync so the effect always reads the latest URLs without
     // taking activeEpgUrls as a dep (its reference changes on every playlist
     // object re-creation even when the content is identical, which would
     // cancel in-flight ingestion and restart the loading spinner endlessly).
     activeEpgUrlsRef.current = activeEpgUrls;
-    return `${playlist.id}:${updatedAt}:${channelsSignature}:${activeEpgUrls.join("|")}`;
+    return buildDatasetSignature(playlist, channelsSignature, activeEpgUrls);
   }, [playlist, channelsSignature, activeEpgUrls]);
 
   const loadProgramsForChannels = useCallback(
@@ -217,18 +155,17 @@ export const useEPGManagement = () => {
 
   // Track last fetch time to prevent too frequent requests
   const lastFetchTimeRef = useRef<number>(0);
-  const MIN_TIME_BETWEEN_FETCHES_MS = 30 * 1000; // 30 seconds minimum between fetches
 
   useEffect(() => {
     if (!datasetSignature) {
       loadedSignatureRef.current = null;
-      if (!isE2EWeb) setProgramsByChannel({});
+      if (!isE2EWebMode()) setProgramsByChannel({});
       setEpgStatus({ loading: false, error: null });
       setEpgLastUpdated(Date.now());
       return;
     }
 
-    if (isE2EWeb) {
+    if (isE2EWebMode()) {
       loadedSignatureRef.current = datasetSignature;
       setEpgStatus({ loading: false, error: null });
       return;
@@ -354,81 +291,13 @@ export const useEPGManagement = () => {
         const urlsToIngest = activeEpgUrlsRef.current;
         console.log("[EPG] Active EPG URLs:", urlsToIngest);
 
-        if (!isNativeIngestionAvailable()) {
-          // Web / non-Android: fetch + JS parser → IndexedDB
-          for (let i = 0; i < urlsToIngest.length; i++) {
-            const epgUrl = urlsToIngest[i];
-            if (i > 0) await new Promise((r) => setTimeout(r, 2000));
-            try {
-              const response = await fetch(epgUrl);
-              if (!response.ok) throw new Error(`HTTP ${response.status}`);
-              await ingestXmltvToDatabase({ response, playlistId, channels });
-            } catch (err) {
-              errors.push(
-                `${epgUrl} - ${err instanceof Error ? err.message : "Unknown error"}`,
-              );
-            }
-          }
-        } else {
-          // Native ingestion runs in Kotlin background thread
-          for (let i = 0; i < urlsToIngest.length; i++) {
-            const epgUrl = urlsToIngest[i];
-            if (i > 0)
-              await new Promise((resolve) => setTimeout(resolve, 2000));
-            try {
-              const INGESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for large XMLTV files
-              const timeoutPromise = new Promise<never>((_, reject) =>
-                setTimeout(
-                  () =>
-                    reject(
-                      new Error("EPG ingestion timed out after 5 minutes"),
-                    ),
-                  INGESTION_TIMEOUT_MS,
-                ),
-              );
-              const onEvent: IngestionEventListener = (type, data) => {
-                const getUrlShort = (url?: string): string => {
-                  if (!url || typeof url !== "string") return "unknown";
-                  const parts = url.split("/");
-                  return parts[parts.length - 1] || url;
-                };
-                if (type === "progress") {
-                  const progress = data as IngestionProgress;
-                  console.log(
-                    `[EPG] ${getUrlShort(progress.epgUrl)}: ${progress.programsProcessed} processed`,
-                  );
-                } else if (type === "complete") {
-                  const complete = data as {
-                    programsCount: number;
-                    epgUrl?: string;
-                  };
-                  console.log(
-                    `[EPG] ${getUrlShort(complete.epgUrl)}: ${complete.programsCount} inserted`,
-                  );
-                } else if (type === "error") {
-                  const error = data as { error: string; epgUrl?: string };
-                  console.error(
-                    `[EPG] ${getUrlShort(error.epgUrl)}: ${error.error}`,
-                  );
-                }
-              };
-              await Promise.race([
-                startNativeEpgIngestion(
-                  epgUrl,
-                  playlistId,
-                  channels,
-                  datasetSignature,
-                  onEvent,
-                ),
-                timeoutPromise,
-              ]);
-            } catch (error) {
-              const message =
-                error instanceof Error ? error.message : "Unknown error";
-              errors.push(`${epgUrl} - ${message}`);
-            }
-          }
-        }
+        const ingestErrors = await ingestEpgData({
+          playlistId,
+          channels,
+          datasetSignature: datasetSignature!,
+          urlsToIngest,
+        });
+        errors.push(...ingestErrors);
 
         if (cancelled) {
           return;

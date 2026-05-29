@@ -6,6 +6,7 @@ import { useEPGStore } from '../store/useEPGStore';
 import { getPlaylists, getLastChannel, getSettings } from '../utils/storage';
 import { saveLastChannel } from '../utils/storage';
 import { useMultiScreenStore } from '../store/useMultiScreenStore';
+import { syncInterfacePreferences } from './interfacePreferences/useInterfacePreferences';
 
 interface UseChannelInitializationProps {
   initialChannel?: Channel;
@@ -25,6 +26,7 @@ export const useChannelInitialization = ({
   const { isMultiScreenMode, screens, addScreen } = useMultiScreenStore();
 
   // UI state
+  const setShowEPG = useUIStore((state) => state.setShowEPG);
   const setShowEPGGrid = useUIStore((state) => state.setShowEPGGrid);
 
   // EPG state
@@ -54,9 +56,15 @@ export const useChannelInitialization = ({
       }
 
       try {
-        // Parallel fetch: last channel + playlists together
-        const [lastChannel, playlists] = await Promise.all([getLastChannel(), getPlaylists()]);
+        // Parallel fetch: last channel + playlists + settings together
+        const [lastChannel, playlists, settings] = await Promise.all([
+          getLastChannel(),
+          getPlaylists(),
+          getSettings(),
+        ]);
         playlistsCacheRef.current = playlists;
+        syncInterfacePreferences(settings);
+        setShowEPG(false);
 
         if (lastChannel) {
           applyPlaylist(playlists, lastChannel.id);
@@ -66,7 +74,7 @@ export const useChannelInitialization = ({
           const first = playlists[0];
           setPlaylist(first);
           setChannels(first.channels);
-          setShowEPGGrid(true);
+          setShowEPGGrid(settings.showEPG);
         }
       } catch (error) {
         console.error('Error during channel initialization:', error);
@@ -95,11 +103,14 @@ export const useChannelInitialization = ({
         // Keep cache warm
         playlistsCacheRef.current = playlists;
 
+        syncInterfacePreferences(settings);
         applyPlaylist(playlists, channelId);
 
         if (settings.autoPlay) setIsPlaying(true);
         setMaxScreens(settings.maxMultiScreens);
         setCurrentProgram(getCurrentProgram(channelId));
+        setShowEPG(false);
+        setShowEPGGrid(settings.showEPG);
 
         if (isMultiScreenMode && screens.length === 0) addScreen(channel);
 
@@ -113,4 +124,3 @@ export const useChannelInitialization = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.id]);
 };
-

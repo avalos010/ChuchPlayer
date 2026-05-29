@@ -2,11 +2,12 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
-import { RootStackParamList, Channel, EPGProgram, Settings } from '../types';
+import { RootStackParamList, Channel, EPGProgram } from '../types';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useEPGManagement } from '../hooks/useEPGManagement';
 import { useChannelInitialization } from '../hooks/useChannelInitialization';
 import { useWebPlayerKeyboard } from '../hooks/useWebPlayerKeyboard';
+import { useInterfacePreferences } from '../hooks/interfacePreferences/useInterfacePreferences';
 import { getSettings, saveLastChannel } from '../utils/storage';
 import TopOverlay from '../components/webPlayer/TopOverlay';
 import SidebarPanel from '../components/webPlayer/SidebarPanel';
@@ -48,8 +49,8 @@ const WebPlayerScreen: React.FC<WebPlayerScreenProps> = ({ navigation, route }) 
   const [clock, setClock] = useState(() => new Date());
   const [chromeVisible, setChromeVisible] = useState(true);
   const [guideOpen, setGuideOpen] = useState(false);
-  const [settings, setSettings] = useState<Settings | null>(null);
   const hideChromeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const interfacePreferences = useInterfacePreferences();
 
   const showChrome = useCallback(() => {
     setChromeVisible(true);
@@ -61,20 +62,8 @@ const WebPlayerScreen: React.FC<WebPlayerScreenProps> = ({ navigation, route }) 
   }, [channel?.id]);
 
   useEffect(() => {
-    let active = true;
-
-    getSettings()
-      .then((nextSettings) => {
-        if (!active) return;
-        setSettings(nextSettings);
-        setGuideOpen(nextSettings.showEPG);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      active = false;
-    };
-  }, []);
+    setGuideOpen(interfacePreferences.showEPG);
+  }, [interfacePreferences.showEPG]);
 
   useEffect(() => {
     const id = setInterval(() => setClock(new Date()), 30_000);
@@ -87,7 +76,7 @@ const WebPlayerScreen: React.FC<WebPlayerScreenProps> = ({ navigation, route }) 
       hideChromeTimerRef.current = null;
     }
 
-    const timeoutSeconds = settings?.infoBarTimeoutSeconds ?? 6;
+    const timeoutSeconds = interfacePreferences.infoBarTimeoutSeconds;
     if (!channel || sidebarOpen || loading || !chromeVisible || timeoutSeconds <= 0) return undefined;
 
     hideChromeTimerRef.current = setTimeout(() => {
@@ -101,7 +90,7 @@ const WebPlayerScreen: React.FC<WebPlayerScreenProps> = ({ navigation, route }) 
         hideChromeTimerRef.current = null;
       }
     };
-  }, [channel, chromeVisible, loading, settings?.infoBarTimeoutSeconds, sidebarOpen]);
+  }, [channel, chromeVisible, loading, interfacePreferences.infoBarTimeoutSeconds, sidebarOpen]);
 
   useEffect(() => {
     const handleActivity = () => showChrome();
@@ -147,11 +136,11 @@ const WebPlayerScreen: React.FC<WebPlayerScreenProps> = ({ navigation, route }) 
   }, [channel?.id, filteredChannels, highlightedChannelId]);
 
   const currentProgram = channel ? getCurrentProgram(channel.id) : null;
-  const showChannelNumbers = settings?.showChannelNumbers ?? false;
+  const showChannelNumbers = interfacePreferences.showChannelNumbers;
   const clockLabel = clock.toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
-    hour12: (settings?.clockFormat ?? '24h') === '12h',
+    hour12: interfacePreferences.clockFormat === '12h',
   });
   const visiblePrograms = useMemo(
     () => (channel ? getProgramsForChannel(channel.id).slice(0, 10) : []),
@@ -266,7 +255,7 @@ const WebPlayerScreen: React.FC<WebPlayerScreenProps> = ({ navigation, route }) 
             isPlaying={isPlaying}
             onError={() => setVideoError(true)}
             onLoad={async () => {
-              const activeSettings = settings ?? await getSettings();
+              const activeSettings = await getSettings();
               setIsPlaying(activeSettings.autoPlay ?? true);
             }}
           />

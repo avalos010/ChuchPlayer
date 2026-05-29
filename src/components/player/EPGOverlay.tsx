@@ -17,6 +17,7 @@ import { useUIStore } from '../../store/useUIStore';
 import { useEPGStore } from '../../store/useEPGStore';
 import { RootStackParamList, EPGProgram } from '../../types';
 import { isTvLikePlatform } from '../../utils/platform';
+import { formatClockTime } from '../../utils/time';
 
 interface EPGOverlayProps {
   onTogglePlayback: () => void;
@@ -25,6 +26,7 @@ interface EPGOverlayProps {
   programs?: EPGProgram[];
   epgLoading?: boolean;
   epgError?: string | null;
+  clockFormat?: '12h' | '24h';
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -45,13 +47,6 @@ const BTN_FOCUSED = {
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const fmtTime = (d?: Date | null): string => {
-  if (!d) return '';
-  const dt = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(dt.getTime())) return '';
-  return dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
 
 const progressPct = (start?: Date | null, end?: Date | null): number => {
   if (!start || !end) return 0;
@@ -91,6 +86,7 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
   programs = [],
   epgLoading = false,
   epgError = null,
+  clockFormat = '24h',
 }) => {
   const channel        = usePlayerStore((st) => st.channel);
   const isPlaying      = usePlayerStore((st) => st.isPlaying);
@@ -173,8 +169,8 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
               <Text style={s.progTitle} numberOfLines={2}>{currentProgram.title}</Text>
 
               {(() => {
-                const ts = fmtTime(currentProgram.start);
-                const te = fmtTime(currentProgram.end);
+                const ts = formatClockTime(currentProgram.start, clockFormat);
+                const te = formatClockTime(currentProgram.end, clockFormat);
                 return ts && te ? (
                   <Text style={s.progTime}>{ts} – {te}</Text>
                 ) : null;
@@ -215,8 +211,8 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
               <View style={s.divider} />
               <Text style={s.sectionLabel}>UP NEXT</Text>
               {upcoming.map(p => {
-                const ts = fmtTime(p.start);
-                const te = fmtTime(p.end);
+                const ts = formatClockTime(p.start, clockFormat);
+                const te = formatClockTime(p.end, clockFormat);
                 return (
                   <View key={p.id} style={s.upRow}>
                     <View style={{ flex: 1 }}>

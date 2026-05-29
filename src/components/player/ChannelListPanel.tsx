@@ -19,12 +19,15 @@ import { useUIStore } from '../../store/useUIStore';
 import { useFavorites } from '../../hooks/useFavorites';
 import { useRecentChannels } from '../../hooks/useRecentChannels';
 import { isTvLikePlatform } from '../../utils/platform';
+import { formatClockTime } from '../../utils/time';
 
 interface ChannelListPanelProps {
   onChannelSelect: (channel: Channel) => void;
   getCurrentProgram?: (channelId: string) => EPGProgram | null;
   getProgramsForChannel?: (channelId: string) => EPGProgram[];
   epgLastUpdated?: number;
+  showChannelNumbers?: boolean;
+  clockFormat?: '12h' | '24h';
 }
 
 type TabId = 'all' | 'fav' | 'recent';
@@ -41,8 +44,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'recent', label: '🕒 Recent' },
 ];
 
-const fmt = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
 const TAB_FOCUSED     = { backgroundColor: 'rgba(30,41,59,0.9)', borderColor: '#334155', borderWidth: 1.5, transform: [] as any[], elevation: 3 };
 const TAB_ACT_FOCUSED = { backgroundColor: 'rgba(2,132,199,0.9)', borderColor: '#0ea5e9', borderWidth: 1.5, transform: [] as any[], elevation: 4 };
 const GRP_FOCUSED     = { backgroundColor: 'rgba(30,41,59,0.9)', borderColor: '#334155', borderWidth: 1.5, transform: [] as any[], elevation: 3 };
@@ -52,6 +53,7 @@ interface EpgDetailPanelProps {
   channel: Channel | null;
   programs: EPGProgram[];
   now: number;
+  clockFormat: '12h' | '24h';
 }
 
 const EPG_ROW_H = TV ? 72 : 60;
@@ -65,7 +67,7 @@ const ROW_FOCUSED = {
 };
 
 const EpgDetailPanelInner = React.forwardRef<ScrollView, EpgDetailPanelProps>(
-  ({ channel, programs, now }, ref) => {
+  ({ channel, programs, now, clockFormat }, ref) => {
     const scrollRef = useRef<ScrollView>(null);
 
     // Expose the scroll ref so ChannelListPanel can forward it
@@ -139,7 +141,7 @@ const EpgDetailPanelInner = React.forwardRef<ScrollView, EpgDetailPanelProps>(
                 >
                   <View style={ep.rowLeft}>
                     <Text style={[ep.time, isCurrent && ep.timeCurrent, isPast && !canCatchup && ep.timeGray]}>
-                      {fmt(p.start)}
+                      {formatClockTime(p.start, clockFormat, { hour: 'numeric', minute: '2-digit' })}
                     </Text>
                     {canCatchup && <Text style={ep.catchupDot}>⏮</Text>}
                     {isCurrent && <View style={ep.nowDot} />}
@@ -152,7 +154,7 @@ const EpgDetailPanelInner = React.forwardRef<ScrollView, EpgDetailPanelProps>(
                       {p.title}
                     </Text>
                     <Text style={[ep.dur, isCurrent && ep.durCurrent]}>
-                      {fmt(p.start)} – {fmt(p.end)}
+                      {formatClockTime(p.start, clockFormat, { hour: 'numeric', minute: '2-digit' })} – {formatClockTime(p.end, clockFormat, { hour: 'numeric', minute: '2-digit' })}
                     </Text>
                   </View>
                 </FocusableItem>
@@ -170,14 +172,18 @@ EpgDetailPanelInner.displayName = 'EpgDetailPanel';
 const EpgDetailPanel = React.memo(EpgDetailPanelInner, (prev, next) =>
   prev.channel?.id === next.channel?.id &&
   prev.programs    === next.programs    &&
+  prev.clockFormat === next.clockFormat &&
   Math.abs(prev.now - next.now) < 60_000,
 );
 
 // ─── Main component ──────────────────────────────────────────────────────────
 const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
   onChannelSelect,
+  getCurrentProgram,
   getProgramsForChannel,
   epgLastUpdated,
+  showChannelNumbers = false,
+  clockFormat = '24h',
 }) => {
   const showGroupsPlaylists    = useUIStore((s) => s.showGroupsPlaylists);
   const setShowGroupsPlaylists = useUIStore((s) => s.setShowGroupsPlaylists);
@@ -255,19 +261,6 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
     return idx > 0 ? idx : undefined;
   }, [showChannelList, filteredChannels, currentChannelId]);
 
-  // ── Current-program map for channel items — only rebuilds on real EPG changes ─
-  const currentProgMap = useMemo(() => {
-    const map = new Map<string, EPGProgram | null>();
-    if (!getProgramsForChannel) return map;
-    const now = new Date();
-    for (const ch of filteredChannels) {
-      const progs   = getProgramsForChannel(ch.id);
-      const current = progs.find((p) => p.start <= now && p.end > now) ?? null;
-      map.set(ch.id, current);
-    }
-    return map;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredChannels, getProgramsForChannel, epgLastUpdated]);
 
   // ── Focused channel EPG — only the focused channel's programs ────────────────
   const focusedChannel = useMemo(
@@ -317,9 +310,9 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
   const extraData = useMemo(() => ({
     currentChannelId,
     isFavorite,
-    currentProgMap,
+    epgLastUpdated,
     renderKey,
-  }), [currentChannelId, isFavorite, currentProgMap, renderKey]);
+  }), [currentChannelId, isFavorite, epgLastUpdated, renderKey]);
 
   const renderChannelItem = useCallback(
     ({ item, index }: { item: Channel; index: number }) => {
@@ -333,13 +326,15 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
           isCurrentChannel={item.id === currentChannelId}
           isFavorite={isFavorite(item.id)}
           onToggleFavorite={handleToggleFavorite}
+          showNumbers={showChannelNumbers}
+          clockFormat={clockFormat}
           index={index}
-          currentProgram={currentProgMap.get(item.id) ?? null}
+          currentProgram={getCurrentProgram?.(item.id) ?? null}
         />
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currentChannelId, onChannelSelect, handleChannelFocus, isFavorite, handleToggleFavorite, currentProgMap],
+    [currentChannelId, onChannelSelect, handleChannelFocus, isFavorite, handleToggleFavorite, getCurrentProgram],
   );
 
   const keyExtractor = useCallback((item: Channel) => item.id, []);
@@ -461,6 +456,7 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = ({
                 channel={focusedChannel}
                 programs={focusedPrograms}
                 now={nowMs}
+                clockFormat={clockFormat}
               />
             </View>
           )}

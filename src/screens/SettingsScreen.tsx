@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -26,6 +25,9 @@ import { useUIStore } from '../store/useUIStore';
 import { useThemeStore } from '../store/useThemeStore';
 import { Theme, THEME_LIST } from '../theme/themes';
 import { useSleepTimer } from '../hooks/useSleepTimer';
+import { syncInterfacePreferences } from '../hooks/interfacePreferences/useInterfacePreferences';
+import PlaylistModal from './settings/PlaylistModal';
+import PinModal from './settings/PinModal';
 
 interface SettingsScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Settings'>;
@@ -183,7 +185,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
   useEffect(() => {
     (async () => {
       try {
-        setSettings(await getSettings());
+        const loadedSettings = await getSettings();
+        setSettings(loadedSettings);
+        syncInterfacePreferences(loadedSettings);
       } catch (err) {
         setTimeout(() => showError('Failed to load settings.', String(err)), 100);
       } finally {
@@ -208,6 +212,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
       const updated = { ...settings, [key]: value };
       setSettings(updated);
       await saveSettings(updated);
+      syncInterfacePreferences(updated);
     } catch (err) {
       setSettings(prev);
       setTimeout(() => showError('Could not save settings.', String(err)), 100);
@@ -1031,166 +1036,45 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
         <View style={{ height: 60 }} />
       </ScrollView>
 
-      {/* ══ ADD PLAYLIST MODAL ══════════════════════════ */}
-      <Modal visible={modalVisible} transparent animationType="fade">
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={closeModal} focusable={false}>
-          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={styles.modalBox} focusable={false}>
-            <Text style={styles.modalTitle}>{editingPlaylistId ? 'Edit Playlist' : 'Add Playlist'}</Text>
+      <PlaylistModal
+        visible={modalVisible}
+        editingPlaylistId={editingPlaylistId}
+        sourceType={sourceType}
+        setSourceType={setSourceType}
+        newPlaylistName={newPlaylistName}
+        setNewPlaylistName={setNewPlaylistName}
+        newPlaylistUrl={newPlaylistUrl}
+        setNewPlaylistUrl={setNewPlaylistUrl}
+        xtreamServerUrl={xtreamServerUrl}
+        setXtreamServerUrl={setXtreamServerUrl}
+        xtreamUsername={xtreamUsername}
+        setXtreamUsername={setXtreamUsername}
+        xtreamPassword={xtreamPassword}
+        setXtreamPassword={setXtreamPassword}
+        addingPlaylist={addingPlaylist}
+        onClose={closeModal}
+        onSave={handleAddPlaylist}
+        styles={styles}
+        focusedStyle={BTN_FOCUSED}
+        nameInputRef={nameInputRef}
+        urlInputRef={urlInputRef}
+        xtreamServerRef={xtreamServerRef}
+        xtreamUsernameRef={xtreamUsernameRef}
+        xtreamPasswordRef={xtreamPasswordRef}
+        modalSaveBtnRef={modalSaveBtnRef}
+      />
 
-            <View style={styles.tabRow}>
-              {(['m3u', 'xtream'] as PlaylistSourceType[]).map((t, idx) => (
-                <FocusableItem
-                  key={t}
-                  onPress={() => setSourceType(t)}
-                  hasTVPreferredFocus={modalVisible && idx === 0}
-                  style={[styles.tab, sourceType === t && styles.tabActive]}
-                  focusedStyle={BTN_FOCUSED}
-                >
-                  <Text style={[styles.tabTxt, sourceType === t && styles.tabTxtActive]}>
-                    {t === 'm3u' ? 'M3U' : 'Xtream Codes'}
-                  </Text>
-                </FocusableItem>
-              ))}
-            </View>
-
-            <TextInput
-              ref={nameInputRef}
-              style={styles.input}
-              placeholder="Playlist name"
-              placeholderTextColor="#3d3d3d"
-              value={newPlaylistName}
-              onChangeText={setNewPlaylistName}
-              returnKeyType="next"
-              submitBehavior="submit"
-              onSubmitEditing={() => {
-                if (sourceType === 'm3u') urlInputRef.current?.focus();
-                else xtreamServerRef.current?.focus();
-              }}
-            />
-
-            {sourceType === 'm3u' ? (
-              <TextInput
-                ref={urlInputRef}
-                style={styles.input}
-                placeholder="M3U URL"
-                placeholderTextColor="#3d3d3d"
-                value={newPlaylistUrl}
-                onChangeText={setNewPlaylistUrl}
-                autoCapitalize="none"
-                keyboardType="url"
-                returnKeyType="done"
-                submitBehavior="blurAndSubmit"
-                onSubmitEditing={() => modalSaveBtnRef.current?.focus()}
-              />
-            ) : (
-              <>
-                <TextInput
-                  ref={xtreamServerRef}
-                  style={styles.input}
-                  placeholder="Server URL (https://...)"
-                  placeholderTextColor="#3d3d3d"
-                  value={xtreamServerUrl}
-                  onChangeText={setXtreamServerUrl}
-                  autoCapitalize="none"
-                  keyboardType="url"
-                  returnKeyType="next"
-                  submitBehavior="submit"
-                  onSubmitEditing={() => xtreamUsernameRef.current?.focus()}
-                />
-                <TextInput
-                  ref={xtreamUsernameRef}
-                  style={styles.input}
-                  placeholder="Username"
-                  placeholderTextColor="#3d3d3d"
-                  value={xtreamUsername}
-                  onChangeText={setXtreamUsername}
-                  autoCapitalize="none"
-                  returnKeyType="next"
-                  submitBehavior="submit"
-                  onSubmitEditing={() => xtreamPasswordRef.current?.focus()}
-                />
-                <TextInput
-                  ref={xtreamPasswordRef}
-                  style={styles.input}
-                  placeholder="Password"
-                  placeholderTextColor="#3d3d3d"
-                  value={xtreamPassword}
-                  onChangeText={setXtreamPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  returnKeyType="done"
-                  submitBehavior="blurAndSubmit"
-                  onSubmitEditing={() => modalSaveBtnRef.current?.focus()}
-                />
-              </>
-            )}
-
-            <View style={styles.modalActions}>
-              <FocusableItem onPress={closeModal} style={styles.cancelBtn} focusedStyle={BTN_FOCUSED} disabled={addingPlaylist}>
-                <Text style={styles.cancelBtnTxt}>Cancel</Text>
-              </FocusableItem>
-              <FocusableItem
-                ref={modalSaveBtnRef}
-                onPress={handleAddPlaylist}
-                style={styles.confirmBtn}
-                focusedStyle={BTN_FOCUSED}
-                disabled={addingPlaylist}
-              >
-                {addingPlaylist
-                  ? <ActivityIndicator color="#0a0a0a" size="small" />
-                  : <Text style={styles.confirmBtnTxt}>{editingPlaylistId ? 'Save' : 'Add'}</Text>}
-              </FocusableItem>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* ══ PIN MODAL ════════════════════════════════════ */}
-      <Modal visible={pinModalVisible} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.modalBackdrop}
-          activeOpacity={1}
-          onPress={() => { setPinModalVisible(false); setPinInput(''); setPinConfirm(''); }}
-          focusable={false}
-        >
-          <TouchableOpacity activeOpacity={1} onPress={() => {}} style={[styles.modalBox, { maxWidth: 400 }]} focusable={false}>
-            <Text style={styles.modalTitle}>Set PIN</Text>
-            <Text style={styles.settingDesc}>Enter a 4-digit PIN to protect content.</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="New 4-digit PIN"
-              placeholderTextColor="#3d3d3d"
-              value={pinInput}
-              onChangeText={t => setPinInput(t.replace(/\D/g, '').slice(0, 4))}
-              keyboardType="numeric"
-              secureTextEntry
-              maxLength={4}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Confirm PIN"
-              placeholderTextColor="#3d3d3d"
-              value={pinConfirm}
-              onChangeText={t => setPinConfirm(t.replace(/\D/g, '').slice(0, 4))}
-              keyboardType="numeric"
-              secureTextEntry
-              maxLength={4}
-            />
-            <View style={styles.modalActions}>
-              <FocusableItem
-                onPress={() => { setPinModalVisible(false); setPinInput(''); setPinConfirm(''); }}
-                style={styles.cancelBtn}
-                focusedStyle={BTN_FOCUSED}
-              >
-                <Text style={styles.cancelBtnTxt}>Cancel</Text>
-              </FocusableItem>
-              <FocusableItem onPress={handleSavePin} style={styles.confirmBtn} focusedStyle={BTN_FOCUSED}>
-                <Text style={styles.confirmBtnTxt}>Save</Text>
-              </FocusableItem>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+      <PinModal
+        visible={pinModalVisible}
+        pinInput={pinInput}
+        pinConfirm={pinConfirm}
+        setPinInput={setPinInput}
+        setPinConfirm={setPinConfirm}
+        onClose={() => { setPinModalVisible(false); setPinInput(''); setPinConfirm(''); }}
+        onSave={handleSavePin}
+        styles={styles}
+        focusedStyle={BTN_FOCUSED}
+      />
     </View>
   );
 };
