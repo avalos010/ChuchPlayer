@@ -7,6 +7,21 @@ const FAVORITES_KEY = '@chuchPlayer:favorites';
 const LAST_CHANNEL_KEY = '@chuchPlayer:lastChannel';
 const RECENT_CHANNELS_KEY = '@chuchPlayer:recentChannels';
 
+const DEFAULT_SETTINGS: Settings = {
+  autoPlay: true,
+  showEPG: false,
+  theme: 'dark',
+  multiScreenEnabled: true,
+  maxMultiScreens: 4,
+  epgRefreshIntervalMinutes: 120,
+  channelRefreshIntervalMinutes: 120,
+  bufferMode: 'balanced',
+  hardwareDecoder: true,
+  infoBarTimeoutSeconds: 6,
+  showChannelNumbers: false,
+  clockFormat: '24h',
+};
+
 type StoredPlaylist = Omit<Playlist, 'createdAt' | 'updatedAt'> & {
   createdAt: string;
   updatedAt: string;
@@ -76,20 +91,13 @@ export const getSettings = async (): Promise<Settings> => {
   try {
     const data = await AsyncStorage.getItem(SETTINGS_KEY);
     if (!data) {
-      return {
-        autoPlay: true,
-        showEPG: false,
-        theme: 'dark',
-        multiScreenEnabled: true,
-        maxMultiScreens: 4,
-        epgRefreshIntervalMinutes: 120,
-        channelRefreshIntervalMinutes: 120,
-      };
+      return DEFAULT_SETTINGS;
     }
 
     const parsed = JSON.parse(data) as Settings;
     // Ensure backward compatibility
     return {
+      ...DEFAULT_SETTINGS,
       ...parsed,
       multiScreenEnabled: parsed.multiScreenEnabled ?? true,
       maxMultiScreens: parsed.maxMultiScreens ?? 4,
@@ -98,15 +106,7 @@ export const getSettings = async (): Promise<Settings> => {
     };
   } catch (error) {
     console.error('Error getting settings:', error);
-    return {
-      autoPlay: true,
-      showEPG: false,
-      theme: 'dark',
-      multiScreenEnabled: true,
-      maxMultiScreens: 4,
-      epgRefreshIntervalMinutes: 120,
-      channelRefreshIntervalMinutes: 120,
-    };
+    return DEFAULT_SETTINGS;
   }
 };
 
@@ -188,4 +188,3 @@ export const getLastChannel = async (): Promise<Channel | null> => {
     return null;
   }
 };
-
