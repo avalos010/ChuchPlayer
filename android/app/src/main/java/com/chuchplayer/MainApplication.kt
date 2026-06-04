@@ -16,6 +16,7 @@ import com.facebook.react.defaults.DefaultReactNativeHost
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
 import com.chuchplayer.epg.EpgIngestionPackage
+import com.chuchplayer.input.TvInputDialogPackage
 import com.chuchplayer.player.ExoPlayerPackage
 import com.chuchplayer.updater.AppUpdaterPackage
 
@@ -30,6 +31,7 @@ class MainApplication : Application(), ReactApplication {
               // add(MyReactNativePackage())
             
               add(EpgIngestionPackage())
+              add(TvInputDialogPackage())
               add(ExoPlayerPackage())
               add(AppUpdaterPackage())
             }

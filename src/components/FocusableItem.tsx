@@ -19,6 +19,10 @@ interface FocusableItemProps {
   className?: string;
   disabled?: boolean;
   hasTVPreferredFocus?: boolean;
+  nextFocusUp?: number;
+  nextFocusDown?: number;
+  nextFocusLeft?: number;
+  nextFocusRight?: number;
 }
 
 const FocusableItem = forwardRef<any, FocusableItemProps>(({
@@ -31,6 +35,10 @@ const FocusableItem = forwardRef<any, FocusableItemProps>(({
   className,
   disabled = false,
   hasTVPreferredFocus = false,
+  nextFocusUp,
+  nextFocusDown,
+  nextFocusLeft,
+  nextFocusRight,
 }, ref) => {
   const [isFocused, setIsFocused] = useState(false);
   const pressableRef = useRef<any>(null);
@@ -191,8 +199,15 @@ const FocusableItem = forwardRef<any, FocusableItemProps>(({
     ].filter((s): s is ViewStyle => s != null),
     [classNameStyles, style, isFocused, focusedStyle, baseStyle]
   );
+  const tvFocusProps = {
+    nextFocusUp,
+    nextFocusDown,
+    nextFocusLeft,
+    nextFocusRight,
+  } as any;
 
   useImperativeHandle(ref, () => ({
+    getNativeNode: () => findNodeHandle(pressableRef.current),
     focus: () => {
       const node = findNodeHandle(pressableRef.current);
       if (!node) return;
@@ -221,6 +236,7 @@ const FocusableItem = forwardRef<any, FocusableItemProps>(({
       style={styleArray}
       focusable={true}
       hasTVPreferredFocus={hasTVPreferredFocus}
+      {...tvFocusProps}
     >
       <View pointerEvents="none">{children}</View>
     </Pressable>
@@ -230,4 +246,3 @@ const FocusableItem = forwardRef<any, FocusableItemProps>(({
 FocusableItem.displayName = 'FocusableItem';
 
 export default FocusableItem;
-
