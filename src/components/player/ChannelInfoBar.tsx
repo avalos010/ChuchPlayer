@@ -28,6 +28,7 @@ interface ChannelInfoBarProps {
   navigation?: NativeStackNavigationProp<RootStackParamList>;
   timeoutSeconds?: number;
   clockFormat?: '12h' | '24h';
+  showControls?: boolean;
 }
 
 const TV = isTvLikePlatform;
@@ -88,6 +89,7 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   navigation,
   timeoutSeconds = 6,
   clockFormat = '24h',
+  showControls = true,
 }) => {
   const theme = useThemeStore((st) => st.theme);
   const s     = useMemo(() => createStyles(theme), [theme]);
@@ -242,78 +244,80 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
           </View>
         </View>
 
-        {/* ── Divider ──────────────────────────────────────────────────── */}
-        <View style={s.divider} />
+        {showControls ? (
+          <>
+            <View style={s.divider} />
 
-        {/* ── Controls ─────────────────────────────────────────────────── */}
-        <View style={s.controls}>
-          <Ctrl
-            icon={isPlaying ? 'pause' : 'play'}
-            label={isPlaying ? 'Pause' : 'Play'}
-            onPress={onTogglePlayback}
-            onFocus={onFocus}
-            onBlur={onBlur}
-            active={isPlaying}
-            hasTVPreferredFocus={TV}
-          />
+            <View style={s.controls}>
+              <Ctrl
+                icon={isPlaying ? 'pause' : 'play'}
+                label={isPlaying ? 'Pause' : 'Play'}
+                onPress={onTogglePlayback}
+                onFocus={onFocus}
+                onBlur={onBlur}
+                active={isPlaying}
+                hasTVPreferredFocus={TV}
+              />
 
-          <Ctrl
-            icon="aspect-ratio"
-            label={aspectLabel(resizeMode)}
-            onPress={cycleResizeMode}
-            onFocus={onFocus}
-            onBlur={onBlur}
-          />
+              <Ctrl
+                icon="aspect-ratio"
+                label={aspectLabel(resizeMode)}
+                onPress={cycleResizeMode}
+                onFocus={onFocus}
+                onBlur={onBlur}
+              />
 
-          <Ctrl
-            icon={isFavorite ? 'star' : 'star-outline'}
-            label="Favorite"
-            onPress={onToggleFavorite}
-            onFocus={onFocus}
-            onBlur={onBlur}
-            active={isFavorite}
-          />
+              <Ctrl
+                icon={isFavorite ? 'star' : 'star-outline'}
+                label="Favorite"
+                onPress={onToggleFavorite}
+                onFocus={onFocus}
+                onBlur={onBlur}
+                active={isFavorite}
+              />
 
-          {onMultiScreen && (
-            <Ctrl
-              icon="picture-in-picture-top-right"
-              label="Multi"
-              onPress={onMultiScreen}
-              onFocus={onFocus}
-              onBlur={onBlur}
-            />
-          )}
+              {onMultiScreen && (
+                <Ctrl
+                  icon="picture-in-picture-top-right"
+                  label="Multi"
+                  onPress={onMultiScreen}
+                  onFocus={onFocus}
+                  onBlur={onBlur}
+                />
+              )}
 
-          <Ctrl
-            icon="television-guide"
-            label="Guide"
-            onPress={() => {
-              setShowInfoBar(false);
-              useUIStore.getState().setShowEPGGrid(true);
-            }}
-            onFocus={onFocus}
-            onBlur={onBlur}
-          />
+              <Ctrl
+                icon="television-guide"
+                label="Guide"
+                onPress={() => {
+                  setShowInfoBar(false);
+                  useUIStore.getState().setShowEPGGrid(true);
+                }}
+                onFocus={onFocus}
+                onBlur={onBlur}
+              />
 
-          <Ctrl
-            icon="sleep"
-            label="Sleep"
-            onPress={onSleepTimer}
-            onFocus={onFocus}
-            onBlur={onBlur}
-          />
+              <Ctrl
+                icon="sleep"
+                label="Sleep"
+                onPress={onSleepTimer}
+                onFocus={onFocus}
+                onBlur={onBlur}
+              />
 
-          <Ctrl
-            icon="cog-outline"
-            label="Settings"
-            onPress={() => {
-              setShowInfoBar(false);
-              setTimeout(() => navigation?.navigate('Settings', { focusTarget: 'interface' }), 80);
-            }}
-            onFocus={onFocus}
-            onBlur={onBlur}
-          />
-        </View>
+              <Ctrl
+                icon="cog-outline"
+                label="Settings"
+                onPress={() => {
+                  setShowInfoBar(false);
+                  setTimeout(() => navigation?.navigate('Settings', { focusTarget: 'interface' }), 80);
+                }}
+                onFocus={onFocus}
+                onBlur={onBlur}
+              />
+            </View>
+          </>
+        ) : null}
       </View>
     </Animated.View>
   );
@@ -334,7 +338,7 @@ const createStyles = (theme: Theme) => StyleSheet.create({
 
   // Single card that rises from the bottom
   main: {
-    backgroundColor: theme.bg,
+    backgroundColor: `${theme.bg}ee`,
     borderTopLeftRadius: TV ? 18 : 12,
     borderTopRightRadius: TV ? 18 : 12,
     borderTopWidth: 1,

@@ -18,7 +18,6 @@ import ChannelListPanel from '../components/player/ChannelListPanel';
 import GroupsPlaylistsPanel from '../components/player/GroupsPlaylistsPanel';
 import ChannelNumberPad from '../components/player/ChannelNumberPad';
 import VolumeIndicator from '../components/player/VolumeIndicator';
-import VideoControls from '../components/player/VideoControls';
 import MultiScreenControls from '../components/player/MultiScreenControls';
 import ChannelInfoBar from '../components/player/ChannelInfoBar';
 import ProgramInfoModal from '../components/player/ProgramInfoModal';
@@ -99,7 +98,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const { pipAnim, pipScale, enterPIP, exitPIP } = usePIPMode();
   const { setShowChannelInfoCard } = useChannelInfo({ showOnInitialLoad: true });
   const { toggleFavorite, isFavorite } = useFavorites(channels);
-  const { addRecent } = useRecentChannels(channels);
+  const { recentChannels, addRecent } = useRecentChannels(channels);
   const { label: sleepLabel } = useSleepTimer();
   const {
     hasUserInteracted,
@@ -394,13 +393,6 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
         </View>
       )}
 
-      {/* Video Controls */}
-      <VideoControls
-        onTogglePlayback={handleTogglePlayback}
-        onBack={handleBack}
-        onMultiScreen={handleMultiScreenPress}
-      />
-
       {/* Multi-Screen Controls Modal */}
       <MultiScreenControls
         channels={channels}
@@ -419,6 +411,10 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
           epgLoading={epgLoading}
           epgError={epgError}
           clockFormat={interfacePreferences.clockFormat}
+          recentChannels={recentChannels}
+          onChannelSelect={(nextChannel) => handleChannelSelect(nextChannel)}
+          onMultiScreen={handleMultiScreenPress}
+          onSleepTimer={() => useUIStore.getState().setShowSleepTimer(true)}
         />
       )}
 
@@ -429,7 +425,6 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
           getProgramsForChannel={getProgramsForChannel}
           prefetchProgramsForChannels={prefetchProgramsForChannels}
           onChannelSelect={handleChannelSelect}
-          onCatchupSelect={handleCatchupSelect}
           onExitPIP={exitPIP}
           navigation={navigation}
           epgLoading={epgLoading}
@@ -459,7 +454,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       <VolumeIndicator />
 
       {/* Channel Info Bar */}
-      {!showEPGGrid && !showEPG && !showChannelList && !showGroupsPlaylists && !showProgramInfo && !showSleepTimer && !showChannelNumberPad && (
+      {showInfoBar && !showEPGGrid && !showEPG && !showChannelList && !showGroupsPlaylists && !showProgramInfo && !showSleepTimer && !showChannelNumberPad && (
         <ChannelInfoBar
           channel={channel}
           currentProgram={currentProgram}
@@ -473,6 +468,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
           navigation={navigation}
           timeoutSeconds={interfacePreferences.infoBarTimeoutSeconds}
           clockFormat={interfacePreferences.clockFormat}
+          showControls={false}
         />
       )}
 

@@ -38,6 +38,7 @@ interface Props {
   dataVersion?: number;
   onChannelSelect: (channelId: string, channelName: string) => void;
   onCatchupSelect?: (channelId: string, startMs: number, endMs: number, programTitle: string) => void;
+  onOpenGroups?: () => void;
 }
 
 const NativeEpgGrid: React.FC<Props> = ({
@@ -50,6 +51,7 @@ const NativeEpgGrid: React.FC<Props> = ({
   dataVersion,
   onChannelSelect,
   onCatchupSelect,
+  onOpenGroups,
 }) => {
   useEffect(() => {
     const liveSub = DeviceEventEmitter.addListener(
@@ -64,8 +66,9 @@ const NativeEpgGrid: React.FC<Props> = ({
         onCatchupSelect?.(data.channelId, data.startMs, data.endMs, data.programTitle);
       }
     );
-    return () => { liveSub.remove(); catchupSub.remove(); };
-  }, [onChannelSelect, onCatchupSelect]);
+    const groupsSub = DeviceEventEmitter.addListener('EPG_OPEN_GROUPS', () => onOpenGroups?.());
+    return () => { liveSub.remove(); catchupSub.remove(); groupsSub.remove(); };
+  }, [onChannelSelect, onCatchupSelect, onOpenGroups]);
 
   const channelsJson = useMemo(
     () =>

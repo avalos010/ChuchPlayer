@@ -10,6 +10,7 @@ import { showError } from '../utils/toast';
 export const useVideoPlayback = (videoRef: React.RefObject<PlayerVideoHandle | null>) => {
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
   const settingsRef = useRef<Settings | null>(null);
+  const lastPlaybackStateRef = useRef<{ isPlaying: boolean; loading: boolean } | null>(null);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const setIsPlaying = usePlayerStore((state) => state.setIsPlaying);
   const setLoading = usePlayerStore((state) => state.setLoading);
@@ -79,8 +80,12 @@ export const useVideoPlayback = (videoRef: React.RefObject<PlayerVideoHandle | n
       return;
     }
 
-    // Batch isPlaying and loading state updates into single Zustand call
     const loading = status.didJustFinish ? false : (status.isPlaying || status.isBuffering ? (status.isPlaying ? false : true) : false);
+    const previous = lastPlaybackStateRef.current;
+    if (previous?.isPlaying === status.isPlaying && previous.loading === loading) {
+      return;
+    }
+    lastPlaybackStateRef.current = { isPlaying: status.isPlaying, loading };
     usePlayerStore.setState({ isPlaying: status.isPlaying, loading });
   }, [setError]);
 

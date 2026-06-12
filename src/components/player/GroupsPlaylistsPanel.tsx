@@ -11,6 +11,7 @@ import { Theme } from '../../theme/themes';
 import { getPlaylists } from '../../utils/storage';
 import { groupChannelsByCategory } from '../../utils/m3uParser';
 import { isTvLikePlatform } from '../../utils/platform';
+import NativeGroupsRail, { isNativeGroupsRailAvailable } from './NativeGroupsRail';
 
 interface GroupsPlaylistsPanelProps {
   onGroupSelect?: (group: string | null) => void;
@@ -18,7 +19,7 @@ interface GroupsPlaylistsPanelProps {
 }
 
 const TV = isTvLikePlatform;
-const PANEL_W = TV ? 260 : 220;
+const PANEL_W = TV ? 300 : 240;
 
 type ListItem =
   | { type: 'section'; title: string; id: string }
@@ -63,6 +64,23 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
     return ['All Channels', ...Array.from(grouped.keys()).sort()];
   }, [channels]);
 
+  const groupCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    channels.forEach((ch) => {
+      const name = ch.group || 'Uncategorized';
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    });
+    return counts;
+  }, [channels]);
+
+  const groupModels = useMemo(
+    () => groups.map((name) => ({
+      name,
+      count: name === 'All Channels' ? channels.length : groupCounts.get(name) ?? 0,
+    })),
+    [channels.length, groupCounts, groups],
+  );
+
   const listData = useMemo<ListItem[]>(() => [
     { type: 'section', title: 'Groups', id: 'hdr-groups' },
     ...groups.map((g) => ({ type: 'group' as const, name: g, id: `g-${g}` })),
@@ -84,6 +102,16 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
     setShowChannelList(true);
     onPlaylistSelect?.(selected);
   }, [setPlaylist, setSelectedGroup, setShowGroupsPlaylists, setShowChannelList, onPlaylistSelect]);
+
+  const handleNativePlaylistSelect = useCallback((playlistId: string) => {
+    const selected = playlists.find((item) => item.id === playlistId);
+    if (selected) handlePlaylistPress(selected);
+  }, [handlePlaylistPress, playlists]);
+
+  const handleNativeClose = useCallback(() => {
+    setShowGroupsPlaylists(false);
+    setShowChannelList(true);
+  }, [setShowChannelList, setShowGroupsPlaylists]);
 
   const itemFocusedStyle = useMemo(() => ({
     backgroundColor: theme.card,
@@ -107,7 +135,7 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
     if (item.type === 'group') {
       const isAll    = item.name === 'All Channels';
       const isActive = (isAll && !selectedGroup) || selectedGroup === item.name;
-      const chCount  = isAll ? channels.length : channels.filter((c) => c.group === item.name).length;
+      const chCount  = isAll ? channels.length : groupCounts.get(item.name) ?? 0;
       const wantFocus = !hasSetInitialFocusRef.current && index === 1;
 
       return (
@@ -157,11 +185,53 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
     }
 
     return null;
-  }, [styles, selectedGroup, playlist, channels, groups.length, handleGroupPress, handlePlaylistPress, itemFocusedStyle]);
+  }, [styles, selectedGroup, playlist, channels.length, groupCounts, groups.length, handleGroupPress, handlePlaylistPress, itemFocusedStyle]);
 
   const keyExtractor = useCallback((item: ListItem) => item.id, []);
 
+  useEffect(() => {
+    if (!showGroupsPlaylists || !listData.length) return;
+    const activeIndex = listData.findIndex((item) =>
+      item.type === 'group' &&
+      ((item.name === 'All Channels' && !selectedGroup) || item.name === selectedGroup),
+    );
+    if (activeIndex <= 0) return;
+    const timer = setTimeout(() => {
+      listRef.current?.scrollToIndex({ index: activeIndex, animated: false, viewPosition: 0.22 });
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [showGroupsPlaylists, listData, selectedGroup]);
+
   if (!showGroupsPlaylists) return null;
+
+  const activeGroupLabel = selectedGroup || 'All Channels';
+  const useNativeRail = Platform.OS === 'android' && TV && isNativeGroupsRailAvailable;
+
+  if (useNativeRail) {
+    return (
+      <>
+        <TouchableOpacity
+          style={styles.backdrop}
+          activeOpacity={1}
+          onPress={() => setShowGroupsPlaylists(false)}
+        />
+        <View style={styles.panel}>
+          <NativeGroupsRail
+            style={{ flex: 1 }}
+            groups={groupModels}
+            playlists={playlists}
+            selectedGroup={selectedGroup}
+            currentPlaylistId={playlist?.id}
+            accentColor={theme.accent}
+            bgColor={theme.surface}
+            onGroupSelect={handleGroupPress}
+            onPlaylistSelect={handleNativePlaylistSelect}
+            onClose={handleNativeClose}
+          />
+        </View>
+      </>
+    );
+  }
 
   return (
     <>
@@ -172,31 +242,30 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
       />
       <View style={styles.panel}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle} numberOfLines={1}>Library</Text>
-          <Text style={styles.headerSub}>
-            {groups.length}G · {playlists.length}P
+          <View style={styles.headerText}>
+            <Text style={styles.headerTitle} numberOfLines={1}>Groups & Playlists</Text>
+            <Text style={styles.headerSub} numberOfLines={1}>{activeGroupLabel}</Text>
+          </View>
+          <Text style={styles.headerCount}>
+            {groups.length}G / {playlists.length}P
           </Text>
         </View>
 
-        {loadingPlaylists ? (
-          <View style={styles.skeletonWrap}>
-            {Array.from({ length: 8 }).map((_, i) => (
-              <View key={i} style={styles.skeletonItem}>
-                <View style={[styles.skeletonLine, { width: '70%' }]} />
-              </View>
-            ))}
-          </View>
-        ) : (
-          <FlatList
-            ref={listRef}
-            data={listData}
-            keyExtractor={keyExtractor}
-            renderItem={renderItem}
-            contentContainerStyle={{ paddingVertical: 6 }}
-            initialNumToRender={20}
-            removeClippedSubviews
-          />
-        )}
+        <FlatList
+          ref={listRef}
+          data={listData}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          contentContainerStyle={{ paddingVertical: 6 }}
+          initialNumToRender={20}
+          removeClippedSubviews
+          onScrollToIndexFailed={() => {}}
+          ListFooterComponent={loadingPlaylists ? (
+            <View style={styles.loadingPlaylists}>
+              <Text style={styles.loadingPlaylistsTxt}>Loading playlists...</Text>
+            </View>
+          ) : null}
+        />
       </View>
     </>
   );
@@ -209,8 +278,8 @@ function createStyles(theme: Theme) {
     backdrop: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: 'rgba(0,0,0,0.5)',
-      zIndex: 14,
-      elevation: 14,
+      zIndex: 55,
+      elevation: 55,
     },
     panel: {
       position: 'absolute',
@@ -219,8 +288,8 @@ function createStyles(theme: Theme) {
       backgroundColor: theme.surface,
       borderRightWidth: 1,
       borderRightColor: theme.border,
-      zIndex: 19,
-      elevation: 19,
+      zIndex: 60,
+      elevation: 60,
     },
     header: {
       flexDirection: 'row',
@@ -229,16 +298,28 @@ function createStyles(theme: Theme) {
       paddingHorizontal: TV ? 14 : 12,
       paddingTop: TV ? 18 : 14,
       paddingBottom: TV ? 10 : 8,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    headerText: {
+      flex: 1,
+      paddingRight: 10,
     },
     headerTitle: {
       color: theme.text,
-      fontSize: TV ? 18 : 15,
+      fontSize: TV ? 17 : 15,
       fontWeight: '800',
     },
     headerSub: {
       color: theme.textMuted,
-      fontSize: TV ? 12 : 10,
+      fontSize: TV ? 11 : 10,
       fontWeight: '600',
+      marginTop: 2,
+    },
+    headerCount: {
+      color: theme.accent,
+      fontSize: TV ? 11 : 10,
+      fontWeight: '800',
     },
     sectionHeader: {
       paddingHorizontal: TV ? 14 : 12,
@@ -296,6 +377,16 @@ function createStyles(theme: Theme) {
       height: TV ? 13 : 11,
       borderRadius: 4,
       backgroundColor: theme.card,
+    },
+    loadingPlaylists: {
+      paddingHorizontal: TV ? 14 : 12,
+      paddingTop: TV ? 10 : 8,
+      paddingBottom: TV ? 18 : 14,
+    },
+    loadingPlaylistsTxt: {
+      color: theme.textMuted,
+      fontSize: TV ? 11 : 9,
+      fontWeight: '600',
     },
   });
 }

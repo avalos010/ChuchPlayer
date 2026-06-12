@@ -4,10 +4,17 @@ import { E2E_PROGRAMS_STORAGE_KEY } from './constants';
 
 export type ProgramsByChannel = Record<string, EPGProgram[]>;
 
-const isE2EWeb = Platform.OS === 'web' && process.env.EXPO_PUBLIC_E2E === '1';
+const hasSeededE2EPrograms = () =>
+  Platform.OS === 'web' &&
+  typeof window !== 'undefined' &&
+  window.localStorage.getItem(E2E_PROGRAMS_STORAGE_KEY) !== null;
+
+const isE2EWeb = () =>
+  Platform.OS === 'web' &&
+  (process.env.EXPO_PUBLIC_E2E === '1' || hasSeededE2EPrograms());
 
 export const loadE2EPrograms = (): ProgramsByChannel | null => {
-  if (!isE2EWeb || typeof window === 'undefined') return null;
+  if (!isE2EWeb() || typeof window === 'undefined') return null;
 
   try {
     const raw = window.localStorage.getItem(E2E_PROGRAMS_STORAGE_KEY);
@@ -40,4 +47,4 @@ export const loadE2EPrograms = (): ProgramsByChannel | null => {
   }
 };
 
-export const isE2EWebMode = () => isE2EWeb;
+export const isE2EWebMode = () => isE2EWeb();

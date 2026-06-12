@@ -179,7 +179,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  // PIP actions - TiviMate style: minimize to top-right corner
+  // PIP actions - minimize to top-right corner while browsing the guide
   enterPIP: (pipAnim, pipScale) => {
     const { width, height } = Dimensions.get('window');
     // Calculate position for top-right corner

@@ -33,24 +33,38 @@ const ChannelRow: React.FC<ChannelRowProps> = ({
     ]}
     activeOpacity={0.88}
   >
+    <View
+      style={[
+        s.channelSelectionRail,
+        (isCurrent || isHighlighted) && s.channelSelectionRailActive,
+      ]}
+    />
     {showChannelNumbers ? (
-      <Text style={s.channelNumber}>
+      <Text style={[s.channelNumber, isHighlighted && s.channelNumberHighlighted]}>
         {String(channel.number ?? index + 1).padStart(3, '0')}
       </Text>
     ) : null}
     <ChannelLogo channel={channel} size={52} />
     <View style={s.channelMeta}>
       <View style={s.channelTitleRow}>
-        <Text style={[s.channelName, isCurrent && s.channelNameCurrent]} numberOfLines={1}>
+        <Text
+          style={[
+            s.channelName,
+            isCurrent && s.channelNameCurrent,
+            isHighlighted && s.channelNameHighlighted,
+          ]}
+          numberOfLines={1}
+        >
           {channel.name}
         </Text>
         {isCurrent ? (
           <View style={s.liveBadge}>
+            <View style={s.liveBadgeDot} />
             <Text style={s.liveBadgeTxt}>LIVE</Text>
           </View>
         ) : null}
       </View>
-      <Text style={s.channelProgram} numberOfLines={1}>
+      <Text style={[s.channelProgram, isHighlighted && s.channelProgramHighlighted]} numberOfLines={1}>
         {currentProgram?.title ?? channel.group ?? 'No guide data'}
       </Text>
     </View>

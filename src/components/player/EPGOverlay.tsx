@@ -15,7 +15,7 @@ import { ResizeMode } from 'expo-av';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useEPGStore } from '../../store/useEPGStore';
-import { RootStackParamList, EPGProgram } from '../../types';
+import { RootStackParamList, EPGProgram, Channel } from '../../types';
 import { isTvLikePlatform } from '../../utils/platform';
 import { formatClockTime } from '../../utils/time';
 
@@ -27,6 +27,10 @@ interface EPGOverlayProps {
   epgLoading?: boolean;
   epgError?: string | null;
   clockFormat?: '12h' | '24h';
+  recentChannels?: Channel[];
+  onChannelSelect?: (channel: Channel) => void;
+  onMultiScreen?: () => void;
+  onSleepTimer?: () => void;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -87,6 +91,10 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
   epgLoading = false,
   epgError = null,
   clockFormat = '24h',
+  recentChannels = [],
+  onChannelSelect,
+  onMultiScreen,
+  onSleepTimer,
 }) => {
   const channel        = usePlayerStore((st) => st.channel);
   const isPlaying      = usePlayerStore((st) => st.isPlaying);
@@ -98,12 +106,17 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
   const currentProgram = useEPGStore((st) => st.currentProgram);
 
   const [imgErr, setImgErr] = useState(false);
+  const [ccEnabled, setCcEnabled] = useState(false);
 
   const close    = useCallback(() => setShowEPG(false), [setShowEPG]);
   const settings = useCallback(() => {
     setShowEPG(false);
     try { navigation?.navigate('Settings', { focusTarget: 'interface' }); } catch {}
   }, [setShowEPG, navigation]);
+  const openGuide = useCallback(() => {
+    setShowEPG(false);
+    useUIStore.getState().setShowEPGGrid(true);
+  }, [setShowEPG]);
 
   const upcoming = useMemo(() => {
     if (!programs.length) return [];
@@ -159,6 +172,85 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
               <Text style={s.closeBtnTxt}>✕</Text>
             </FocusableItem>
           </View>
+
+          <View style={s.divider} />
+
+          <FocusableItem
+            onPress={openGuide}
+            hasTVPreferredFocus={TV}
+            style={s.guideFirst}
+            focusedStyle={BTN_FOCUSED}
+          >
+            <View style={s.guideIconBox}>
+              <Text style={s.guideIconTxt}>EPG</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.guideFirstTitle}>TV Guide</Text>
+              <Text style={s.guideFirstSub}>Browse channels, catchup, and upcoming programs</Text>
+            </View>
+            <Text style={s.guideFirstArrow}>›</Text>
+          </FocusableItem>
+
+          <View style={s.quickActions}>
+            {onMultiScreen ? (
+              <ActionBtn
+                onPress={() => {
+                  setShowEPG(false);
+                  onMultiScreen();
+                }}
+                icon="▣"
+                label="MultiView"
+              />
+            ) : null}
+            <ActionBtn
+              onPress={() => setCcEnabled((value) => !value)}
+              icon="CC"
+              label={ccEnabled ? 'CC On' : 'CC Off'}
+              active={ccEnabled}
+            />
+            <ActionBtn
+              onPress={cycleResizeMode}
+              icon="▦"
+              label={
+                resizeMode === ResizeMode.COVER ? 'Cover'
+                  : resizeMode === ResizeMode.CONTAIN ? 'Fit'
+                  : 'Stretch'
+              }
+            />
+            {onSleepTimer ? (
+              <ActionBtn
+                onPress={() => {
+                  setShowEPG(false);
+                  onSleepTimer();
+                }}
+                icon="☾"
+                label="Sleep"
+              />
+            ) : null}
+          </View>
+
+          {recentChannels.length > 0 ? (
+            <>
+              <View style={s.divider} />
+              <Text style={s.sectionLabel}>HISTORY</Text>
+              <View style={s.recentList}>
+                {recentChannels.slice(0, 6).map((recentChannel) => (
+                  <FocusableItem
+                    key={recentChannel.id}
+                    onPress={() => {
+                      setShowEPG(false);
+                      onChannelSelect?.(recentChannel);
+                    }}
+                    style={s.recentRow}
+                    focusedStyle={BTN_FOCUSED}
+                  >
+                    <Text style={s.recentName} numberOfLines={1}>{recentChannel.name}</Text>
+                    <Text style={s.recentGroup} numberOfLines={1}>{recentChannel.group ?? 'Live TV'}</Text>
+                  </FocusableItem>
+                ))}
+              </View>
+            </>
+          ) : null}
 
           <View style={s.divider} />
 
@@ -232,7 +324,7 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
 
           <View style={s.divider} />
 
-          {/* ── Action buttons ─────────────────────── */}
+          {/* ── Secondary buttons ───────────────────── */}
           <View style={s.actions}>
             <ActionBtn
               onPress={onTogglePlayback}
@@ -241,19 +333,9 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
               active={isPlaying}
             />
             <ActionBtn
-              onPress={cycleResizeMode}
-              icon="▦"
-              label={
-                resizeMode === ResizeMode.COVER ? 'Cover'
-                  : resizeMode === ResizeMode.CONTAIN ? 'Fit'
-                  : 'Stretch'
-              }
-            />
-            <ActionBtn
               onPress={settings}
               icon="⚙"
               label="Settings"
-              hasTVPreferredFocus={TV}
             />
             <ActionBtn onPress={close}    icon="←" label="Close" />
           </View>
@@ -271,20 +353,20 @@ export default EPGOverlay;
 const s = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.75)',
+    backgroundColor: 'rgba(0,0,0,0.28)',
     zIndex: 5,
     elevation: 5,
     flexDirection: 'row',
     justifyContent: 'flex-end',
   },
   panel: {
-    width: TV ? 560 : 460,
-    backgroundColor: '#111111',
+    width: TV ? 620 : 460,
+    backgroundColor: 'rgba(8, 12, 20, 0.88)',
     borderLeftWidth: 1,
-    borderLeftColor: '#1f1f1f',
+    borderLeftColor: 'rgba(255,255,255,0.12)',
     shadowColor: '#000',
     shadowOffset: { width: -16, height: 0 },
-    shadowOpacity: 0.8,
+    shadowOpacity: 0.55,
     shadowRadius: 40,
     elevation: 20,
   },
@@ -313,19 +395,94 @@ const s = StyleSheet.create({
     lineHeight: TV ? 32 : 28,
     marginBottom: 4,
   },
-  chGroup: { color: '#4a4a4a', fontSize: TV ? 14 : 12, fontWeight: '500' },
+  chGroup: { color: '#8fb9e8', fontSize: TV ? 14 : 12, fontWeight: '600' },
   closeBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: '#272727',
+    backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)',
     justifyContent: 'center', alignItems: 'center', alignSelf: 'flex-start',
   },
-  closeBtnTxt: { color: '#4a4a4a', fontSize: 16, fontWeight: '700' },
+  closeBtnTxt: { color: '#dbeafe', fontSize: 16, fontWeight: '700' },
 
-  divider: { height: 1, backgroundColor: '#1a1a1a', marginVertical: 20 },
+  divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginVertical: 18 },
+
+  guideFirst: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.36)',
+    backgroundColor: 'rgba(31,162,255,0.16)',
+    paddingHorizontal: TV ? 18 : 14,
+    paddingVertical: TV ? 16 : 12,
+  },
+  guideIconBox: {
+    width: TV ? 58 : 48,
+    height: TV ? 48 : 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eaf5ff',
+  },
+  guideIconTxt: {
+    color: '#061225',
+    fontSize: TV ? 13 : 11,
+    fontWeight: '900',
+  },
+  guideFirstTitle: {
+    color: '#f8fafc',
+    fontSize: TV ? 19 : 16,
+    fontWeight: '900',
+  },
+  guideFirstSub: {
+    color: '#93c5fd',
+    fontSize: TV ? 12 : 10,
+    fontWeight: '600',
+    marginTop: 3,
+  },
+  guideFirstArrow: {
+    color: '#dbeafe',
+    fontSize: TV ? 28 : 22,
+    fontWeight: '500',
+  },
+  quickActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
+  },
+  recentList: {
+    gap: 8,
+  },
+  recentRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.09)',
+    backgroundColor: 'rgba(255,255,255,0.055)',
+    paddingHorizontal: TV ? 16 : 12,
+    paddingVertical: TV ? 12 : 9,
+  },
+  recentName: {
+    flex: 1,
+    color: '#f8fafc',
+    fontSize: TV ? 15 : 13,
+    fontWeight: '800',
+  },
+  recentGroup: {
+    maxWidth: TV ? 170 : 120,
+    color: '#93c5fd',
+    fontSize: TV ? 12 : 10,
+    fontWeight: '600',
+    textAlign: 'right',
+  },
 
   // Now playing
   sectionLabel: {
-    color: '#3d3d3d',
+    color: '#93c5fd',
     fontSize: TV ? 11 : 10,
     fontWeight: '700',
     letterSpacing: 2.5,
@@ -338,16 +495,16 @@ const s = StyleSheet.create({
     lineHeight: TV ? 28 : 24,
     marginBottom: 4,
   },
-  progTime: { color: '#4a4a4a', fontSize: TV ? 14 : 12, fontWeight: '500', marginBottom: 4 },
+  progTime: { color: '#93c5fd', fontSize: TV ? 14 : 12, fontWeight: '600', marginBottom: 4 },
   progressTrack: {
-    height: 3, backgroundColor: '#1f1f1f', borderRadius: 2, overflow: 'hidden', marginBottom: 4,
+    height: 3, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 2, overflow: 'hidden', marginBottom: 4,
   },
   progressFill: { height: '100%', backgroundColor: '#e5e5e5', borderRadius: 2 },
-  progDesc: { color: '#4a4a4a', fontSize: TV ? 13 : 11, lineHeight: TV ? 19 : 17 },
+  progDesc: { color: '#cbd5e1', fontSize: TV ? 13 : 11, lineHeight: TV ? 19 : 17 },
 
   // Status / error
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
-  statusTxt: { color: '#3d3d3d', fontSize: TV ? 14 : 12 },
+  statusTxt: { color: '#93c5fd', fontSize: TV ? 14 : 12 },
   errBox: {
     backgroundColor: 'rgba(239,68,68,0.07)',
     borderWidth: 1, borderColor: 'rgba(239,68,68,0.18)',
@@ -359,21 +516,21 @@ const s = StyleSheet.create({
   // Upcoming
   upRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#191919', gap: 12,
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)', gap: 12,
   },
-  upTitle: { color: '#8a8a8a', fontSize: TV ? 15 : 13, fontWeight: '600' },
-  upDesc:  { color: '#3d3d3d', fontSize: TV ? 12 : 10, marginTop: 2 },
-  upTime:  { color: '#555555', fontSize: TV ? 13 : 11, fontWeight: '600', minWidth: 90, textAlign: 'right' },
+  upTitle: { color: '#e2e8f0', fontSize: TV ? 15 : 13, fontWeight: '700' },
+  upDesc:  { color: '#94a3b8', fontSize: TV ? 12 : 10, marginTop: 2 },
+  upTime:  { color: '#93c5fd', fontSize: TV ? 13 : 11, fontWeight: '700', minWidth: 90, textAlign: 'right' },
 
   // Actions
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   actionBtn: {
     flex: 1, minWidth: 80, alignItems: 'center',
     paddingVertical: TV ? 16 : 12, paddingHorizontal: 8,
-    borderRadius: 12, backgroundColor: '#161616',
-    borderWidth: 1, borderColor: '#222222', gap: 5,
+    borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', gap: 5,
   },
-  actionBtnActive: { backgroundColor: '#1c1c1c', borderColor: '#303030' },
+  actionBtnActive: { backgroundColor: 'rgba(31,162,255,0.2)', borderColor: 'rgba(125,211,252,0.46)' },
   actionIcon:  { color: '#f5f5f5', fontSize: TV ? 22 : 18 },
-  actionLabel: { color: '#555555', fontSize: TV ? 13 : 11, fontWeight: '600' },
+  actionLabel: { color: '#cbd5e1', fontSize: TV ? 13 : 11, fontWeight: '700' },
 });

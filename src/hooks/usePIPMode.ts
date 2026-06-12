@@ -21,7 +21,7 @@ export const usePIPMode = () => {
     exitPIPStore(pipAnim, pipScale);
   }, [exitPIPStore, pipAnim, pipScale]);
 
-  // Enter PIP mode when EPG grid is shown - minimize video to top-right corner (TiviMate style)
+  // Enter PIP mode when EPG grid is shown - minimize video to top-right corner
   useEffect(() => {
     if (showEPGGrid && channels.length > 0) {
       enterPIP();
@@ -37,4 +37,3 @@ export const usePIPMode = () => {
     exitPIP,
   };
 };
-

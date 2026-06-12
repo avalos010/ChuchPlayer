@@ -96,10 +96,11 @@ export const usePlayerHandlers = (
       return;
     }
 
-    // Toggle the non-blocking info card at the top
+    // Center opens the quick action panel. Channel changes still show the
+    // lightweight info bar automatically.
     if (channel) {
-      const currentlyShowing = useUIStore.getState().showInfoBar;
-      useUIStore.getState().setShowInfoBar(!currentlyShowing);
+      useUIStore.getState().setShowInfoBar(false);
+      setShowEPG(true);
     }
   }, [
     showEPG,
@@ -210,4 +211,3 @@ export const usePlayerHandlers = (
     showControlsOnFocus,
   };
 };
-

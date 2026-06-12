@@ -188,7 +188,7 @@ const MultiScreenView: React.FC<MultiScreenViewProps> = ({ channels }) => {
       </View>
     );
   } else if (screens.length === 2 && layout !== 'grid') {
-    // Side-by-side filling the whole width (TiviMate-style 2-up)
+    // Side-by-side filling the whole width
     body = (
       <View style={st.rowWrap}>
         {screens.map((screen) => (

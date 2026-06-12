@@ -32,6 +32,7 @@ class EpgGridView(context: Context) : View(context) {
         const val EVENT_CATCHUP_SELECT = "EPG_CATCHUP_SELECT"
         const val EVENT_PROGRAM_INFO   = "EPG_PROGRAM_INFO"
         const val EVENT_CHANNEL_FOCUS  = "EPG_CHANNEL_FOCUS"
+        const val EVENT_OPEN_GROUPS    = "EPG_OPEN_GROUPS"
         private const val WIN_CATCHUP_H = 72  // how far back users can scroll (3 days)
     }
 
@@ -670,10 +671,7 @@ class EpgGridView(context: Context) : View(context) {
                 return true
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
-                // Move cursor 30 min back, as far back as the catchup window allows
-                cursorMs = (cursorMs - 1_800_000L).coerceAtLeast(windowStartMs)
-                scrollToCursor()
-                invalidate()
+                fireOpenGroups()
                 return true
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -765,6 +763,18 @@ class EpgGridView(context: Context) : View(context) {
                 putDouble("startMs",         prog.startMs.toDouble())
                 putDouble("endMs",           prog.endMs.toDouble())
                 putBoolean("catchupAvailable", isPast && ch.catchupAvailable)
+            })
+    }
+
+    private fun fireOpenGroups() {
+        val ch = channels.getOrNull(focusedRow)
+        (context as? ReactContext)
+            ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            ?.emit(EVENT_OPEN_GROUPS, Arguments.createMap().apply {
+                if (ch != null) {
+                    putString("channelId", ch.id)
+                    putString("channelName", ch.name)
+                }
             })
     }
 

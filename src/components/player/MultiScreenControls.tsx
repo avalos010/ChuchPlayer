@@ -17,10 +17,9 @@ interface MultiScreenControlsProps {
 
 const TV = isTvLikePlatform;
 
-const MultiScreenControls: React.FC<MultiScreenControlsProps> = ({
+const MultiScreenControlsInner: React.FC<Omit<MultiScreenControlsProps, 'isVisible'>> = ({
   channels,
   onChannelSelect,
-  isVisible,
   onClose,
 }) => {
   const theme = useThemeStore((s) => s.theme);
@@ -60,8 +59,6 @@ const MultiScreenControls: React.FC<MultiScreenControlsProps> = ({
     for (let n = 2; n <= max; n++) opts.push(n);
     return opts;
   }, [maxScreens, channels.length]);
-
-  if (!isVisible) return null;
 
   const startMultiScreen = () => {
     clearAllScreens();
@@ -107,7 +104,7 @@ const MultiScreenControls: React.FC<MultiScreenControlsProps> = ({
   );
 
   return (
-    <Modal visible={isVisible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={s.backdrop}>
         <View style={s.card}>
           <Text style={s.title}>Multi-Screen</Text>
@@ -187,6 +184,14 @@ const MultiScreenControls: React.FC<MultiScreenControlsProps> = ({
       </View>
     </Modal>
   );
+};
+
+const MultiScreenControls: React.FC<MultiScreenControlsProps> = ({
+  isVisible,
+  ...props
+}) => {
+  if (!isVisible) return null;
+  return <MultiScreenControlsInner {...props} />;
 };
 
 export default MultiScreenControls;
