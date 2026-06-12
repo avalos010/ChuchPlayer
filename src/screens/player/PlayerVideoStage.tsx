@@ -2,8 +2,13 @@ import React from 'react';
 import { Animated, Platform, Text, View } from 'react-native';
 import type { PlayerVideoHandle } from '../../types/video';
 import AppVideo from '../../components/player/AppVideo';
+import ExoPlayerVideoView from '../../components/player/ExoPlayerVideoView';
 import { EPGProgram, Channel } from '../../types';
 import { ResizeMode } from 'expo-av';
+
+// On Android use the native ExoPlayer/PlayerView pair; expo-av everywhere else.
+const VideoPlayer: typeof AppVideo =
+  Platform.OS === 'android' ? (ExoPlayerVideoView as typeof AppVideo) : AppVideo;
 
 interface PlayerVideoStageProps {
   channel: Channel;
@@ -71,7 +76,7 @@ const PlayerVideoStage: React.FC<PlayerVideoStageProps> = ({
       focusable={false}
       importantForAccessibility="no"
     >
-      <AppVideo
+      <VideoPlayer
         key={`video-${channel.id}-${channel.url}`}
         ref={videoRef}
         source={{ uri: channel.url }}

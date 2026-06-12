@@ -49,6 +49,18 @@ The developer reviews all changes. The agent proposes edits, builds, and install
 | Realm schema v3 with `@Index` on `playlistId`, `channelId`, `start`, `end` | EPG `queryPrograms` was doing full-table scans; indexes bring it to an indexed range scan |
 | `deleteRealmIfMigrationNeeded` for schema changes | EPG data is always re-fetchable; migration complexity not worth it for a cache |
 | Single `FlashList` for channel list (not two synchronized lists) | A separate `ScrollView` for EPG data rendered all N rows at once, destroying performance on large playlists |
+| Native `ExoPlayerViewManager` creates a `PlayerView` surface | The previous approach tried to set a Surface directly on the MediaSession; `PlayerView` is the correct Media3 surface container that handles the SurfaceView lifecycle and attaches automatically |
+| `ExoPlayerHolder` singleton links `ExoPlayerModule` to `ExoPlayerViewManager` | Both need the same ExoPlayer instance but are instantiated by different React Native manager paths; a singleton avoids a second ExoPlayer being created for the view |
+| Per-instance `MultiExoPlayerView` (not shared holder) | Multi-screen tiles each need an independent player with separate buffers; sharing the main player singleton would interrupt the primary stream |
+| OkHttp with `followRedirects(true)` + `followSslRedirects(true)` for logo loading | Many IPTV providers serve logo URLs via http→https redirects; `java.net.URL` silently refuses cross-protocol redirects, leaving all logos blank |
+| `focusTrigger` prop incremented on groups panel close | When `GroupsRailView` unmounts, Android `FocusFinder` could transfer focus to the backdrop `TouchableOpacity`; incrementing an integer prop signals the native channel list to call `requestFocus()` on itself |
+| `focusable={false}` on backdrop `TouchableOpacity` in panel overlays | Prevents D-pad focus from landing on a transparent full-screen touchable instead of the visible panel content when an overlay unmounts |
+| `-PfiretvBuild` Gradle property gates ABI restrictions | `ndk { abiFilters "armeabi-v7a" }` and `packagingOptions excludes` shrink the Fire TV APK to ~42MB but break arm64 emulator builds; the conditional flag lets the same codebase serve both |
+| `reactNativeArchitectures` stays at all four ABIs in `gradle.properties` | Changing it globally to `armeabi-v7a` caused `librealm.so` not-found crash on arm64-v8a emulator; pass it per-build via CLI flag instead |
+| `chromeItem` integer state for D-pad chrome navigation in `ChannelListView` | The channel list is a single canvas `View` with no sub-views, so Android's spatial navigation can't visit drawn tabs/buttons naturally; `chromeItem` tracks which drawn element has virtual focus and routes D-pad events accordingly |
+| Canvas row EPG data injected via `channelsJson` from JS | Passing `programTitle`/`programStart`/`programEnd` through the existing channels JSON prop avoids a separate native event channel; `getCurrentProgram` is called in `NativeChannelList.tsx` during memo computation |
+| JS `KeyEvent` listener disabled when `useNativeList = true` | `ChannelListView.onKeyDown` and `KeyEvent.onKeyDownListener` both fire for UP/DOWN/CENTER; the JS listener must be suppressed or every key fires twice (once in canvas view, once in JS) |
+| `withAlpha` (#RRGGBBAA) and `withAlphaAndroid` (#AARRGGBB) in `themes.ts` | React Native and Android `Color.parseColor` use opposite byte order for alpha; having both helpers prevents silent color errors when passing values to native canvas drawing code |
 
 ## Spawning Sub-Agents
 

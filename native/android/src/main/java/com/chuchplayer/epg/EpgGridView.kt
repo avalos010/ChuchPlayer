@@ -71,11 +71,15 @@ class EpgGridView(context: Context) : View(context) {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // ── Logo image cache ──────────────────────────────────────────────────────
-    private val logoCache = LruCache<String, Bitmap>(60)
+    private val logoCache = object : LruCache<String, Bitmap>(16 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.byteCount
+    }
     private val logoLoading = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private val http = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
         .build()
     private val logoPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val logoClipPath = Path()

@@ -56,4 +56,9 @@ class ChannelListViewManager(private val reactContext: ReactApplicationContext) 
     fun setBgColor(view: ChannelListView, color: String?) {
         if (!color.isNullOrEmpty()) view.setBgColor(color)
     }
+
+    @ReactProp(name = "focusTrigger", defaultInt = 0)
+    fun setFocusTrigger(view: ChannelListView, value: Int) {
+        if (value > 0) view.post { view.requestFocus() }
+    }
 }

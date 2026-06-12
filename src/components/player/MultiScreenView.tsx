@@ -1,16 +1,14 @@
-import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, ScrollView, Platform,
 } from 'react-native';
-import { ResizeMode } from 'expo-av';
 import { Channel } from '../../types';
-import type { PlayerPlaybackStatus, PlayerVideoHandle } from '../../types/video';
 import { useMultiScreenStore, type MultiScreen } from '../../store/useMultiScreenStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { Theme } from '../../theme/themes';
 import FocusableItem from '../FocusableItem';
 import { showError } from '../../utils/toast';
-import AppVideo from './AppVideo';
+import MultiScreenVideoView from './MultiScreenVideoView';
 
 const KeyEvent = Platform.OS === 'android'
   ? (require('react-native-keyevent').default ?? require('react-native-keyevent'))
@@ -23,39 +21,9 @@ interface MultiScreenPlayerProps {
 }
 
 const MultiScreenPlayer: React.FC<MultiScreenPlayerProps> = ({ screen, onOpenMenu, theme }) => {
-  const videoRef = useRef<PlayerVideoHandle>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { updateScreen, setFocusedScreen } = useMultiScreenStore();
-
-  useEffect(() => {
-    if (videoRef.current && screen.channel.url) {
-      setError(null);
-      setLoading(true);
-      videoRef.current
-        .loadAsync({ uri: screen.channel.url })
-        .then(() => { if (screen.isPlaying) videoRef.current?.playAsync(); })
-        .catch((err) => {
-          setError('Failed to load stream');
-          showError('Failed to load stream', String(err));
-        });
-    }
-  }, [screen.channel.url]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!videoRef.current) return;
-    if (screen.isPlaying) videoRef.current.playAsync();
-    else videoRef.current.pauseAsync();
-  }, [screen.isPlaying]);
-
-  const handlePlaybackStatusUpdate = useCallback((status: PlayerPlaybackStatus) => {
-    if (!status.isLoaded) {
-      if (status.error) { setError('Playback error'); setLoading(false); }
-      return;
-    }
-    setLoading(status.isBuffering);
-    updateScreen(screen.id, { isPlaying: status.isPlaying });
-  }, [screen.id, updateScreen]);
+  const { setFocusedScreen } = useMultiScreenStore();
 
   const handlePress = useCallback(() => {
     setFocusedScreen(screen.id);
@@ -74,18 +42,18 @@ const MultiScreenPlayer: React.FC<MultiScreenPlayerProps> = ({ screen, onOpenMen
       ]}
       focusedStyle={{ borderColor: theme.focused, borderWidth: 3, transform: [] as any[] }}
     >
-      <AppVideo
-        ref={videoRef}
-        source={{ uri: screen.channel.url }}
-        style={msp.video}
-        resizeMode={ResizeMode.COVER}
-        shouldPlay={screen.isPlaying}
-        onLoad={() => setLoading(false)}
-        onError={(err) => { setLoading(false); setError('Failed to load'); showError('Video load error', String(err)); }}
-        onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-        useNativeControls={false}
-        isLooping={false}
+      <MultiScreenVideoView
+        source={screen.channel.url}
+        playing={screen.isPlaying}
         volume={screen.isMuted ? 0 : screen.volume}
+        style={msp.video}
+        onReady={() => setLoading(false)}
+        onBuffering={(buffering) => setLoading(buffering)}
+        onError={(err) => {
+          setLoading(false);
+          setError('Failed to load');
+          showError('Video load error', err);
+        }}
       />
 
       {loading && !error && (

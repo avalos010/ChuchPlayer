@@ -6,7 +6,7 @@ import {
   UIManager,
   ViewStyle,
 } from 'react-native';
-import { Channel } from '../../types';
+import { Channel, EPGProgram } from '../../types';
 
 type NativeChannelListViewProps = {
   style?: ViewStyle;
@@ -19,6 +19,7 @@ type NativeChannelListViewProps = {
   searchQuery?: string;
   accentColor?: string;
   bgColor?: string;
+  focusTrigger?: number;
 };
 
 export const isNativeChannelListAvailable =
@@ -41,6 +42,8 @@ interface NativeChannelListProps {
   searchQuery?: string;
   accentColor?: string;
   bgColor?: string;
+  focusTrigger?: number;
+  getCurrentProgram?: (channelId: string) => EPGProgram | null;
   onChannelSelect: (channel: Channel) => void;
   onChannelFocus: (channelId: string) => void;
   onOpenGroups: () => void;
@@ -59,6 +62,8 @@ const NativeChannelList: React.FC<NativeChannelListProps> = ({
   searchQuery,
   accentColor,
   bgColor,
+  focusTrigger,
+  getCurrentProgram,
   onChannelSelect,
   onChannelFocus,
   onOpenGroups,
@@ -101,15 +106,21 @@ const NativeChannelList: React.FC<NativeChannelListProps> = ({
   const channelsJson = useMemo(
     () =>
       JSON.stringify(
-        channels.map((ch, index) => ({
-          id: ch.id,
-          name: ch.name,
-          logo: ch.logo ?? '',
-          number: ch.number != null ? String(ch.number) : String(index + 1),
-          catchupAvailable: ch.catchupAvailable ?? false,
-        })),
+        channels.map((ch, index) => {
+          const prog = getCurrentProgram?.(ch.id) ?? null;
+          return {
+            id: ch.id,
+            name: ch.name,
+            logo: ch.logo ?? '',
+            number: ch.number != null ? String(ch.number) : String(index + 1),
+            catchupAvailable: ch.catchupAvailable ?? false,
+            programTitle: prog?.title ?? '',
+            programStart: prog?.start instanceof Date ? prog.start.getTime() : (prog?.start ?? 0),
+            programEnd: prog?.end instanceof Date ? prog.end.getTime() : (prog?.end ?? 0),
+          };
+        }),
       ),
-    [channels],
+    [channels, getCurrentProgram],
   );
 
   if (!NativeView) return null;
@@ -126,6 +137,7 @@ const NativeChannelList: React.FC<NativeChannelListProps> = ({
       searchQuery={searchQuery}
       accentColor={accentColor}
       bgColor={bgColor}
+      focusTrigger={focusTrigger ?? 0}
     />
   );
 };

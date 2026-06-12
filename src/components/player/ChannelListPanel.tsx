@@ -23,7 +23,13 @@ import { useRecentChannels } from '../../hooks/useRecentChannels';
 import { isTvLikePlatform } from '../../utils/platform';
 import { formatClockTime } from '../../utils/time';
 import { useThemeStore } from '../../store/useThemeStore';
-import { Theme } from '../../theme/themes';
+import { Theme, withAlpha, withAlphaAndroid } from '../../theme/themes';
+
+// Side list translucency — lets the video show through behind the panel.
+// PANEL_ALPHA is the single backdrop on the panel container; layers above it must be
+// transparent (or a light TINT_ALPHA) or the alphas stack and the video disappears.
+const PANEL_ALPHA = 0.8;
+const TINT_ALPHA = 0.35;
 
 interface ChannelListPanelProps {
   onChannelSelect: (channel: Channel) => void;
@@ -59,7 +65,7 @@ interface EpgDetailPanelProps {
   onCatchupSelect?: (channelId: string, startMs: number, endMs: number, programTitle: string) => void;
 }
 
-const EPG_ROW_H = TV ? 72 : 60;
+const EPG_ROW_H = TV ? 88 : 74;
 
 const EpgDetailPanelInner = React.forwardRef<ScrollView, EpgDetailPanelProps>(
   ({ channel, programs, now, clockFormat, onCatchupSelect }, ref) => {
@@ -153,13 +159,16 @@ const EpgDetailPanelInner = React.forwardRef<ScrollView, EpgDetailPanelProps>(
                   <View style={ep.rowRight}>
                     <Text
                       style={[ep.title, isCurrent && ep.titleCurrent, isPast && !canCatchup && ep.titleGray]}
-                      numberOfLines={2}
+                      numberOfLines={1}
                     >
                       {p.title}
                     </Text>
                     <Text style={[ep.dur, isCurrent && ep.durCurrent]}>
                       {formatClockTime(p.start, clockFormat, { hour: 'numeric', minute: '2-digit' })} – {formatClockTime(p.end, clockFormat, { hour: 'numeric', minute: '2-digit' })}
                     </Text>
+                    {typeof p.description === 'string' && p.description.trim().length > 0 && (
+                      <Text style={ep.desc} numberOfLines={1}>{p.description.trim()}</Text>
+                    )}
                   </View>
                 </FocusableItem>
               );
@@ -224,6 +233,7 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
   const [activeTab,        setActiveTab]        = useState<TabId>('all');
   const [searchQuery,      setSearchQuery]       = useState('');
   const [focusedChannelId, setFocusedChannelId]  = useState<string | null>(null);
+  const [nativeListFocusTrigger, setNativeListFocusTrigger] = useState(0);
 
   // ── Slide animation ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -234,6 +244,15 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
       }).start();
     }
   }, [showChannelList]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Re-focus native channel list when groups panel closes ───────────────────
+  const prevShowGroupsPlaylists = useRef(showGroupsPlaylists);
+  useEffect(() => {
+    if (prevShowGroupsPlaylists.current && !showGroupsPlaylists && showChannelList) {
+      setNativeListFocusTrigger((t) => t + 1);
+    }
+    prevShowGroupsPlaylists.current = showGroupsPlaylists;
+  }, [showGroupsPlaylists, showChannelList]);
 
   // ── Reset when panel opens/closes ───────────────────────────────────────────
   useEffect(() => {
@@ -324,6 +343,9 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
     setFocusedChannelId(channelId);
   }, [setFocusedChannelId]);
 
+  const useNativeList = Platform.OS === 'android' && TV && isNativeChannelListAvailable;
+  const useNativeSideGuide = Platform.OS === 'android' && TV && isNativeSideEpgAvailable;
+
   const openGroups = useCallback(() => {
     if (!showGroupsPlaylists) setShowGroupsPlaylists(true);
   }, [showGroupsPlaylists, setShowGroupsPlaylists]);
@@ -340,7 +362,9 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
   }, [setShowChannelList, onCatchupSelect]);
 
   useEffect(() => {
-    if (!showChannelList || !KeyEvent) return;
+    // Native channel list handles its own UP/DOWN/CENTER/LEFT key events internally.
+    // The JS listener only needs to run for the JS FlashList fallback path.
+    if (!showChannelList || !KeyEvent || useNativeList) return;
     KeyEvent.onKeyDownListener((e: { keyCode: number }) => {
       if (showGroupsPlaylists) return;
       const list = filteredChannelsRef.current;
@@ -368,7 +392,7 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
       }
     });
     return () => KeyEvent.removeKeyDownListener();
-  }, [showChannelList, showGroupsPlaylists, openGroups, currentChannelId, handleChannelFocus, onChannelSelect]);
+  }, [showChannelList, showGroupsPlaylists, openGroups, currentChannelId, handleChannelFocus, onChannelSelect, useNativeList]);
 
   const extraData = useMemo(() => ({
     currentChannelId,
@@ -401,8 +425,6 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
   );
 
   const keyExtractor = useCallback((item: Channel) => item.id, []);
-  const useNativeList = Platform.OS === 'android' && TV && isNativeChannelListAvailable;
-  const useNativeSideGuide = Platform.OS === 'android' && TV && isNativeSideEpgAvailable;
 
   if (!showChannelList) return null;
 
@@ -415,6 +437,7 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
       <TouchableOpacity
         style={st.backdrop}
         activeOpacity={1}
+        focusable={false}
         onPress={() => setShowChannelList(false)}
       />
 
@@ -528,7 +551,9 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
                 activeTab={activeTab}
                 searchQuery={searchQuery}
                 accentColor={theme.accent}
-                bgColor={theme.bg}
+                bgColor={withAlphaAndroid(theme.bg, 0)}
+                focusTrigger={nativeListFocusTrigger}
+                getCurrentProgram={getCurrentProgram}
                 onChannelSelect={onChannelSelect}
                 onChannelFocus={handleChannelFocus}
                 onOpenGroups={openGroups}
@@ -560,7 +585,7 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
                   now={nowMs}
                   clockFormat={clockFormat}
                   accentColor={theme.accent}
-                  bgColor={theme.bg}
+                  bgColor={withAlphaAndroid(theme.bg, 0)}
                   onCatchupSelect={handleCatchupSelect}
                   onOpenGroups={openGroups}
                 />
@@ -602,7 +627,7 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     top: 0,
     bottom: 0,
     width: TOTAL_W,
-    backgroundColor: theme.bg,
+    backgroundColor: withAlpha(theme.bg, PANEL_ALPHA),
     borderRightWidth: 1,
     borderRightColor: theme.border,
     zIndex: 20,
@@ -629,7 +654,7 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     paddingBottom: TV ? 10 : 8,
     borderLeftWidth: 1,
     borderLeftColor: theme.border,
-    backgroundColor: theme.surface,
+    backgroundColor: withAlpha(theme.surface, TINT_ALPHA),
   },
   headerEpgTxt: {
     color: theme.textMuted,
@@ -771,7 +796,7 @@ const createStyles = (theme: Theme) => StyleSheet.create({
     flex: 1,
     borderLeftWidth: 1,
     borderLeftColor: theme.border,
-    backgroundColor: theme.surface,
+    backgroundColor: withAlpha(theme.surface, TINT_ALPHA),
     overflow: 'hidden',
   },
   emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
@@ -900,4 +925,10 @@ const createEpgStyles = (theme: Theme) => StyleSheet.create({
     fontWeight: '500',
   },
   durCurrent: { color: theme.textSub },
+  desc: {
+    color: theme.textMuted,
+    fontSize: TV ? 11 : 10,
+    fontWeight: '400' as const,
+    marginTop: 2,
+  },
 });

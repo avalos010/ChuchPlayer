@@ -17,13 +17,15 @@ import android.widget.OverScroller
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactContext
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONArray
-import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import kotlin.math.min
 
@@ -37,6 +39,7 @@ class SideEpgView(context: Context) : View(context) {
         val id: String,
         val channelId: String,
         val title: String,
+        val description: String,
         val startMs: Long,
         val endMs: Long,
     )
@@ -55,6 +58,12 @@ class SideEpgView(context: Context) : View(context) {
     private val logoExecutor = Executors.newSingleThreadExecutor()
     private val loadingLogos = Collections.synchronizedSet(mutableSetOf<String>())
     private val failedLogos = Collections.synchronizedSet(mutableSetOf<String>())
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(3, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
 
     private var channelId = ""
     private var channelName = ""
@@ -92,6 +101,8 @@ class SideEpgView(context: Context) : View(context) {
     private val tTitleFocus = text(Color.rgb(6, 18, 37), 13f, true)
     private val tDur = text(Color.rgb(127, 150, 178), 10f, false)
     private val tDurFocus = text(Color.rgb(51, 65, 85), 10f, false)
+    private val tDesc = text(Color.argb(160, 127, 150, 178), 10f, false)
+    private val tDescFocus = text(Color.argb(160, 30, 50, 75), 10f, false)
 
     init {
         isFocusable = true
@@ -135,6 +146,7 @@ class SideEpgView(context: Context) : View(context) {
                     id = o.optString("id"),
                     channelId = o.optString("channelId", channelId),
                     title = o.optString("title"),
+                    description = o.optString("description", ""),
                     startMs = o.optDouble("startMs", 0.0).toLong(),
                     endMs = o.optDouble("endMs", 0.0).toLong(),
                 )
@@ -260,7 +272,11 @@ class SideEpgView(context: Context) : View(context) {
 
         val textX = pad + timeW + 8f * dp
         drawEllipsis(canvas, program.title, textX, top + 29f * dp, width - textX - pad, titlePaint)
-        drawEllipsis(canvas, "${formatTime(program.startMs)} - ${formatTime(program.endMs)}", textX, top + 49f * dp, width - textX - pad, durPaint)
+        drawEllipsis(canvas, "${formatTime(program.startMs)} - ${formatTime(program.endMs)}", textX, top + 46f * dp, width - textX - pad, durPaint)
+        if (program.description.isNotBlank()) {
+            val descPaint = if (focusedRow) tDescFocus else tDesc
+            drawEllipsis(canvas, program.description, textX, top + 61f * dp, width - textX - pad, descPaint)
+        }
 
         if (past && !canCatchup) {
             rect.set(0f, top, width.toFloat(), bottom)
@@ -367,13 +383,9 @@ class SideEpgView(context: Context) : View(context) {
         if (url.isBlank() || failedLogos.contains(url) || logoCache.get(url) != null || !loadingLogos.add(url)) return
         logoExecutor.execute {
             try {
-                val connection = URL(url).openConnection().apply {
-                    connectTimeout = 2500
-                    readTimeout = 2500
-                }
-                val bitmap = connection.getInputStream().use { input ->
-                    BitmapFactory.decodeStream(input)
-                }
+                val bytes = http.newCall(Request.Builder().url(url).build())
+                    .execute().use { it.body?.bytes() }
+                val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
                 if (bitmap != null) {
                     logoCache.put(url, bitmap)
                     mainHandler.post { invalidate() }

@@ -18,6 +18,7 @@ import expo.modules.ReactNativeHostWrapper
 import com.chuchplayer.epg.EpgIngestionPackage
 import com.chuchplayer.input.TvInputDialogPackage
 import com.chuchplayer.player.ExoPlayerPackage
+import com.chuchplayer.player.MultiExoPlayerPackage
 import com.chuchplayer.updater.AppUpdaterPackage
 
 class MainApplication : Application(), ReactApplication {
@@ -33,6 +34,7 @@ class MainApplication : Application(), ReactApplication {
               add(EpgIngestionPackage())
               add(TvInputDialogPackage())
               add(ExoPlayerPackage())
+              add(MultiExoPlayerPackage())
               add(AppUpdaterPackage())
             }
 

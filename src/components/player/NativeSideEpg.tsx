@@ -75,6 +75,7 @@ const NativeSideEpg: React.FC<NativeSideEpgProps> = ({
           id: program.id,
           channelId: program.channelId,
           title: program.title,
+          description: program.description ?? '',
           startMs: program.start.getTime(),
           endMs: program.end.getTime(),
         })),

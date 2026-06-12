@@ -98,6 +98,13 @@ android {
         versionName "1.0.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+
+        // Restrict to 32-bit only when building for Fire TV (pass -PfiretvBuild)
+        if (project.hasProperty('firetvBuild')) {
+            ndk {
+                abiFilters "armeabi-v7a"
+            }
+        }
     }
     signingConfigs {
         debug {
@@ -140,6 +147,10 @@ android {
         jniLibs {
             def enableLegacyPackaging = findProperty('expo.useLegacyPackaging') ?: 'false'
             useLegacyPackaging enableLegacyPackaging.toBoolean()
+            // Strip non-armeabi-v7a .so files only for Fire TV release builds
+            if (project.hasProperty('firetvBuild')) {
+                excludes += ["lib/x86_64/**", "lib/x86/**", "lib/arm64-v8a/**"]
+            }
         }
     }
     androidResources {
@@ -219,6 +230,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.8.0")
     implementation("androidx.media3:media3-exoplayer-hls:1.8.0")
     implementation("androidx.media3:media3-datasource:1.8.0")
+    implementation("androidx.media3:media3-ui:1.8.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("net.sf.kxml:kxml2:2.3.0")

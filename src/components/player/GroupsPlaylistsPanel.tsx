@@ -7,7 +7,9 @@ import { Playlist } from '../../types';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useThemeStore } from '../../store/useThemeStore';
-import { Theme } from '../../theme/themes';
+import { Theme, withAlpha, withAlphaAndroid } from '../../theme/themes';
+
+const PANEL_ALPHA = 0.8;
 import { getPlaylists } from '../../utils/storage';
 import { groupChannelsByCategory } from '../../utils/m3uParser';
 import { isTvLikePlatform } from '../../utils/platform';
@@ -213,6 +215,7 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
         <TouchableOpacity
           style={styles.backdrop}
           activeOpacity={1}
+          focusable={false}
           onPress={() => setShowGroupsPlaylists(false)}
         />
         <View style={styles.panel}>
@@ -223,7 +226,7 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
             selectedGroup={selectedGroup}
             currentPlaylistId={playlist?.id}
             accentColor={theme.accent}
-            bgColor={theme.surface}
+            bgColor={withAlphaAndroid(theme.surface, 0)}
             onGroupSelect={handleGroupPress}
             onPlaylistSelect={handleNativePlaylistSelect}
             onClose={handleNativeClose}
@@ -238,6 +241,7 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
       <TouchableOpacity
         style={styles.backdrop}
         activeOpacity={1}
+        focusable={false}
         onPress={() => setShowGroupsPlaylists(false)}
       />
       <View style={styles.panel}>
@@ -277,7 +281,7 @@ function createStyles(theme: Theme) {
   return StyleSheet.create({
     backdrop: {
       ...StyleSheet.absoluteFillObject,
-      backgroundColor: 'rgba(0,0,0,0.5)',
+      backgroundColor: 'transparent',
       zIndex: 55,
       elevation: 55,
     },
@@ -285,7 +289,7 @@ function createStyles(theme: Theme) {
       position: 'absolute',
       top: 0, left: 0, bottom: 0,
       width: PANEL_W,
-      backgroundColor: theme.surface,
+      backgroundColor: withAlpha(theme.surface, PANEL_ALPHA),
       borderRightWidth: 1,
       borderRightColor: theme.border,
       zIndex: 60,

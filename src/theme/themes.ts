@@ -85,6 +85,20 @@ function adjustHex(hex: string, amount: number): string {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
+// #RRGGBB + alpha → #RRGGBBAA (React Native style format). Non-hex input passes through.
+export function withAlpha(hex: string, alpha: number): string {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+  const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255).toString(16).padStart(2, '0');
+  return `${hex}${a}`;
+}
+
+// #RRGGBB + alpha → #AARRGGBB (Android Color.parseColor format, for native view props)
+export function withAlphaAndroid(hex: string, alpha: number): string {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+  const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255).toString(16).padStart(2, '0');
+  return `#${a}${hex.slice(1)}`;
+}
+
 function contrastText(bg: string): string {
   const r = parseInt(bg.slice(1, 3), 16);
   const g = parseInt(bg.slice(3, 5), 16);
