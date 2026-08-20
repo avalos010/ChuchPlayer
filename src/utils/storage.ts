@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Playlist, Settings, Channel } from '../types';
+import { ensureUniqueChannelIds } from './channelIds';
 
 const PLAYLISTS_KEY = '@chuchPlayer:playlists';
 const SETTINGS_KEY = '@chuchPlayer:settings';
@@ -35,6 +36,7 @@ const serializePlaylist = (playlist: Playlist): StoredPlaylist => ({
 
 const deserializePlaylist = (stored: StoredPlaylist): Playlist => ({
   ...stored,
+  channels: ensureUniqueChannelIds(stored.channels),
   sourceType: stored.sourceType || 'm3u', // Default to 'm3u' for backward compatibility
   epgUrls: stored.epgUrls ?? [],
   createdAt: new Date(stored.createdAt),

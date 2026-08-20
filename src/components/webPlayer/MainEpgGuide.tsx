@@ -10,10 +10,13 @@ const WebVideo = require('../player/WebVideo.web').default;
 
 interface MainEpgGuideProps {
   channels: Channel[];
+  groups: string[];
+  selectedGroup: string;
   currentChannel: Channel | null;
   isPlaying: boolean;
   showChannelNumbers: boolean;
   getProgramsForChannel: (channelId: string) => EPGProgram[];
+  onGroupSelect: (group: string) => void;
   onClose: () => void;
   onChannelSelect: (channel: Channel) => void;
   onCatchupSelect: (channel: Channel, program: EPGProgram) => void;
@@ -33,10 +36,13 @@ const getVisiblePrograms = (programs: EPGProgram[]) => {
 
 const MainEpgGuide: React.FC<MainEpgGuideProps> = ({
   channels,
+  groups,
+  selectedGroup,
   currentChannel,
   isPlaying,
   showChannelNumbers,
   getProgramsForChannel,
+  onGroupSelect,
   onClose,
   onChannelSelect,
   onCatchupSelect,
@@ -67,6 +73,31 @@ const MainEpgGuide: React.FC<MainEpgGuideProps> = ({
         <TouchableOpacity testID="web-main-epg-close" onPress={onClose} style={s.mainGuideCloseBtn}>
           <Text style={s.mainGuideCloseTxt}>Close</Text>
         </TouchableOpacity>
+      </View>
+
+      <View style={s.mainGuideGroupBar}>
+        <Text style={s.mainGuideGroupLabel}>Groups</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.mainGuideGroupList}
+        >
+          {groups.map(group => {
+            const active = group === selectedGroup;
+            return (
+              <TouchableOpacity
+                key={group}
+                testID={`web-main-epg-group-${group.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`}
+                onPress={() => onGroupSelect(group)}
+                style={[s.mainGuideGroupChip, active && s.mainGuideGroupChipActive]}
+              >
+                <Text style={[s.mainGuideGroupChipText, active && s.mainGuideGroupChipTextActive]}>
+                  {group}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.mainGuideList}>

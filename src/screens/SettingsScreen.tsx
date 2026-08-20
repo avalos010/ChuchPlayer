@@ -26,6 +26,7 @@ import { useThemeStore } from '../store/useThemeStore';
 import { Theme, THEME_LIST } from '../theme/themes';
 import { useSleepTimer } from '../hooks/useSleepTimer';
 import { syncInterfacePreferences } from '../hooks/interfacePreferences/useInterfacePreferences';
+import { confirmAction } from '../utils/platform';
 import PlaylistModal from './settings/PlaylistModal';
 import PinModal from './settings/PinModal';
 
@@ -335,33 +336,32 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
 
   // ── Delete playlist ─────────────────────────────────────────────────────────
   const confirmDeletePlaylist = (pl: Playlist) => {
-    Alert.alert('Delete Playlist', `Delete "${pl.name}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          try {
-            await deletePlaylist(pl.id);
-            setPlaylists(prev => {
-              const updated = prev.filter(p => p.id !== pl.id);
-              const ps = usePlayerStore.getState();
-              if (ps.playlist?.id === pl.id) {
-                if (updated.length > 0) {
-                  ps.setPlaylist(updated[0]); ps.setChannels(updated[0].channels);
-                  ps.setChannel(updated[0].channels[0] ?? null);
-                } else {
-                  ps.setChannel(null); ps.setChannels([]); ps.setPlaylist(null);
-                }
+    confirmAction({
+      title: 'Delete Playlist',
+      message: `Delete "${pl.name}"?`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        try {
+          await deletePlaylist(pl.id);
+          setPlaylists(prev => {
+            const updated = prev.filter(p => p.id !== pl.id);
+            const ps = usePlayerStore.getState();
+            if (ps.playlist?.id === pl.id) {
+              if (updated.length > 0) {
+                ps.setPlaylist(updated[0]); ps.setChannels(updated[0].channels);
+                ps.setChannel(updated[0].channels[0] ?? null);
+              } else {
+                ps.setChannel(null); ps.setChannels([]); ps.setPlaylist(null);
               }
-              return updated;
-            });
-            setTimeout(() => showSuccess(`Deleted "${pl.name}"`), 100);
-          } catch (err) {
-            setTimeout(() => showError('Failed to delete.', String(err)), 100);
-          }
-        },
+            }
+            return updated;
+          });
+          setTimeout(() => showSuccess(`Deleted "${pl.name}"`), 100);
+        } catch (err) {
+          setTimeout(() => showError('Failed to delete.', String(err)), 100);
+        }
       },
-    ]);
+    });
   };
 
   // ── Manual refresh ──────────────────────────────────────────────────────────

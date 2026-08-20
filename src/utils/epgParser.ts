@@ -22,7 +22,7 @@ const logMemoryUsage = (queue: InsertableProgram[], context: string) => {
 };
 
 type ChannelIndexEntry = {
-  channel: Channel;
+  channels: Channel[];
   priority: number;
 };
 
@@ -53,7 +53,12 @@ const buildChannelIndex = (
     normalizeKeyVariants(key).forEach((variant) => {
       const existing = index.get(variant);
       if (!existing || priority < existing.priority) {
-        index.set(variant, { channel, priority });
+        index.set(variant, { channels: [channel], priority });
+      } else if (
+        priority === existing.priority &&
+        !existing.channels.some(indexedChannel => indexedChannel.id === channel.id)
+      ) {
+        existing.channels.push(channel);
       }
     });
   };
@@ -67,17 +72,17 @@ const buildChannelIndex = (
   return index;
 };
 
-const resolveChannel = (
+const resolveChannels = (
   epgChannelId: string,
   channelIndex: Map<string, ChannelIndexEntry>,
-): Channel | undefined => {
+): Channel[] => {
   for (const variant of normalizeKeyVariants(epgChannelId)) {
     const entry = channelIndex.get(variant);
     if (entry) {
-      return entry.channel;
+      return entry.channels;
     }
   }
-  return undefined;
+  return [];
 };
 
 const decodeXmlEntities = (value: string): string =>
@@ -158,9 +163,9 @@ const filterProgramWindow = (start: Date, end: Date): boolean => {
 };
 
 type ConvertResult =
-  | { insertable: InsertableProgram; reason?: undefined }
+  | { insertables: InsertableProgram[]; reason?: undefined }
   | {
-      insertable: null;
+      insertables: null;
       reason:
         | "no-channel"
         | "invalid-dates"
@@ -174,10 +179,10 @@ const convertProgramToInsert = (
   channelIndex: Map<string, ChannelIndexEntry>,
   playlistId: string,
 ): ConvertResult => {
-  const matchedChannel = resolveChannel(program.channel, channelIndex);
-  if (!matchedChannel) {
+  const matchedChannels = resolveChannels(program.channel, channelIndex);
+  if (matchedChannels.length === 0) {
     return {
-      insertable: null,
+      insertables: null,
       reason: "no-channel",
       details: { xmlChannel: program.channel },
     };
@@ -188,7 +193,7 @@ const convertProgramToInsert = (
 
   if (!startDate || !endDate) {
     return {
-      insertable: null,
+      insertables: null,
       reason: "invalid-dates",
       details: { start: program.start, stop: program.stop },
     };
@@ -196,14 +201,14 @@ const convertProgramToInsert = (
 
   if (!filterProgramWindow(startDate, endDate)) {
     return {
-      insertable: null,
+      insertables: null,
       reason: "outside-window",
       details: { start: startDate.getTime(), end: endDate.getTime() },
     };
   }
 
   return {
-    insertable: {
+    insertables: matchedChannels.map(matchedChannel => ({
       playlistId,
       channelId: matchedChannel.id,
       title: cleanXmlValue(program.title) ?? "Untitled",
@@ -211,7 +216,7 @@ const convertProgramToInsert = (
       start: startDate.getTime(),
       end: endDate.getTime(),
       epgChannelId: program.channel,
-    },
+    })),
   };
 };
 
@@ -339,9 +344,9 @@ export const ingestXmltvToDatabase = async ({
     onProgram: (program) => {
       totalProgramsFromXml++;
       const result = convertProgramToInsert(program, channelIndex, playlistId);
-      if (result.insertable) {
-        queue.push(result.insertable);
-        programsMatchedToChannels++;
+      if (result.insertables) {
+        queue.push(...result.insertables);
+        programsMatchedToChannels += result.insertables.length;
         if (queue.length >= INSERT_THRESHOLD) {
           void scheduleFlush(false);
         }

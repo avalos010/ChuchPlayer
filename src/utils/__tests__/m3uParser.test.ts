@@ -73,6 +73,21 @@ https://stream.example.com/cnn.m3u8`;
       expect(channels[2].group).toBe('Movies');
     });
 
+    it('keeps channel IDs unique when multiple streams share a tvg-id', () => {
+      const m3u = `#EXTM3U
+#EXTINF:-1 tvg-id="fox.us" tvg-name="Fox HD",Fox HD
+https://stream.example.com/fox-hd.m3u8
+#EXTINF:-1 tvg-id="fox.us" tvg-name="Fox SD",Fox SD
+https://stream.example.com/fox-sd.m3u8`;
+
+      const { channels } = parseM3U(m3u);
+
+      expect(new Set(channels.map(channel => channel.id)).size).toBe(2);
+      expect(channels[0].id).toBe('fox.us');
+      expect(channels[1].id).toMatch(/^fox\.us-/);
+      expect(channels.map(channel => channel.tvgId)).toEqual(['fox.us', 'fox.us']);
+    });
+
     it('supports rtmp:// stream URLs', () => {
       const m3u = `#EXTM3U
 #EXTINF:-1,RTMP Channel

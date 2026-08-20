@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Channel, Playlist } from '../types';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
@@ -17,6 +17,7 @@ export const useChannelInitialization = ({
   initialChannel,
   getCurrentProgram,
 }: UseChannelInitializationProps) => {
+  const [initialized, setInitialized] = useState(false);
   const channel = usePlayerStore((state) => state.channel);
   const setChannel = usePlayerStore((state) => state.setChannel);
   const setChannels = usePlayerStore((state) => state.setChannels);
@@ -46,16 +47,18 @@ export const useChannelInitialization = ({
 
   // Initialize store with initial channel or last played channel (only once on mount)
   useEffect(() => {
+    let active = true;
+
     const initializeChannel = async () => {
-      if (channel) return;
-
-      if (initialChannel) {
-        setChannel(initialChannel);
-        await saveLastChannel(initialChannel);
-        return;
-      }
-
       try {
+        if (channel) return;
+
+        if (initialChannel) {
+          setChannel(initialChannel);
+          await saveLastChannel(initialChannel);
+          return;
+        }
+
         // Parallel fetch: last channel + playlists + settings together
         const [lastChannel, playlists, settings] = await Promise.all([
           getLastChannel(),
@@ -67,9 +70,16 @@ export const useChannelInitialization = ({
         setShowEPG(false);
 
         if (lastChannel) {
-          applyPlaylist(playlists, lastChannel.id);
-          setChannel(lastChannel);
-          setIsPlaying(true);
+          const activePlaylist = applyPlaylist(playlists, lastChannel.id);
+          if (activePlaylist) {
+            setChannel(lastChannel);
+            setIsPlaying(true);
+          } else if (playlists.length > 0) {
+            const first = playlists[0];
+            setPlaylist(first);
+            setChannels(first.channels);
+            setShowEPGGrid(settings.showEPG);
+          }
         } else if (playlists.length > 0) {
           const first = playlists[0];
           setPlaylist(first);
@@ -78,10 +88,15 @@ export const useChannelInitialization = ({
         }
       } catch (error) {
         console.error('Error during channel initialization:', error);
+      } finally {
+        if (active) setInitialized(true);
       }
     };
 
     initializeChannel();
+    return () => {
+      active = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialChannel]);
 
@@ -123,4 +138,6 @@ export const useChannelInitialization = ({
     loadChannelData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel?.id]);
+
+  return { initialized };
 };

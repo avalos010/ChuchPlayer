@@ -1,4 +1,5 @@
 import { Channel } from '../types';
+import { ensureUniqueChannelIds } from './channelIds';
 
 export interface ParsedM3UPlaylist {
   channels: Channel[];
@@ -108,7 +109,7 @@ export const parseM3U = (content: string): ParsedM3UPlaylist => {
   }
 
   return {
-    channels,
+    channels: ensureUniqueChannelIds(channels),
     epgUrls: Array.from(epgUrlSet),
   };
 };
@@ -170,4 +171,3 @@ export const groupChannelsByCategory = (channels: Channel[]): Map<string, Channe
 
   return grouped;
 };
-

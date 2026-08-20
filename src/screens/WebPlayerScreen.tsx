@@ -37,7 +37,7 @@ const WebPlayerScreen: React.FC<WebPlayerScreenProps> = ({ navigation, route }) 
 
   const { getProgramsForChannel, getCurrentProgram, epgLoading } = useEPGManagement();
 
-  useChannelInitialization({
+  const { initialized: channelInitializationComplete } = useChannelInitialization({
     initialChannel: route.params?.channel,
     getCurrentProgram,
   });
@@ -223,6 +223,15 @@ const WebPlayerScreen: React.FC<WebPlayerScreenProps> = ({ navigation, route }) 
     onUserActivity: showChrome,
   });
 
+  if (!channelInitializationComplete) {
+    return (
+      <View style={s.empty}>
+        <ActivityIndicator size="large" color="#dbeafe" />
+        <Text style={s.emptyTitle}>Loading playlist...</Text>
+      </View>
+    );
+  }
+
   if (!playlist && channels.length === 0) {
     return (
       <View style={s.empty}>
@@ -295,11 +304,14 @@ const WebPlayerScreen: React.FC<WebPlayerScreenProps> = ({ navigation, route }) 
 
         {guideOpen ? (
           <MainEpgGuide
-            channels={channels}
+            channels={filteredChannels}
+            groups={groups}
+            selectedGroup={selectedGroup}
             currentChannel={channel}
             isPlaying={isPlaying}
             showChannelNumbers={showChannelNumbers}
             getProgramsForChannel={getProgramsForChannel}
+            onGroupSelect={setSelectedGroup}
             onClose={() => setGuideOpen(false)}
             onChannelSelect={async (nextChannel) => {
               await handleChannelSelect(nextChannel);

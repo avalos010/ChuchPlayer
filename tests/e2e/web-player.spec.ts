@@ -252,6 +252,18 @@ test('group rail filters the side channel list', async ({ page }) => {
   await expect(page.getByText('1 channels')).toBeVisible();
 });
 
+test('group chips filter the full EPG', async ({ page }) => {
+  await bootPlayer(page);
+  await page.getByTestId('web-channel-row-e2e-news').click();
+  await page.getByTestId('web-epg-button').click();
+
+  await page.getByTestId('web-main-epg-group-sports').click();
+
+  await expect(page.getByTestId('web-main-epg-channel-e2e-sports')).toBeVisible();
+  await expect(page.getByTestId('web-main-epg-channel-e2e-news')).toHaveCount(0);
+  await expect(page.getByTestId('web-main-epg-channel-e2e-kids')).toHaveCount(0);
+});
+
 test('keyboard navigation opens the list, tunes channels, and toggles the EPG', async ({ page }) => {
   await bootPlayer(page);
 

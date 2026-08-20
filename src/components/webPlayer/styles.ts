@@ -270,6 +270,46 @@ export const webPlayerStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
+  mainGuideGroupBar: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(96, 165, 250, 0.14)',
+    backgroundColor: 'rgba(5, 10, 19, 0.36)',
+  },
+  mainGuideGroupLabel: {
+    color: '#93c5fd',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  mainGuideGroupList: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+  },
+  mainGuideGroupChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.3)',
+    backgroundColor: 'rgba(15, 23, 42, 0.82)',
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+  },
+  mainGuideGroupChipActive: {
+    borderColor: WEB_PLAYER_ACCENT,
+    backgroundColor: WEB_PLAYER_ACCENT,
+  },
+  mainGuideGroupChipText: {
+    color: '#bfdbfe',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  mainGuideGroupChipTextActive: {
+    color: '#03111f',
+  },
   mainGuideList: {
     padding: 12,
   },

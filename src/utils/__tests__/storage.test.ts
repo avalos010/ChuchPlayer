@@ -9,6 +9,7 @@ import {
   getFavorites,
   savePlaylist,
   getPlaylists,
+  deletePlaylist,
 } from '../storage';
 import { Channel, Playlist, Settings } from '../../types';
 
@@ -144,6 +145,30 @@ describe('playlists', () => {
     const playlists = await getPlaylists();
     expect(playlists).toHaveLength(1);
     expect(playlists[0].name).toBe('Renamed Playlist');
+  });
+
+  it('deletes only the selected playlist', async () => {
+    await savePlaylist(makePlaylist());
+    await savePlaylist(makePlaylist({ id: 'pl-2', name: 'Sports' }));
+
+    await deletePlaylist('pl-1');
+
+    const playlists = await getPlaylists();
+    expect(playlists.map(playlist => playlist.id)).toEqual(['pl-2']);
+  });
+
+  it('normalizes duplicate channel IDs in saved playlists', async () => {
+    await savePlaylist(makePlaylist({
+      channels: [
+        CHANNEL,
+        { ...CHANNEL, name: 'Test Channel Backup', url: 'https://stream.example.com/backup.m3u8' },
+      ],
+    }));
+
+    const [playlist] = await getPlaylists();
+    expect(new Set(playlist.channels.map(channel => channel.id)).size).toBe(2);
+    expect(playlist.channels[0].id).toBe(CHANNEL.id);
+    expect(playlist.channels[1].id).toMatch(/^ch-1-/);
   });
 
   it('preserves epgUrls through serialization round-trip', async () => {
