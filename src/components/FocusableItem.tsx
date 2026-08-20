@@ -9,6 +9,11 @@ import {
   Platform,
 } from 'react-native';
 
+export interface FocusableItemHandle {
+  getNativeNode: () => number | null;
+  focus: () => void;
+}
+
 interface FocusableItemProps {
   onPress: () => void;
   onFocus?: () => void;
@@ -25,7 +30,7 @@ interface FocusableItemProps {
   nextFocusRight?: number;
 }
 
-const FocusableItem = forwardRef<any, FocusableItemProps>(({
+const FocusableItem = forwardRef<FocusableItemHandle, FocusableItemProps>(({
   onPress,
   onFocus,
   onBlur,
@@ -212,7 +217,7 @@ const FocusableItem = forwardRef<any, FocusableItemProps>(({
       const node = findNodeHandle(pressableRef.current);
       if (!node) return;
 
-      if (Platform.isTV && UIManager.getViewManagerConfig) {
+      if ((Platform.isTV || Platform.OS === 'android') && UIManager.getViewManagerConfig) {
         const viewConfig = UIManager.getViewManagerConfig('RCTView');
         const commandId = viewConfig?.Commands?.requestTVFocus;
         if (typeof commandId === 'number' || typeof commandId === 'string') {

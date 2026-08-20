@@ -20,6 +20,8 @@ export const usePlayerHandlers = (
   const setShowEPGGrid = useUIStore((state) => state.setShowEPGGrid);
   const setShowGroupsPlaylists = useUIStore((state) => state.setShowGroupsPlaylists);
   const setShowChannelList = useUIStore((state) => state.setShowChannelList);
+  const setShowControls = useUIStore((state) => state.setShowControls);
+  const setShowInfoBar = useUIStore((state) => state.setShowInfoBar);
 
   const handleScreenPress = useCallback(() => {
     // Mark user interaction for autoplay on web
@@ -96,11 +98,11 @@ export const usePlayerHandlers = (
       return;
     }
 
-    // Center opens the quick action panel. Channel changes still show the
-    // lightweight info bar automatically.
+    // Center expands the bottom info bar into its horizontal action menu.
+    // Channel changes still show the lightweight version automatically.
     if (channel) {
-      useUIStore.getState().setShowInfoBar(false);
-      setShowEPG(true);
+      setShowControls(true);
+      setShowInfoBar(true);
     }
   }, [
     showEPG,
@@ -112,6 +114,8 @@ export const usePlayerHandlers = (
     setShowEPGGrid,
     setShowGroupsPlaylists,
     setShowChannelList,
+    setShowControls,
+    setShowInfoBar,
   ]);
 
   const handleLeftDpad = useCallback(() => {
@@ -199,6 +203,7 @@ export const usePlayerHandlers = (
 
   const showControlsOnFocus = useCallback(() => {
     if (channel) {
+      useUIStore.getState().setShowControls(false);
       useUIStore.getState().setShowInfoBar(true);
     }
   }, [channel]);

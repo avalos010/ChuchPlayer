@@ -60,7 +60,7 @@ export const useUIStore = create<UIState>((set) => ({
   showGroupsPlaylists: false,
   showChannelNumberPad: false,
   showVolumeIndicator: false,
-  showControls: true,
+  showControls: false,
   showFloatingButtons: false,
   showInfoBar: false,
   showProgramInfo: false,
@@ -77,7 +77,9 @@ export const useUIStore = create<UIState>((set) => ({
   setShowVolumeIndicator: (show) => set({ showVolumeIndicator: show }),
   setShowControls: (show) => set({ showControls: show }),
   setShowFloatingButtons: (show) => set({ showFloatingButtons: show }),
-  setShowInfoBar: (show) => set({ showInfoBar: show }),
+  setShowInfoBar: (show) => set(show
+    ? { showInfoBar: true }
+    : { showInfoBar: false, showControls: false }),
   setShowProgramInfo: (show, data) => set({ showProgramInfo: show, programInfoData: data ?? null }),
   setShowSleepTimer: (show) => set({ showSleepTimer: show }),
   setSelectedGroup: (group) => set({ selectedGroup: group }),
@@ -89,6 +91,8 @@ export const useUIStore = create<UIState>((set) => ({
     showChannelList: false,
     showGroupsPlaylists: false,
     showChannelNumberPad: false,
+    showControls: false,
+    showInfoBar: false,
     showProgramInfo: false,
     showSleepTimer: false,
     selectedGroup: null,
@@ -96,5 +100,3 @@ export const useUIStore = create<UIState>((set) => ({
   toggleEPG: () => set((state) => ({ showEPG: !state.showEPG })),
   toggleControls: () => set((state) => ({ showControls: !state.showControls })),
 }));
-
-

@@ -75,6 +75,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const showSleepTimer = useUIStore((state) => state.showSleepTimer);
   const showChannelNumberPad = useUIStore((state) => state.showChannelNumberPad);
   const showInfoBar = useUIStore((state) => state.showInfoBar);
+  const showControls = useUIStore((state) => state.showControls);
   
   // EPG store state
   const currentProgram = useEPGStore((state) => state.currentProgram);
@@ -137,6 +138,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   // Show info bar when channel changes; track recents
   useEffect(() => {
     if (!channel) return;
+    useUIStore.getState().setShowControls(false);
     useUIStore.getState().setShowInfoBar(true);
     addRecent(channel.id);
   }, [channel?.id]);
@@ -310,7 +312,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     showProgramInfo,
     showSleepTimer,
     showChannelNumberPad,
-    showInfoBar,
+    showInfoBar: showInfoBar && showControls,
   });
 
   // If in multi-screen mode, show multi-screen view
@@ -468,7 +470,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
           navigation={navigation}
           timeoutSeconds={interfacePreferences.infoBarTimeoutSeconds}
           clockFormat={interfacePreferences.clockFormat}
-          showControls={false}
+          showControls={showControls}
         />
       )}
 

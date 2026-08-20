@@ -15,6 +15,10 @@ import { formatClockTime } from '../../utils/time';
 import { useThemeStore } from '../../store/useThemeStore';
 import { Theme } from '../../theme/themes';
 
+const KeyEvent = Platform.OS === 'android'
+  ? (require('react-native-keyevent').default ?? require('react-native-keyevent'))
+  : null;
+
 interface ChannelInfoBarProps {
   channel: Channel | null;
   currentProgram: EPGProgram | null;
@@ -40,7 +44,7 @@ const aspectLabel = (m: ResizeMode) =>
 // ─── Control button ───────────────────────────────────────────────────────────
 const ICON_SZ = TV ? 22 : 18;
 
-const Ctrl: React.FC<{
+interface CtrlProps {
   icon: React.ComponentProps<typeof MCI>['name'];
   label: string;
   onPress: () => void;
@@ -48,7 +52,17 @@ const Ctrl: React.FC<{
   onBlur: () => void;
   active?: boolean;
   hasTVPreferredFocus?: boolean;
-}> = ({ icon, label, onPress, onFocus, onBlur, active, hasTVPreferredFocus }) => {
+}
+
+const Ctrl: React.FC<CtrlProps> = ({
+  icon,
+  label,
+  onPress,
+  onFocus,
+  onBlur,
+  active,
+  hasTVPreferredFocus,
+}) => {
   const theme = useThemeStore((st) => st.theme);
   const s = useMemo(() => createStyles(theme), [theme]);
   const focusedStyle = useMemo(() => ({
@@ -107,6 +121,8 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   const [progress, setProgress] = React.useState(0);
   const [focused, setFocused]   = React.useState(false);
   const [imgErr, setImgErr]     = React.useState(false);
+  const [focusedControlIndex, setFocusedControlIndex] = React.useState(0);
+  const controlCount = onMultiScreen ? 8 : 7;
 
   React.useEffect(() => { setImgErr(false); }, [channel?.id]);
 
@@ -159,8 +175,30 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
     return () => clearInterval(id);
   }, [currentProgram]);
 
-  const onFocus = useCallback(() => setFocused(true),  []);
+  useEffect(() => {
+    if (showControls) setFocusedControlIndex(0);
+  }, [showControls]);
+
+  useEffect(() => {
+    if (!showControls || !KeyEvent) return;
+
+    KeyEvent.onKeyDownListener((event: { keyCode: number }) => {
+      if (event.keyCode !== 21 && event.keyCode !== 22) return;
+      const delta = event.keyCode === 21 ? -1 : 1;
+      setFocusedControlIndex((currentIndex) => (
+        currentIndex + delta + controlCount
+      ) % controlCount);
+    });
+
+    return () => KeyEvent.removeKeyDownListener();
+  }, [showControls, controlCount]);
+
+  const onFocus = useCallback((index: number) => {
+    setFocusedControlIndex(index);
+    setFocused(true);
+  }, []);
   const onBlur  = useCallback(() => setFocused(false), []);
+  const closeControls = useCallback(() => setShowInfoBar(false), [setShowInfoBar]);
 
   if (!showInfoBar || !channel) return null;
 
@@ -253,27 +291,29 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                 icon={isPlaying ? 'pause' : 'play'}
                 label={isPlaying ? 'Pause' : 'Play'}
                 onPress={onTogglePlayback}
-                onFocus={onFocus}
+                onFocus={() => onFocus(0)}
                 onBlur={onBlur}
                 active={isPlaying}
-                hasTVPreferredFocus={TV}
+                hasTVPreferredFocus={focusedControlIndex === 0}
               />
 
               <Ctrl
                 icon="aspect-ratio"
                 label={aspectLabel(resizeMode)}
                 onPress={cycleResizeMode}
-                onFocus={onFocus}
+                onFocus={() => onFocus(1)}
                 onBlur={onBlur}
+                hasTVPreferredFocus={focusedControlIndex === 1}
               />
 
               <Ctrl
                 icon={isFavorite ? 'star' : 'star-outline'}
                 label="Favorite"
                 onPress={onToggleFavorite}
-                onFocus={onFocus}
+                onFocus={() => onFocus(2)}
                 onBlur={onBlur}
                 active={isFavorite}
+                hasTVPreferredFocus={focusedControlIndex === 2}
               />
 
               {onMultiScreen && (
@@ -281,8 +321,9 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                   icon="picture-in-picture-top-right"
                   label="Multi"
                   onPress={onMultiScreen}
-                  onFocus={onFocus}
+                  onFocus={() => onFocus(3)}
                   onBlur={onBlur}
+                  hasTVPreferredFocus={focusedControlIndex === 3}
                 />
               )}
 
@@ -293,16 +334,18 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                   setShowInfoBar(false);
                   useUIStore.getState().setShowEPGGrid(true);
                 }}
-                onFocus={onFocus}
+                onFocus={() => onFocus(onMultiScreen ? 4 : 3)}
                 onBlur={onBlur}
+                hasTVPreferredFocus={focusedControlIndex === (onMultiScreen ? 4 : 3)}
               />
 
               <Ctrl
                 icon="sleep"
                 label="Sleep"
                 onPress={onSleepTimer}
-                onFocus={onFocus}
+                onFocus={() => onFocus(onMultiScreen ? 5 : 4)}
                 onBlur={onBlur}
+                hasTVPreferredFocus={focusedControlIndex === (onMultiScreen ? 5 : 4)}
               />
 
               <Ctrl
@@ -312,8 +355,18 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                   setShowInfoBar(false);
                   setTimeout(() => navigation?.navigate('Settings', { focusTarget: 'interface' }), 80);
                 }}
-                onFocus={onFocus}
+                onFocus={() => onFocus(onMultiScreen ? 6 : 5)}
                 onBlur={onBlur}
+                hasTVPreferredFocus={focusedControlIndex === (onMultiScreen ? 6 : 5)}
+              />
+
+              <Ctrl
+                icon="close-circle-outline"
+                label="Close"
+                onPress={closeControls}
+                onFocus={() => onFocus(onMultiScreen ? 7 : 6)}
+                onBlur={onBlur}
+                hasTVPreferredFocus={focusedControlIndex === (onMultiScreen ? 7 : 6)}
               />
             </View>
           </>

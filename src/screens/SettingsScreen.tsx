@@ -1026,7 +1026,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
           ref={helpRemoteRef}
           onPress={() => Alert.alert(
             'TV Remote Controls',
-            'Navigation:\n• D-Pad: Move between items\n• Center/OK: Select\n• Back: Previous screen\n\nPlayer:\n• Center/OK: Play / Pause\n• D-Pad Up/Down: Switch channel\n• D-Pad Left: Open channel list\n• INFO key: Program details\n• Long press EPG block: Program details\n• Back: Open program guide',
+            'Navigation:\n• D-Pad: Move between items\n• Center/OK: Select\n• Back: Previous screen\n\nPlayer:\n• Center/OK: Open horizontal controls\n• D-Pad Up/Down: Switch channel\n• D-Pad Left: Open channel list\n• INFO key: Program details\n• Long press EPG block: Program details\n• Back: Open program guide',
           )}
           hasTVPreferredFocus={shouldPreferFocus('help')}
           style={[styles.card, styles.helpBtn]}

@@ -248,6 +248,10 @@ export const useKeyboardNavigation = ({
         ui.setShowEPG(false);
         return true;
       }
+      if (ui.showInfoBar && ui.showControls) {
+        ui.setShowInfoBar(false);
+        return true;
+      }
       if (player.channels.length > 0) {
         ui.setShowEPGGrid(true);
         h.enterPIP();
