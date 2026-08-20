@@ -28,6 +28,7 @@ class EpgSyncWorker(context: Context, params: WorkerParameters) :
             // Realm is already initialized.
         }
         val epgUrl          = inputData.getString("epgUrl")          ?: return@withContext Result.failure()
+        val resolvedEpgUrl  = resolveEpgUrl(epgUrl)
         val playlistId      = inputData.getString("playlistId")      ?: return@withContext Result.failure()
         val channelsPath    = inputData.getString("channelsPath")    ?: return@withContext Result.failure()
         val sigRaw          = inputData.getString("datasetSignature")
@@ -45,10 +46,10 @@ class EpgSyncWorker(context: Context, params: WorkerParameters) :
             return@withContext Result.failure()
         }
 
-        Log.d(TAG, "Background EPG sync: playlist=$playlistId url=$epgUrl")
+        Log.d(TAG, "Background EPG sync: playlist=$playlistId")
 
         val prefs      = applicationContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        val lastSyncKey = KEY_LAST_SYNC + playlistId + "_" + epgUrl.hashCode()
+        val lastSyncKey = KEY_LAST_SYNC + playlistId + "_" + resolvedEpgUrl.hashCode()
         val lastSync    = prefs.getLong(lastSyncKey, 0L)
         val now         = System.currentTimeMillis()
 
@@ -58,7 +59,7 @@ class EpgSyncWorker(context: Context, params: WorkerParameters) :
         }
 
         try {
-            val body = fetchEpg(epgUrl) ?: return@withContext Result.retry()
+            val body = fetchEpg(resolvedEpgUrl) ?: return@withContext Result.retry()
 
             val channelIndex = parseChannelsJson(channelsJson)
             val programs     = parseXmlStream(body.byteStream(), playlistId, channelIndex)

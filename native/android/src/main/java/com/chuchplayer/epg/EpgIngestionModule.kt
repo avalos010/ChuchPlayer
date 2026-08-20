@@ -8,6 +8,7 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 import io.realm.Realm
 import kotlinx.coroutines.*
 import okhttp3.*
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.concurrent.TimeUnit
 
 class EpgIngestionModule(reactContext: ReactApplicationContext) :
@@ -45,14 +46,15 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
         datasetSignature: String?,
         promise: Promise
     ) {
-        Log.d(TAG, "startIngestion: playlist=$playlistId url=$epgUrl")
+        val resolvedEpgUrl = resolveEpgUrl(epgUrl)
+        Log.d(TAG, "startIngestion: playlist=$playlistId host=${resolvedEpgUrl.toHttpUrlOrNull()?.host ?: "unknown"}")
 
         scope.launch {
             try {
                 val channelIndex = parseChannelsJson(channelsJson)
                 Log.d(TAG, "Channel index built: ${channelIndex.size} entries")
 
-                val body = fetchWithRetry(epgUrl) { event, map -> sendEvent(event, map) }
+                val body = fetchWithRetry(resolvedEpgUrl) { event, map -> sendEvent(event, map) }
                     ?: run {
                         promise.reject("FETCH_ERROR", "Failed to fetch EPG after retries")
                         return@launch
@@ -66,7 +68,7 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
                     written += writeBatch(batch)
                     sendEvent(EVENT_PROGRESS, Arguments.createMap().apply {
                         putInt("programsProcessed", written)
-                        putString("epgUrl", epgUrl)
+                        putString("epgUrl", resolvedEpgUrl)
                     })
                 }
 
@@ -76,13 +78,13 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
 
                 sendEvent(EVENT_COMPLETE, Arguments.createMap().apply {
                     putInt("programsCount", written)
-                    putString("epgUrl", epgUrl)
+                    putString("epgUrl", resolvedEpgUrl)
                 })
 
                 // Schedule background refresh — failure here must NOT fail the promise
                 // because all data is already written and the metadata updated.
                 try {
-                    scheduleBackgroundSync(epgUrl, playlistId, channelsJson, datasetSignature)
+                    scheduleBackgroundSync(resolvedEpgUrl, playlistId, channelsJson, datasetSignature)
                 } catch (e: Exception) {
                     Log.w(TAG, "Background sync scheduling failed (non-fatal): ${e.message}")
                 }
@@ -93,7 +95,7 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
                 Log.e(TAG, msg, t)
                 sendEvent(EVENT_ERROR, Arguments.createMap().apply {
                     putString("error", msg)
-                    putString("epgUrl", epgUrl)
+                    putString("epgUrl", resolvedEpgUrl)
                 })
                 try { promise.reject("INGESTION_ERROR", msg) } catch (_: Exception) {}
             }

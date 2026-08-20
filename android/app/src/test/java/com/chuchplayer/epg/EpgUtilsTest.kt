@@ -34,10 +34,36 @@ class EpgUtilsTest {
 
         val index = parseChannelsJson(channelsJson)
 
-        assertEquals("internal-espn", index["espnus"]?.id)
-        assertEquals("internal-espn", index["internalespn"]?.id)
-        assertEquals("internal-espn", index["espnplus"]?.id)
-        assertEquals("kids-1", index["kidsplanet"]?.id)
+        assertEquals("internal-espn", index["espnus"]?.single()?.id)
+        assertEquals("internal-espn", index["internalespn"]?.single()?.id)
+        assertEquals("internal-espn", index["espnplus"]?.single()?.id)
+        assertEquals("kids-1", index["kidsplanet"]?.single()?.id)
+    }
+
+    @Test
+    fun resolveEpgUrlBuildsXmltvEndpointFromM3uCredentials() {
+        val result = resolveEpgUrl(
+            "https://example.com/get.php?username=user%40mail.com&password=pa%20ss&type=m3u_plus"
+        )
+
+        assertEquals(
+            "https://example.com/xmltv.php?username=user%40mail.com&password=pa%20ss",
+            result
+        )
+    }
+
+    @Test
+    fun parseChannelsJsonKeepsEveryStreamSharingATvgId() {
+        val channelsJson = """
+            [
+              {"id":"fox-hd", "name":"Fox HD", "tvgId":"fox.us"},
+              {"id":"fox-sd", "name":"Fox SD", "tvgId":"fox.us"}
+            ]
+        """.trimIndent()
+
+        val matches = parseChannelsJson(channelsJson)["foxus"]
+
+        assertEquals(listOf("fox-hd", "fox-sd"), matches?.map { it.id })
     }
 
     @Test
@@ -45,7 +71,7 @@ class EpgUtilsTest {
         val startUtc = utcMillis(2026, Calendar.MAY, 29, 10, 0, 0)
         val builder = ProgramBuilder(
             playlistId = "playlist-1",
-            channelIndex = mapOf("espnus" to ChannelInfo("channel-1", "ESPN", "ESPN.US")),
+            channelIndex = mapOf("espnus" to listOf(ChannelInfo("channel-1", "ESPN", "ESPN.US"))),
             epgChannelId = "ESPN.US",
             start = "20260529120000 +0200",
             stop = ""
@@ -62,7 +88,7 @@ class EpgUtilsTest {
 
     @Test
     fun programBuilderRejectsUnknownChannelsAndInvalidDates() {
-        val channelIndex = mapOf("espnus" to ChannelInfo("channel-1", "ESPN", "ESPN.US"))
+        val channelIndex = mapOf("espnus" to listOf(ChannelInfo("channel-1", "ESPN", "ESPN.US")))
 
         val unknownChannel = ProgramBuilder(
             playlistId = "playlist-1",
@@ -121,6 +147,34 @@ class EpgUtilsTest {
         assertEquals("Live Match Center", programs[0].title)
         assertEquals("Deterministic native unit test program.", programs[0].description)
         assertEquals("ESPN.US", programs[0].epgChannelId)
+    }
+
+    @Test
+    fun parseXmlStreamWritesProgramsForEveryStreamSharingATvgId() {
+        val now = System.currentTimeMillis()
+        val start = formatXmltvDate(now - 10 * 60_000L)
+        val stop = formatXmltvDate(now + 50 * 60_000L)
+        val xml = """
+            <tv>
+              <programme channel="FOX.US" start="$start" stop="$stop">
+                <title>Local News</title>
+              </programme>
+            </tv>
+        """.trimIndent()
+        val channelIndex = parseChannelsJson(
+            """[
+                {"id":"fox-hd", "name":"Fox HD", "tvgId":"FOX.US"},
+                {"id":"fox-sd", "name":"Fox SD", "tvgId":"FOX.US"}
+            ]"""
+        )
+
+        val programs = parseXmlStream(
+            ByteArrayInputStream(xml.toByteArray(Charsets.UTF_8)),
+            "playlist-1",
+            channelIndex
+        )
+
+        assertEquals(listOf("fox-hd", "fox-sd"), programs.map { it.channelId })
     }
 
     private fun utcMillis(

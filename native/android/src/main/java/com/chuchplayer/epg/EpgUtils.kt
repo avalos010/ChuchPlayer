@@ -6,6 +6,7 @@ import io.realm.RealmConfiguration
 import org.json.JSONArray
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.InputStream
 import java.util.*
 
@@ -35,39 +36,65 @@ fun normalizeKeys(value: String): List<String> {
     return listOf(lower, alphaNum, noSpaces, noDashes, noUnder).distinct().filter { it.isNotEmpty() }
 }
 
-fun parseChannelsJson(channelsJson: String): Map<String, ChannelInfo> {
-    val index = mutableMapOf<String, ChannelInfo>()
+fun resolveEpgUrl(sourceUrl: String): String {
+    val url = sourceUrl.toHttpUrlOrNull() ?: return sourceUrl
+    if (!url.encodedPath.endsWith("/get.php", ignoreCase = true)) return sourceUrl
+
+    val username = url.queryParameter("username")?.takeIf { it.isNotBlank() } ?: return sourceUrl
+    val password = url.queryParameter("password")?.takeIf { it.isNotBlank() } ?: return sourceUrl
+    val directory = url.encodedPath.substringBeforeLast('/', "")
+
+    return url.newBuilder()
+        .encodedPath("$directory/xmltv.php")
+        .query(null)
+        .addQueryParameter("username", username)
+        .addQueryParameter("password", password)
+        .fragment(null)
+        .build()
+        .toString()
+}
+
+fun parseChannelsJson(channelsJson: String): Map<String, List<ChannelInfo>> {
+    data class IndexedChannels(val priority: Int, val channels: MutableList<ChannelInfo>)
+
+    val indexed = mutableMapOf<String, IndexedChannels>()
     try {
         val arr = JSONArray(channelsJson)
         for (i in 0 until arr.length()) {
             val obj = arr.getJSONObject(i)
             val id = obj.getString("id")
             val name = obj.optString("name", "")
-            val tvgId = obj.optString("tvgId", null)?.takeIf { it.isNotBlank() }
+            val tvgId = obj.optString("tvgId").takeIf { it.isNotBlank() }
 
             val info = ChannelInfo(id, name, tvgId)
 
-            // tvgId has highest priority
-            tvgId?.let { normalizeKeys(it).forEach { k -> index[k] = info } }
-
-            // id is second priority
-            normalizeKeys(id).forEach { k -> index.putIfAbsent(k, info) }
-
-            // name is lowest priority, but still useful as a fallback when tvgId/id do not match
-            if (name.isNotEmpty()) {
-                normalizeKeys(name).forEach { k -> index.putIfAbsent(k, info) }
+            fun register(value: String?, priority: Int) {
+                if (value.isNullOrBlank()) return
+                normalizeKeys(value).forEach { key ->
+                    val existing = indexed[key]
+                    when {
+                        existing == null || priority < existing.priority ->
+                            indexed[key] = IndexedChannels(priority, mutableListOf(info))
+                        priority == existing.priority && existing.channels.none { it.id == info.id } ->
+                            existing.channels.add(info)
+                    }
+                }
             }
+
+            register(tvgId, 1)
+            register(id, 2)
+            register(name, 3)
         }
     } catch (e: Exception) {
         Log.e(TAG, "Failed to parse channels JSON", e)
     }
-    return index
+    return indexed.mapValues { it.value.channels.toList() }
 }
 
 fun parseXmlStream(
     inputStream: InputStream,
     playlistId: String,
-    channelIndex: Map<String, ChannelInfo>
+    channelIndex: Map<String, List<ChannelInfo>>
 ): List<ProgramData> {
     val programs = mutableListOf<ProgramData>()
     val factory = XmlPullParserFactory.newInstance().apply { isNamespaceAware = false }
@@ -109,9 +136,9 @@ fun parseXmlStream(
                     "programme" -> {
                         currentProgram?.let { program ->
                             totalPrograms++
-                            val built = program.build(lowerBound, upperBound)
-                            if (built != null) {
-                                programs.add(built)
+                            val built = program.buildAll(lowerBound, upperBound)
+                            if (built.isNotEmpty()) {
+                                programs.addAll(built)
                             } else {
                                 when (program.rejectionReason) {
                                     "no-channel" -> noChannelCount++
@@ -209,7 +236,7 @@ data class ChannelInfo(
 
 class ProgramBuilder(
     private val playlistId: String,
-    private val channelIndex: Map<String, ChannelInfo>,
+    private val channelIndex: Map<String, List<ChannelInfo>>,
     var epgChannelId: String,
     var start: String,
     var stop: String
@@ -218,40 +245,45 @@ class ProgramBuilder(
     var description: String? = null
     var rejectionReason: String? = null
 
-    fun build(lowerBound: Long, upperBound: Long): ProgramData? {
+    fun build(lowerBound: Long, upperBound: Long): ProgramData? =
+        buildAll(lowerBound, upperBound).firstOrNull()
+
+    fun buildAll(lowerBound: Long, upperBound: Long): List<ProgramData> {
         rejectionReason = null
-        val info = matchChannel(epgChannelId)
-        if (info == null) {
+        val matches = matchChannels(epgChannelId)
+        if (matches.isEmpty()) {
             rejectionReason = "no-channel"
-            return null
+            return emptyList()
         }
 
         val startMs = parseXmltvDate(start)
         if (startMs == null) {
             rejectionReason = "invalid-date"
-            return null
+            return emptyList()
         }
 
         val endMs = parseXmltvDate(stop) ?: (startMs + 3_600_000L)
         if (endMs < lowerBound || startMs > upperBound) {
             rejectionReason = "outside-window"
-            return null
+            return emptyList()
         }
 
-        return ProgramData(
-            playlistId   = playlistId,
-            channelId    = info.id,
-            title        = title.ifEmpty { "Untitled" },
-            description  = description,
-            start        = startMs,
-            end          = endMs,
-            epgChannelId = epgChannelId
-        )
+        return matches.map { info ->
+            ProgramData(
+                playlistId   = playlistId,
+                channelId    = info.id,
+                title        = title.ifEmpty { "Untitled" },
+                description  = description,
+                start        = startMs,
+                end          = endMs,
+                epgChannelId = epgChannelId
+            )
+        }
     }
 
-    private fun matchChannel(id: String): ChannelInfo? {
-        if (id.isEmpty()) return null
-        return normalizeKeys(id).firstNotNullOfOrNull { channelIndex[it] }
+    private fun matchChannels(id: String): List<ChannelInfo> {
+        if (id.isEmpty()) return emptyList()
+        return normalizeKeys(id).firstNotNullOfOrNull { channelIndex[it] } ?: emptyList()
     }
 
     private fun parseXmltvDate(dateStr: String): Long? {
