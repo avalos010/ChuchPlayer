@@ -1,11 +1,19 @@
 import React, { forwardRef, useEffect, useImperativeHandle } from 'react';
-import { DeviceEventEmitter, NativeModules, requireNativeComponent } from 'react-native';
+import {
+  DeviceEventEmitter,
+  NativeModules,
+  Platform,
+  requireNativeComponent,
+} from 'react-native';
 import type { PlayerPlaybackStatus, PlayerVideoHandle, PlayerVideoProps } from '../../types/video';
 
 const { ExoPlayerModule } = NativeModules;
 
 // Native Media3 PlayerView surface — hardware-accelerated, zero JS rendering overhead
-const ExoPlayerNativeView = requireNativeComponent<{ style?: any }>('ExoPlayerView');
+const ExoPlayerNativeView =
+  Platform.OS === 'android'
+    ? requireNativeComponent<{ style?: any }>('ExoPlayerView')
+    : null;
 
 const READY_STATUS: PlayerPlaybackStatus = {
   isLoaded: true,
@@ -101,6 +109,8 @@ const ExoPlayerVideoView = forwardRef<PlayerVideoHandle, PlayerVideoProps>(
         errorSubscription.remove();
       };
     }, [onLoad, onError, onPlaybackStatusUpdate]);
+
+    if (!ExoPlayerNativeView) return null;
 
     return <ExoPlayerNativeView style={[{ flex: 1 }, style]} />;
   },
