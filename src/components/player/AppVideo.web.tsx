@@ -14,6 +14,7 @@ import type {
   PlayerVideoHandle,
   PlayerVideoProps,
 } from '../../types/video';
+import { getXtreamProxyUrl } from '../../utils/xtreamProxy';
 
 const isHlsUri = (uri: string) =>
   uri.includes('.m3u8') || uri.includes('m3u8') || uri.includes('/hls/');
@@ -57,7 +58,7 @@ const AppVideo = forwardRef<PlayerVideoHandle, PlayerVideoProps>(({
   const shouldPlayRef = useRef(shouldPlay);
   const volumeRef = useRef(volume);
   const mutedRef = useRef(isMuted);
-  const uri = getUri(source);
+  const uri = getXtreamProxyUrl(getUri(source));
 
   const emitStatus = useCallback((status: PlayerPlaybackStatus) => {
     onPlaybackStatusUpdate?.(status);
@@ -190,7 +191,10 @@ const AppVideo = forwardRef<PlayerVideoHandle, PlayerVideoProps>(({
       el.volume = nextVolume;
       emitStatus(snapshotStatus());
     },
-    loadAsync: async (nextSource) => attachSource(getUri(nextSource), shouldPlayRef.current),
+    loadAsync: async (nextSource) => attachSource(
+      getXtreamProxyUrl(getUri(nextSource)),
+      shouldPlayRef.current,
+    ),
   }), [attachSource, clearProgressTimer, destroyHls, emitStatus, onError, snapshotStatus, syncMediaState]);
 
   useEffect(() => {

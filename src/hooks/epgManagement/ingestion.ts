@@ -1,5 +1,6 @@
 import { EPGProgram, Channel } from '../../types';
 import { ingestXmltvToDatabase } from '../../utils/epgParser';
+import { getXtreamProxyUrl } from '../../utils/xtreamProxy';
 import {
   isNativeIngestionAvailable,
   startNativeEpgIngestion,
@@ -27,7 +28,7 @@ export const ingestEpgData = async ({
       const epgUrl = urlsToIngest[i];
       if (i > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
       try {
-        const response = await fetch(epgUrl);
+        const response = await fetch(getXtreamProxyUrl(epgUrl));
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         await ingestXmltvToDatabase({ response, playlistId, channels });
       } catch (error) {

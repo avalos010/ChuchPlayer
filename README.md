@@ -16,6 +16,8 @@ A high-performance Android TV IPTV player built with Expo and React Native. Nati
 - **Disk-Cached Logos** — `expo-image` with `cachePolicy="disk"` for instant logo rendering on re-open
 - **Material Icons** — `@expo/vector-icons` MaterialCommunityIcons throughout the player overlay
 - **Web Player** — Companion web UI with Playwright e2e tests
+- **Web Xtream Proxy** — Metro proxies provider APIs, XMLTV, HLS, and VOD through `/api/xtream` during local web development to avoid browser CORS and mixed-content failures
+- **Large Web Playlists** — Channel and VOD payloads use IndexedDB on web instead of the browser's small `localStorage` quota
 
 ## Quick Start
 
@@ -25,6 +27,8 @@ npm start          # Expo dev server (a=Android, w=Web, i=iOS)
 npm run web        # Web only (fastest for UI work, no video playback)
 npm run android    # Android emulator/device
 ```
+
+The Xtream web proxy is attached to the Expo Metro development server. Static web exports must be hosted behind a server that mounts `server/xtreamProxy.js` at `/api/xtream`; a static file host alone cannot proxy provider traffic.
 
 ## Building for Android TV
 

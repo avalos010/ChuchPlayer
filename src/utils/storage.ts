@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Playlist, Settings, Channel } from '../types';
 import { ensureUniqueChannelIds } from './channelIds';
+import { playlistStorage } from './playlistStorage';
 
 const PLAYLISTS_KEY = '@chuchPlayer:playlists';
 const SETTINGS_KEY = '@chuchPlayer:settings';
@@ -45,7 +46,7 @@ const deserializePlaylist = (stored: StoredPlaylist): Playlist => ({
 
 export const getPlaylists = async (): Promise<Playlist[]> => {
   try {
-    const data = await AsyncStorage.getItem(PLAYLISTS_KEY);
+    const data = await playlistStorage.getItem(PLAYLISTS_KEY);
     if (!data) {
       return [];
     }
@@ -70,7 +71,7 @@ export const savePlaylist = async (playlist: Playlist): Promise<void> => {
     }
 
     const serialized = playlists.map(serializePlaylist);
-    await AsyncStorage.setItem(PLAYLISTS_KEY, JSON.stringify(serialized));
+    await playlistStorage.setItem(PLAYLISTS_KEY, JSON.stringify(serialized));
   } catch (error) {
     console.error('Error saving playlist:', error);
     throw error;
@@ -82,7 +83,7 @@ export const deletePlaylist = async (playlistId: string): Promise<void> => {
     const playlists = await getPlaylists();
     const filtered = playlists.filter(p => p.id !== playlistId);
     const serialized = filtered.map(serializePlaylist);
-    await AsyncStorage.setItem(PLAYLISTS_KEY, JSON.stringify(serialized));
+    await playlistStorage.setItem(PLAYLISTS_KEY, JSON.stringify(serialized));
   } catch (error) {
     console.error('Error deleting playlist:', error);
     throw error;

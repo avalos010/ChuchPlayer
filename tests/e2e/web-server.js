@@ -3,6 +3,7 @@ const { spawnSync } = require('node:child_process');
 const { existsSync, createReadStream, statSync } = require('node:fs');
 const { join, extname } = require('node:path');
 const { tmpdir } = require('node:os');
+const { handleXtreamProxy, isXtreamProxyRequest } = require('../../server/xtreamProxy');
 
 const port = Number(process.argv[2] || process.env.E2E_PORT || 19006);
 const expoPublicE2E = process.env.EXPO_PUBLIC_E2E ?? '1';
@@ -44,6 +45,17 @@ const resolveFile = (url) => {
 };
 
 createServer((req, res) => {
+  if (isXtreamProxyRequest(req.url)) {
+    void handleXtreamProxy(req, res);
+    return;
+  }
+
+  if (new URL(req.url || '/', `http://127.0.0.1:${port}`).pathname === '/__e2e__/blank.html') {
+    res.writeHead(200, { 'content-type': 'text/html' });
+    res.end('<!doctype html><title>Storage test</title>');
+    return;
+  }
+
   const filePath = resolveFile(req.url || '/');
   const type = contentTypes[extname(filePath)] || 'application/octet-stream';
 

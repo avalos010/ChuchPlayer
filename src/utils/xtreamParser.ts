@@ -1,4 +1,5 @@
 import { Channel } from '../types';
+import { getXtreamProxyUrl } from './xtreamProxy';
 
 export interface XtreamCodesCredentials {
   serverUrl: string;
@@ -42,6 +43,29 @@ export interface XtreamCodesCategory {
   parent_id: number;
 }
 
+const fetchXtreamJson = async <T>(url: string, label: string): Promise<T> => {
+  const requestUrl = getXtreamProxyUrl(url);
+  const response = await fetch(requestUrl);
+  if (!response.ok) {
+    throw new Error(`${label}. HTTP status ${response.status}`);
+  }
+
+  const body = await response.text();
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    const proxyRequest = requestUrl.startsWith('/api/xtream?');
+    const proxyActive = response.headers.get('x-chuchplayer-xtream-proxy') === '1';
+    if (proxyRequest && !proxyActive) {
+      throw new Error('Xtream web proxy is not active. Restart the Expo web server and try again.');
+    }
+    if (body.trimStart().startsWith('<')) {
+      throw new Error(`${label}. The provider returned HTML instead of JSON.`);
+    }
+    throw new Error(`${label}. The provider returned invalid JSON.`);
+  }
+};
+
 /**
  * Fetches user info to validate credentials
  */
@@ -53,13 +77,11 @@ export const fetchXtreamUserInfo = async (
     credentials.username
   )}&password=${encodeURIComponent(credentials.password)}`;
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to authenticate. HTTP status ${response.status}`);
-  }
-
-  const data = await response.json();
-  if (!data || data.user_info?.auth === 0) {
+  const data = await fetchXtreamJson<{ user_info?: XtreamCodesUserInfo }>(
+    url,
+    'Failed to authenticate',
+  );
+  if (!data.user_info || data.user_info.auth === 0) {
     throw new Error('Invalid credentials. Please check your username and password.');
   }
 
@@ -77,12 +99,7 @@ export const fetchXtreamCategories = async (
     credentials.username
   )}&password=${encodeURIComponent(credentials.password)}&action=get_live_categories`;
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch categories. HTTP status ${response.status}`);
-  }
-
-  const data = await response.json();
+  const data = await fetchXtreamJson<unknown>(url, 'Failed to fetch categories');
   return Array.isArray(data) ? data : [];
 };
 
@@ -97,12 +114,7 @@ export const fetchXtreamStreams = async (
     credentials.username
   )}&password=${encodeURIComponent(credentials.password)}&action=get_live_streams`;
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch streams. HTTP status ${response.status}`);
-  }
-
-  const data = await response.json();
+  const data = await fetchXtreamJson<unknown>(url, 'Failed to fetch streams');
   return Array.isArray(data) ? data : [];
 };
 
