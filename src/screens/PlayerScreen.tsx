@@ -89,6 +89,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const {
     getProgramsForChannel,
     getCurrentProgram,
+    peekCurrentProgram,
     epgLoading,
     epgError,
     epgLastUpdated,
@@ -442,7 +443,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       <ChannelListPanel
         onChannelSelect={handleChannelSelect}
         onCatchupSelect={handleCatchupSelect}
-        getCurrentProgram={getCurrentProgram}
+        getCurrentProgram={peekCurrentProgram}
         getProgramsForChannel={getProgramsForChannel}
         epgLastUpdated={epgLastUpdated}
         showChannelNumbers={interfacePreferences.showChannelNumbers}

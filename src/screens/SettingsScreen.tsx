@@ -269,21 +269,22 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
         ? playlists.find((playlist) => playlist.id === editingPlaylistId) ?? null
         : null;
       let channels: Playlist['channels'] = [];
+      let vodItems: Playlist['vodItems'] = [];
       let playlistUrl = '';
       let epgUrls: string[] = [];
       let xtreamCredentials;
 
       if (sourceType === 'm3u') {
         const data = await fetchM3UPlaylist(newPlaylistUrl.trim());
-        channels = data.channels; epgUrls = data.epgUrls; playlistUrl = newPlaylistUrl.trim();
+        channels = data.channels; vodItems = data.vodItems; epgUrls = data.epgUrls; playlistUrl = newPlaylistUrl.trim();
       } else {
         const creds = { serverUrl: xtreamServerUrl.trim(), username: xtreamUsername.trim(), password: xtreamPassword.trim() };
         const data = await fetchXtreamPlaylist(creds);
-        channels = data.channels; epgUrls = data.epgUrls;
+        channels = data.channels; vodItems = data.vodItems; epgUrls = data.epgUrls;
         playlistUrl = `${creds.serverUrl}/player_api.php`; xtreamCredentials = creds;
       }
 
-      if (!channels.length) { setTimeout(() => showError('No channels found in this playlist.'), 100); return; }
+      if (!channels.length && !vodItems.length) { setTimeout(() => showError('No live channels or VOD titles found in this playlist.'), 100); return; }
 
       const now = new Date();
       const playlist: Playlist = {
@@ -292,6 +293,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
         url: playlistUrl,
         sourceType,
         channels,
+        vodItems,
         epgUrls,
         createdAt: existingPlaylist?.createdAt ?? now,
         updatedAt: now,
@@ -318,9 +320,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
       }
 
       if (!existingPlaylist) {
-        useUIStore.getState().setShowEPGGrid(true);
-        navigation.navigate('Player', {});
-        setTimeout(() => showSuccess(`Added ${channels.length} channels.`), 100);
+        if (channels.length) {
+          useUIStore.getState().setShowEPGGrid(true);
+          navigation.navigate('Player', {});
+        } else {
+          navigation.navigate('VodCatalog');
+        }
+        setTimeout(() => showSuccess(`Added ${channels.length} channels and ${vodItems.length} movies.`), 100);
       } else {
         setTimeout(() => showSuccess(`Updated "${playlist.name}".`), 100);
       }
@@ -380,13 +386,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
         try {
           let refreshed: Playlist | null = null;
           if (pl.sourceType === 'm3u') {
-            const { channels, epgUrls } = await fetchM3UPlaylist(pl.url);
-            if (!channels.length) throw new Error('No channels.');
-            refreshed = { ...pl, channels, epgUrls, updatedAt: new Date() };
+            const { channels, vodItems, epgUrls } = await fetchM3UPlaylist(pl.url);
+            if (!channels.length && !vodItems.length) throw new Error('No content.');
+            refreshed = { ...pl, channels, vodItems, epgUrls, updatedAt: new Date() };
           } else if (pl.sourceType === 'xtream' && pl.xtreamCredentials) {
-            const { channels, epgUrls } = await fetchXtreamPlaylist(pl.xtreamCredentials);
-            if (!channels.length) throw new Error('No channels.');
-            refreshed = { ...pl, channels, epgUrls, updatedAt: new Date() };
+            const { channels, vodItems, epgUrls } = await fetchXtreamPlaylist(pl.xtreamCredentials);
+            if (!channels.length && !vodItems.length) throw new Error('No content.');
+            refreshed = { ...pl, channels, vodItems, epgUrls, updatedAt: new Date() };
           }
           if (!refreshed) throw new Error('Unsupported type.');
           await savePlaylist(refreshed);
@@ -434,8 +440,20 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
     <View style={styles.playlistRow}>
       <View style={{ flex: 1 }}>
         <Text style={styles.playlistName} numberOfLines={1}>{item.name}</Text>
-        <Text style={styles.playlistMeta}>{item.channels.length} channels · {item.sourceType.toUpperCase()}</Text>
+        <Text style={styles.playlistMeta}>{item.channels.length} channels · {item.vodItems?.length ?? 0} movies · {item.sourceType.toUpperCase()}</Text>
       </View>
+      {item.sourceType === 'xtream' || (item.vodItems?.length ?? 0) > 0 ? (
+        <FocusableItem
+          onPress={() => {
+            usePlayerStore.getState().setPlaylist(item);
+            navigation.navigate('VodCatalog');
+          }}
+          style={styles.editBtn}
+          focusedStyle={BTN_FOCUSED}
+        >
+          <Text style={styles.editBtnTxt}>Movies</Text>
+        </FocusableItem>
+      ) : null}
       <FocusableItem
         onPress={() => openEditPlaylistModal(item)}
         style={styles.editBtn}

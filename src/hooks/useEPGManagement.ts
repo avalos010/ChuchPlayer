@@ -97,10 +97,6 @@ export const useEPGManagement = () => {
       const fetchIds = targetIds.filter(
         (id) => !pendingChannelLoadsRef.current.has(id),
       );
-      if (fetchIds.length > 0) {
-        console.log("[EPG] Loading programs for channels:", fetchIds);
-      }
-
       if (fetchIds.length === 0) {
         return false;
       }
@@ -108,19 +104,11 @@ export const useEPGManagement = () => {
       fetchIds.forEach((id) => pendingChannelLoadsRef.current.add(id));
 
       try {
-        console.log(
-          `[EPG] Loading programs for channels: ${fetchIds.join(", ")}`,
-        );
         const result = await queryProgramsForChannels(playlist.id, fetchIds);
-        console.log("[EPG] Loaded programs for channels:", Object.keys(result));
         let foundAny = false;
 
-        // Debug: log what we found
         fetchIds.forEach((id) => {
           const programs = result[id] ?? [];
-          console.log(
-            `[EPG] Found ${programs.length} programs for channel ${id}`,
-          );
           if (programs.length > 0 && !foundAny) {
             foundAny = true;
           }
@@ -402,6 +390,19 @@ export const useEPGManagement = () => {
     [getProgramsForChannel],
   );
 
+  const peekCurrentProgram = useCallback(
+    (channelId: string): EPGProgram | null => {
+      const programs = programsByChannel[channelId] ?? [];
+      const now = new Date();
+      return (
+        programs.find((program) => program.start <= now && program.end > now) ||
+        programs[0] ||
+        null
+      );
+    },
+    [programsByChannel],
+  );
+
   const forceRefresh = useCallback(() => {
     loadedSignatureRef.current = null;
     lastFetchTimeRef.current = 0;
@@ -414,6 +415,7 @@ export const useEPGManagement = () => {
   return {
     getProgramsForChannel,
     getCurrentProgram,
+    peekCurrentProgram,
     epgLoading: epgStatus.loading,
     epgError: epgStatus.error,
     epgLastUpdated,

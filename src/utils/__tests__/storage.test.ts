@@ -178,11 +178,49 @@ describe('playlists', () => {
     expect(retrieved.epgUrls).toEqual(['https://epg1.com/guide.xml', 'https://epg2.com/guide.xml']);
   });
 
+  it('preserves the VOD catalog through serialization', async () => {
+    await savePlaylist(makePlaylist({
+      vodItems: [{
+        id: 'movie-1',
+        name: 'Example Movie',
+        url: 'https://stream.example.com/movie.mp4',
+        group: 'Drama',
+      }],
+    }));
+
+    const [retrieved] = await getPlaylists();
+    expect(retrieved.vodItems).toEqual([
+      expect.objectContaining({ id: 'movie-1', group: 'Drama' }),
+    ]);
+  });
+
+  it('chunks large VOD catalogs into bounded Android storage rows', async () => {
+    const vodItems = Array.from({ length: 2200 }, (_, index) => ({
+      id: `movie-${index}`,
+      name: `Movie ${index}`,
+      url: `https://stream.example.com/movie/${index}.mp4`,
+      plot: 'A'.repeat(600),
+    }));
+    await savePlaylist(makePlaylist({ vodItems }));
+
+    const keys = await AsyncStorage.getAllKeys();
+    const vodKeys = keys.filter((key) => key.includes(':vod:'));
+    const rows = await AsyncStorage.multiGet(vodKeys);
+    const [retrieved] = await getPlaylists();
+
+    expect(vodKeys.length).toBeGreaterThan(1);
+    expect(rows.every(([, value]) => (value?.length ?? 0) < 400_000)).toBe(true);
+    expect(retrieved.vodItems).toHaveLength(vodItems.length);
+  });
+
   it('defaults sourceType to m3u for old records missing the field', async () => {
-    (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce(
-      JSON.stringify([{ id: 'pl-x', name: 'Old', url: 'http://x.com', channels: [], createdAt: '2024-01-01T00:00:00.000Z', updatedAt: '2024-01-01T00:00:00.000Z' }])
-    );
+    (AsyncStorage.getItem as jest.Mock)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(
+        JSON.stringify([{ id: 'pl-x', name: 'Old', url: 'http://x.com', channels: [], createdAt: '2024-01-01T00:00:00.000Z', updatedAt: '2024-01-01T00:00:00.000Z' }])
+      );
     const playlists = await getPlaylists();
     expect(playlists[0].sourceType).toBe('m3u');
+    expect(playlists[0].vodItems).toEqual([]);
   });
 });

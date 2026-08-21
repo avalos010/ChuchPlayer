@@ -111,6 +111,9 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   const isPlaying       = usePlayerStore((st) => st.isPlaying);
   const resizeMode      = usePlayerStore((st) => st.resizeMode);
   const cycleResizeMode = usePlayerStore((st) => st.cycleResizeMode);
+  const hasVod          = usePlayerStore((st) => (
+    st.playlist?.sourceType === 'xtream' || (st.playlist?.vodItems?.length ?? 0) > 0
+  ));
   const showInfoBar     = useUIStore((st) => st.showInfoBar);
   const setShowInfoBar  = useUIStore((st) => st.setShowInfoBar);
 
@@ -122,7 +125,10 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   const [focused, setFocused]   = React.useState(false);
   const [imgErr, setImgErr]     = React.useState(false);
   const [focusedControlIndex, setFocusedControlIndex] = React.useState(0);
-  const controlCount = onMultiScreen ? 8 : 7;
+  const vodOffset = hasVod ? 1 : 0;
+  const multiIndex = 3 + vodOffset;
+  const guideIndex = multiIndex + (onMultiScreen ? 1 : 0);
+  const controlCount = guideIndex + 4;
 
   React.useEffect(() => { setImgErr(false); }, [channel?.id]);
 
@@ -316,14 +322,28 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                 hasTVPreferredFocus={focusedControlIndex === 2}
               />
 
+              {hasVod ? (
+                <Ctrl
+                  icon="movie-open-outline"
+                  label="Movies"
+                  onPress={() => {
+                    setShowInfoBar(false);
+                    navigation?.replace('VodCatalog');
+                  }}
+                  onFocus={() => onFocus(3)}
+                  onBlur={onBlur}
+                  hasTVPreferredFocus={focusedControlIndex === 3}
+                />
+              ) : null}
+
               {onMultiScreen && (
                 <Ctrl
                   icon="picture-in-picture-top-right"
                   label="Multi"
                   onPress={onMultiScreen}
-                  onFocus={() => onFocus(3)}
+                  onFocus={() => onFocus(multiIndex)}
                   onBlur={onBlur}
-                  hasTVPreferredFocus={focusedControlIndex === 3}
+                  hasTVPreferredFocus={focusedControlIndex === multiIndex}
                 />
               )}
 
@@ -334,18 +354,18 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                   setShowInfoBar(false);
                   useUIStore.getState().setShowEPGGrid(true);
                 }}
-                onFocus={() => onFocus(onMultiScreen ? 4 : 3)}
+                onFocus={() => onFocus(guideIndex)}
                 onBlur={onBlur}
-                hasTVPreferredFocus={focusedControlIndex === (onMultiScreen ? 4 : 3)}
+                hasTVPreferredFocus={focusedControlIndex === guideIndex}
               />
 
               <Ctrl
                 icon="sleep"
                 label="Sleep"
                 onPress={onSleepTimer}
-                onFocus={() => onFocus(onMultiScreen ? 5 : 4)}
+                onFocus={() => onFocus(guideIndex + 1)}
                 onBlur={onBlur}
-                hasTVPreferredFocus={focusedControlIndex === (onMultiScreen ? 5 : 4)}
+                hasTVPreferredFocus={focusedControlIndex === guideIndex + 1}
               />
 
               <Ctrl
@@ -355,18 +375,18 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                   setShowInfoBar(false);
                   setTimeout(() => navigation?.navigate('Settings', { focusTarget: 'interface' }), 80);
                 }}
-                onFocus={() => onFocus(onMultiScreen ? 6 : 5)}
+                onFocus={() => onFocus(guideIndex + 2)}
                 onBlur={onBlur}
-                hasTVPreferredFocus={focusedControlIndex === (onMultiScreen ? 6 : 5)}
+                hasTVPreferredFocus={focusedControlIndex === guideIndex + 2}
               />
 
               <Ctrl
                 icon="close-circle-outline"
                 label="Close"
                 onPress={closeControls}
-                onFocus={() => onFocus(onMultiScreen ? 7 : 6)}
+                onFocus={() => onFocus(guideIndex + 3)}
                 onBlur={onBlur}
-                hasTVPreferredFocus={focusedControlIndex === (onMultiScreen ? 7 : 6)}
+                hasTVPreferredFocus={focusedControlIndex === guideIndex + 3}
               />
             </View>
           </>

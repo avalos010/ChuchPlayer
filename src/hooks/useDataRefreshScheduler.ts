@@ -59,13 +59,14 @@ export const useDataRefreshScheduler = () => {
         }
 
         if (playlist.sourceType === 'm3u') {
-          const { channels, epgUrls } = await fetchM3UPlaylist(playlist.url);
-          if (!channels.length) {
+          const { channels, vodItems, epgUrls } = await fetchM3UPlaylist(playlist.url);
+          if (!channels.length && !vodItems.length) {
             return;
           }
           const updated: Playlist = {
             ...playlist,
             channels,
+            vodItems,
             epgUrls,
             updatedAt: new Date(),
           };
@@ -73,13 +74,14 @@ export const useDataRefreshScheduler = () => {
           state.setPlaylist(updated);
           await savePlaylist(updated);
         } else if (playlist.sourceType === 'xtream' && playlist.xtreamCredentials) {
-          const { channels, epgUrls } = await fetchXtreamPlaylist(playlist.xtreamCredentials);
-          if (!channels.length) {
+          const { channels, vodItems, epgUrls } = await fetchXtreamPlaylist(playlist.xtreamCredentials);
+          if (!channels.length && !vodItems.length) {
             return;
           }
           const updated: Playlist = {
             ...playlist,
             channels,
+            vodItems,
             epgUrls,
             updatedAt: new Date(),
           };
@@ -196,7 +198,6 @@ export const useDataRefreshScheduler = () => {
 
       if (playlist && playlist.id !== prevPlaylist?.id) {
         schedule();
-        void refreshAll();
         setTriggerRefresh(() => refreshAll());
       } else if (!playlist && prevPlaylist) {
         clearTimers();

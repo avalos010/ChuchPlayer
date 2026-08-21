@@ -8,6 +8,9 @@ export type PlayerPlaybackStatus =
       isPlaying: boolean;
       isBuffering: boolean;
       didJustFinish: boolean;
+      positionMillis?: number;
+      playableDurationMillis?: number;
+      durationMillis?: number;
       error?: string;
     }
   | {
@@ -21,6 +24,8 @@ export interface PlayerVideoHandle {
   unloadAsync: () => Promise<void>;
   setVolumeAsync: (volume: number) => Promise<void>;
   loadAsync: (source: AVPlaybackSource) => Promise<PlayerPlaybackStatus>;
+  seekToAsync: (positionMillis: number) => Promise<PlayerPlaybackStatus>;
+  getStatusAsync: () => Promise<PlayerPlaybackStatus>;
 }
 
 export interface PlayerVideoProps {

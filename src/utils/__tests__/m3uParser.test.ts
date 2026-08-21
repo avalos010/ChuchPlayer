@@ -108,6 +108,27 @@ https://stream.example.com/real.m3u8`;
     });
   });
 
+  describe('VOD parsing', () => {
+    it('separates movie files from live channels', () => {
+      const m3u = `#EXTM3U
+#EXTINF:-1 tvg-logo="https://example.com/poster.jpg" group-title="Action",Example Movie
+https://stream.example.com/movie/user/pass/201.mkv
+#EXTINF:-1 group-title="News",Live Channel
+https://stream.example.com/live/channel.m3u8`;
+
+      const result = parseM3U(m3u);
+
+      expect(result.channels).toHaveLength(1);
+      expect(result.vodItems).toHaveLength(1);
+      expect(result.vodItems[0]).toMatchObject({
+        name: 'Example Movie',
+        group: 'Action',
+        poster: 'https://example.com/poster.jpg',
+        extension: 'mkv',
+      });
+    });
+  });
+
   describe('EPG URL extraction', () => {
     it('extracts url-tvg from header', () => {
       const { epgUrls } = parseM3U(EPG_URL_M3U);

@@ -54,6 +54,11 @@ const ExoPlayerVideoView = forwardRef<PlayerVideoHandle, PlayerVideoProps>(
         if (url) await ExoPlayerModule.loadSource(url);
         return PAUSED_STATUS;
       },
+      seekToAsync: async (positionMillis: number) => {
+        await ExoPlayerModule.seekTo(positionMillis);
+        return ExoPlayerModule.getPlaybackInfo();
+      },
+      getStatusAsync: async () => ExoPlayerModule.getPlaybackInfo(),
     }));
 
     // Load source whenever the URI changes (PlayerVideoStage re-keys this component on channel change)

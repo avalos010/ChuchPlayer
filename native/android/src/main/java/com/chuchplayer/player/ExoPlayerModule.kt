@@ -156,6 +156,30 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
   }
 
   @ReactMethod
+  fun getPlaybackInfo(promise: Promise) {
+    scope.launch {
+      try {
+        val p = ExoPlayerHolder.player
+        if (p == null) {
+          promise.resolve(Arguments.createMap().apply { putBoolean("isLoaded", false) })
+          return@launch
+        }
+        promise.resolve(Arguments.createMap().apply {
+          putBoolean("isLoaded", true)
+          putBoolean("isPlaying", p.isPlaying)
+          putBoolean("isBuffering", p.playbackState == Player.STATE_BUFFERING)
+          putBoolean("didJustFinish", p.playbackState == Player.STATE_ENDED)
+          putDouble("positionMillis", p.currentPosition.toDouble())
+          putDouble("playableDurationMillis", p.bufferedPosition.toDouble())
+          putDouble("durationMillis", if (p.duration == C.TIME_UNSET) 0.0 else p.duration.toDouble())
+        })
+      } catch (e: Exception) {
+        promise.reject("STATUS_ERROR", e.message)
+      }
+    }
+  }
+
+  @ReactMethod
   fun setBufferConfig(minMs: Int, maxMs: Int, promise: Promise) {
     Log.d(TAG, "setBufferConfig: min=$minMs max=$maxMs (requires player rebuild)")
     promise.resolve(true)

@@ -9,6 +9,20 @@ export interface Channel {
   catchupAvailable?: boolean;
 }
 
+export interface VodItem {
+  id: string;
+  name: string;
+  url: string;
+  poster?: string;
+  backdrop?: string;
+  group?: string;
+  plot?: string;
+  rating?: string;
+  releaseDate?: string;
+  duration?: string;
+  extension?: string;
+}
+
 export interface EPGProgram {
   id: string;
   channelId: string;
@@ -29,6 +43,7 @@ export interface Playlist {
   url: string;
   sourceType: PlaylistSourceType;
   channels: Channel[];
+  vodItems?: VodItem[];
   epgUrls?: string[];
   createdAt: Date;
   updatedAt: Date;
@@ -71,5 +86,7 @@ export type SettingsFocusTarget =
 
 export type RootStackParamList = {
   Player: { channel?: Channel };
+  VodCatalog: undefined;
+  VodPlayer: { item: VodItem };
   Settings: { focusTarget?: SettingsFocusTarget } | undefined;
 };

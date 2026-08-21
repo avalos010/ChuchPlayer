@@ -19,6 +19,7 @@ import com.chuchplayer.epg.EpgIngestionPackage
 import com.chuchplayer.input.TvInputDialogPackage
 import com.chuchplayer.player.ExoPlayerPackage
 import com.chuchplayer.player.MultiExoPlayerPackage
+import com.chuchplayer.playlist.PlaylistParserPackage
 import com.chuchplayer.updater.AppUpdaterPackage
 
 class MainApplication : Application(), ReactApplication {
@@ -35,6 +36,7 @@ class MainApplication : Application(), ReactApplication {
               add(TvInputDialogPackage())
               add(ExoPlayerPackage())
               add(MultiExoPlayerPackage())
+              add(PlaylistParserPackage())
               add(AppUpdaterPackage())
             }
 

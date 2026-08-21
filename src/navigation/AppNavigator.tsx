@@ -5,10 +5,13 @@ import { View, ActivityIndicator, Platform } from 'react-native';
 import { RootStackParamList } from '../types';
 import { getLastChannel, getPlaylists } from '../utils/storage';
 import { useThemeStore } from '../store/useThemeStore';
+import { usePlayerStore } from '../store/usePlayerStore';
 
 import PlayerScreen from '../screens/PlayerScreen';
 import WebPlayerScreen from '../screens/WebPlayerScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import VodCatalogScreen from '../screens/VodCatalogScreen';
+import VodPlayerScreen from '../screens/VodPlayerScreen';
 
 const ActivePlayerScreen = Platform.OS === 'web' ? WebPlayerScreen : PlayerScreen;
 
@@ -40,6 +43,14 @@ const AppNavigator = () => {
         if (playlists.length === 0) {
           console.log('No playlists found, starting on Settings screen');
           setInitialRoute('Settings');
+          return;
+        }
+
+        if (playlists.every((playlist) => playlist.channels.length === 0) && playlists.some((playlist) => playlist.vodItems?.length)) {
+          const vodPlaylist = playlists.find((playlist) => playlist.vodItems?.length) ?? playlists[0];
+          usePlayerStore.getState().setPlaylist(vodPlaylist);
+          usePlayerStore.getState().setChannels(vodPlaylist.channels);
+          setInitialRoute('VodCatalog');
           return;
         }
 
@@ -102,6 +113,16 @@ const AppNavigator = () => {
           component={ActivePlayerScreen}
           options={{ headerShown: false }}
           initialParams={initialChannel ? { channel: initialChannel } : { channel: undefined }}
+        />
+        <Stack.Screen
+          name="VodCatalog"
+          component={VodCatalogScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="VodPlayer"
+          component={VodPlayerScreen}
+          options={{ headerShown: false }}
         />
         <Stack.Screen
           name="Settings"

@@ -1,9 +1,12 @@
 import {
   parseXtreamStreams,
+  parseXtreamVodStreams,
   buildXtreamStreamUrl,
+  buildXtreamVodUrl,
   XtreamCodesCredentials,
   XtreamCodesStream,
   XtreamCodesCategory,
+  XtreamCodesVodStream,
 } from '../xtreamParser';
 
 const CREDS: XtreamCodesCredentials = {
@@ -31,6 +34,21 @@ const makeStream = (overrides: Partial<XtreamCodesStream> = {}): XtreamCodesStre
   tv_archive: 0,
   direct_source: '',
   tv_archive_duration: 0,
+  ...overrides,
+});
+
+const makeVodStream = (overrides: Partial<XtreamCodesVodStream> = {}): XtreamCodesVodStream => ({
+  num: 1,
+  name: 'Example Movie',
+  stream_type: 'movie',
+  stream_id: 501,
+  stream_icon: 'https://example.com/poster.jpg',
+  category_id: '2',
+  container_extension: 'mkv',
+  rating: '8.2',
+  plot: 'A test movie.',
+  releaseDate: '2026-01-10',
+  duration: '01:42:00',
   ...overrides,
 });
 
@@ -115,5 +133,26 @@ describe('parseXtreamStreams', () => {
     const noIds = makeStream({ epg_channel_id: '', custom_sid: '' });
     const channels = parseXtreamStreams([noIds], CREDS, CATEGORIES);
     expect(channels[0].tvgId).toBeUndefined();
+  });
+});
+
+describe('Xtream VOD', () => {
+  it('builds a movie URL with the provider extension', () => {
+    expect(buildXtreamVodUrl(CREDS, 501, 'mkv')).toBe(
+      'https://xtream.example.com/movie/testuser/testpass/501.mkv',
+    );
+  });
+
+  it('converts movie streams and resolves their categories', () => {
+    const [movie] = parseXtreamVodStreams([makeVodStream()], CREDS, CATEGORIES);
+
+    expect(movie).toMatchObject({
+      id: 'xtream-vod-501',
+      name: 'Example Movie',
+      group: 'Sports',
+      extension: 'mkv',
+      rating: '8.2',
+    });
+    expect(movie.url).toContain('/movie/testuser/testpass/501.mkv');
   });
 });

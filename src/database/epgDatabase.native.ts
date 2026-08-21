@@ -90,16 +90,9 @@ export const queryProgramsForChannels = async (
       }[]
     > = await getNativeModule().queryPrograms(playlistId, channelIds);
 
-    console.log(
-      `[EPG] queryProgramsForChannels playlist=${playlistId} requested=${channelIds.length} returned=${Object.keys(result).length} keys=${Object.keys(result).join(",")}`,
-    );
-
     const grouped: Record<string, EPGProgram[]> = {};
     for (const channelId of channelIds) {
       const programs = result[channelId] ?? [];
-      console.log(
-        `[EPG] queryProgramsForChannels channel=${channelId} count=${programs.length}`,
-      );
       grouped[channelId] = programs.map((p) => ({
         id: p.id,
         channelId: p.channelId,

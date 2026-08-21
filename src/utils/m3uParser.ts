@@ -1,10 +1,13 @@
-import { Channel } from '../types';
+import { Channel, VodItem } from '../types';
 import { ensureUniqueChannelIds } from './channelIds';
 
 export interface ParsedM3UPlaylist {
   channels: Channel[];
+  vodItems: VodItem[];
   epgUrls: string[];
 }
+
+const VOD_URL_PATTERN = /\/(movie|vod)\/|\.(mp4|mkv|avi|mov|wmv)(?:\?|$)/i;
 
 const splitPotentialUrlList = (value: string): string[] => {
   return value
@@ -22,6 +25,7 @@ const splitPotentialUrlList = (value: string): string[] => {
 
 export const parseM3U = (content: string): ParsedM3UPlaylist => {
   const channels: Channel[] = [];
+  const vodItems: VodItem[] = [];
   const epgUrlSet = new Set<string>();
   const lines = content.split('\n').map(line => line.trim());
 
@@ -99,10 +103,19 @@ export const parseM3U = (content: string): ParsedM3UPlaylist => {
       line.startsWith('rtmp://')
     ) {
       if (currentChannel.name) {
-        channels.push({
-          ...(currentChannel as Omit<Channel, 'url'>),
-          url: line,
-        });
+        const item = { ...(currentChannel as Omit<Channel, 'url'>), url: line };
+        if (VOD_URL_PATTERN.test(line)) {
+          vodItems.push({
+            id: `m3u-vod-${item.id}-${vodItems.length}`,
+            name: item.name,
+            url: item.url,
+            poster: item.logo,
+            group: item.group,
+            extension: line.match(/\.([a-z0-9]+)(?:\?|$)/i)?.[1],
+          });
+        } else {
+          channels.push(item);
+        }
       }
       currentChannel = {};
     }
@@ -110,6 +123,7 @@ export const parseM3U = (content: string): ParsedM3UPlaylist => {
 
   return {
     channels: ensureUniqueChannelIds(channels),
+    vodItems,
     epgUrls: Array.from(epgUrlSet),
   };
 };
@@ -129,13 +143,14 @@ export const fetchM3UPlaylist = async (url: string): Promise<ParsedM3UPlaylist> 
     throw new Error('Playlist appears to be empty.');
   }
 
-  const { channels, epgUrls } = parseM3U(content);
-  if (channels.length === 0) {
-    throw new Error('No valid channels found in the playlist.');
+  const { channels, vodItems, epgUrls } = parseM3U(content);
+  if (channels.length === 0 && vodItems.length === 0) {
+    throw new Error('No valid channels or VOD titles found in the playlist.');
   }
 
   return {
     channels,
+    vodItems,
     epgUrls,
   };
 };

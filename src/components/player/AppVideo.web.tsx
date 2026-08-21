@@ -72,6 +72,9 @@ const AppVideo = forwardRef<PlayerVideoHandle, PlayerVideoProps>(({
       isPlaying: !!el && !el.paused && !el.ended,
       isBuffering: !!el && el.readyState < 3,
       didJustFinish: !!el && el.ended,
+      positionMillis: el ? el.currentTime * 1000 : 0,
+      playableDurationMillis: el?.buffered.length ? el.buffered.end(el.buffered.length - 1) * 1000 : 0,
+      durationMillis: el && Number.isFinite(el.duration) ? el.duration * 1000 : 0,
       ...(overrides ?? {}),
     };
   }, []);
@@ -195,6 +198,12 @@ const AppVideo = forwardRef<PlayerVideoHandle, PlayerVideoProps>(({
       getXtreamProxyUrl(getUri(nextSource)),
       shouldPlayRef.current,
     ),
+    seekToAsync: async (positionMillis) => {
+      const el = videoRef.current;
+      if (el) el.currentTime = positionMillis / 1000;
+      return emitStatus(snapshotStatus());
+    },
+    getStatusAsync: async () => snapshotStatus(),
   }), [attachSource, clearProgressTimer, destroyHls, emitStatus, onError, snapshotStatus, syncMediaState]);
 
   useEffect(() => {
