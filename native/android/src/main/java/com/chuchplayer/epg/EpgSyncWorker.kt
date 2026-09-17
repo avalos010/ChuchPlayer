@@ -39,13 +39,6 @@ class EpgSyncWorker(context: Context, params: WorkerParameters) :
             Log.e(TAG, "Channels file missing at $channelsPath")
             return@withContext Result.failure()
         }
-        val channelsJson = try {
-            channelsFile.readText()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to read channels file", e)
-            return@withContext Result.failure()
-        }
-
         Log.d(TAG, "Background EPG sync: playlist=$playlistId")
 
         val prefs      = applicationContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -59,20 +52,45 @@ class EpgSyncWorker(context: Context, params: WorkerParameters) :
         }
 
         try {
-            val body = fetchEpg(resolvedEpgUrl) ?: return@withContext Result.retry()
+            if (foregroundIngestionCount.get() > 0) {
+                Log.d(TAG, "Skipping — foreground EPG import is active")
+                return@withContext Result.retry()
+            }
+            if (!epgIngestionMutex.tryLock()) {
+                Log.d(TAG, "Skipping — another EPG import is active")
+                return@withContext Result.retry()
+            }
+            try {
+                val channelsJson = try {
+                    channelsFile.readText()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to read channels file", e)
+                    return@withContext Result.failure()
+                }
+                val body = fetchEpg(resolvedEpgUrl) ?: return@withContext Result.retry()
+                val channelIndex = parseChannelsJson(channelsJson)
+                var inserted = 0
+                body.use {
+                    if (isStopped || foregroundIngestionCount.get() > 0) {
+                        return@withContext Result.retry()
+                    }
+                    val parsed = streamXmlPrograms(it.byteStream(), playlistId, channelIndex) { batch ->
+                        if (isStopped || foregroundIngestionCount.get() > 0) {
+                            throw kotlinx.coroutines.CancellationException()
+                        }
+                        inserted += writeProgramsToRealm(batch)
+                    }
+                    Log.d(TAG, "Parsed $parsed programs")
+                }
 
-            val channelIndex = parseChannelsJson(channelsJson)
-            val programs     = parseXmlStream(body.byteStream(), playlistId, channelIndex)
-            Log.d(TAG, "Parsed ${programs.size} programs")
-
-            val inserted = writeProgramsToRealm(programs)
-            Log.d(TAG, "Inserted $inserted programs")
-
-            if (datasetSig != null) updatePlaylistMetadata(playlistId, datasetSig)
-
-            prefs.edit().putLong(lastSyncKey, now).apply()
-            Log.d(TAG, "Background sync complete")
-            Result.success()
+                Log.d(TAG, "Inserted $inserted programs")
+                if (datasetSig != null) updatePlaylistMetadata(playlistId, datasetSig)
+                prefs.edit().putLong(lastSyncKey, now).apply()
+                Log.d(TAG, "Background sync complete")
+                Result.success()
+            } finally {
+                epgIngestionMutex.unlock()
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Background sync failed", e)
             Result.retry()

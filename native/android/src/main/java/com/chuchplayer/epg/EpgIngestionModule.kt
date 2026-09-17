@@ -7,8 +7,10 @@ import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import io.realm.Realm
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.withLock
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 class EpgIngestionModule(reactContext: ReactApplicationContext) :
@@ -16,6 +18,7 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
 
     init {
         ensureRealmInitialized(reactContext.applicationContext)
+        cancelLegacyBackgroundSyncs(reactContext.applicationContext)
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -28,12 +31,22 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    private fun cancelLegacyBackgroundSyncs(context: Context) {
+        val prefs = context.getSharedPreferences("epg_sync_prefs", Context.MODE_PRIVATE)
+        if (prefs.getBoolean("bounded_ingestion_v1", false)) return
+        WorkManager.getInstance(context).cancelAllWorkByTag("epg_sync")
+        prefs.edit().putBoolean("bounded_ingestion_v1", true).apply()
+    }
+
     companion object {
         private const val TAG            = "EpgIngestionModule"
         private const val EVENT_PROGRESS = "EPG_INGESTION_PROGRESS"
         private const val EVENT_COMPLETE = "EPG_INGESTION_COMPLETE"
         private const val EVENT_ERROR    = "EPG_INGESTION_ERROR"
         private const val SYNC_HOURS     = 4L
+        private val activeIngestions = ConcurrentHashMap<String, CompletableDeferred<Int>>()
+        private val syncLock = Any()
+        private var scheduledPlaylistId: String? = null
     }
 
     override fun getName() = "EpgIngestionModule"
@@ -47,34 +60,52 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
         promise: Promise
     ) {
         val resolvedEpgUrl = resolveEpgUrl(epgUrl)
+        val ingestionKey = "$playlistId|$resolvedEpgUrl"
         Log.d(TAG, "startIngestion: playlist=$playlistId host=${resolvedEpgUrl.toHttpUrlOrNull()?.host ?: "unknown"}")
+        cancelStaleBackgroundSyncs(playlistId)
 
+        val completion = CompletableDeferred<Int>()
+        val existing = activeIngestions.putIfAbsent(ingestionKey, completion)
+        if (existing != null) {
+            scope.launch {
+                try {
+                    promise.resolve(existing.await())
+                } catch (t: Throwable) {
+                    promise.reject("INGESTION_ERROR", t.message ?: "Ingestion failed")
+                }
+            }
+            return
+        }
+
+        foregroundIngestionCount.incrementAndGet()
         scope.launch {
             try {
-                val channelIndex = parseChannelsJson(channelsJson)
-                Log.d(TAG, "Channel index built: ${channelIndex.size} entries")
+                val written = epgIngestionMutex.withLock {
+                    val channelIndex = parseChannelsJson(channelsJson)
+                    Log.d(TAG, "Channel index built: ${channelIndex.size} entries")
 
-                val body = fetchWithRetry(resolvedEpgUrl) { event, map -> sendEvent(event, map) }
-                    ?: run {
-                        promise.reject("FETCH_ERROR", "Failed to fetch EPG after retries")
-                        return@launch
+                    val body = fetchWithRetry(resolvedEpgUrl)
+                        ?: throw IllegalStateException("Failed to fetch EPG after retries")
+
+                    var totalWritten = 0
+                    body.use {
+                        val parsed = streamXmlPrograms(it.byteStream(), playlistId, channelIndex) { batch ->
+                            totalWritten += writeBatch(batch)
+                            sendEvent(EVENT_PROGRESS, Arguments.createMap().apply {
+                                putInt("programsProcessed", totalWritten)
+                                putString("epgUrl", resolvedEpgUrl)
+                            })
+                        }
+                        Log.d(TAG, "Parsed $parsed matching programs")
                     }
 
-                val programs = parseXmlStream(body.byteStream(), playlistId, channelIndex)
-                Log.d(TAG, "Parsed ${programs.size} matching programs")
-
-                var written = 0
-                programs.chunked(BATCH_SIZE).forEach { batch ->
-                    written += writeBatch(batch)
-                    sendEvent(EVENT_PROGRESS, Arguments.createMap().apply {
-                        putInt("programsProcessed", written)
-                        putString("epgUrl", resolvedEpgUrl)
-                    })
+                    if (!datasetSignature.isNullOrEmpty()) {
+                        updatePlaylistMetadata(playlistId, datasetSignature)
+                    }
+                    totalWritten
                 }
 
-                if (!datasetSignature.isNullOrEmpty()) {
-                    updatePlaylistMetadata(playlistId, datasetSignature)
-                }
+                completion.complete(written)
 
                 sendEvent(EVENT_COMPLETE, Arguments.createMap().apply {
                     putInt("programsCount", written)
@@ -91,6 +122,7 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
 
                 promise.resolve(written)
             } catch (t: Throwable) {
+                completion.completeExceptionally(t)
                 val msg = "Ingestion failed: ${t.message}"
                 Log.e(TAG, msg, t)
                 sendEvent(EVENT_ERROR, Arguments.createMap().apply {
@@ -98,6 +130,9 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
                     putString("epgUrl", resolvedEpgUrl)
                 })
                 try { promise.reject("INGESTION_ERROR", msg) } catch (_: Exception) {}
+            } finally {
+                foregroundIngestionCount.decrementAndGet()
+                activeIngestions.remove(ingestionKey, completion)
             }
         }
     }
@@ -218,8 +253,7 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
     // ── private helpers ──────────────────────────────────────────────────────
 
     private suspend fun fetchWithRetry(
-        url: String,
-        onEvent: (String, WritableMap) -> Unit
+        url: String
     ): okhttp3.ResponseBody? {
         val client = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -256,34 +290,7 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
         return null
     }
 
-    private fun writeBatch(batch: List<ProgramData>): Int {
-        if (batch.isEmpty()) return 0
-        var count = 0
-        val realm = openRealm()
-        try {
-            realm.executeTransaction { r ->
-                batch.forEach { prog ->
-                    val pk = "${prog.playlistId}|${prog.channelId}|${prog.start}|${prog.end}|${prog.title}"
-                    if (r.where(ProgramRealm::class.java).equalTo("id", pk).findFirst() == null) {
-                        r.createObject(ProgramRealm::class.java, pk).apply {
-                            playlistId   = prog.playlistId
-                            channelId    = prog.channelId
-                            title        = prog.title
-                            description  = prog.description
-                            start        = java.util.Date(prog.start)
-                            end          = java.util.Date(prog.end)
-                            epgChannelId = prog.epgChannelId
-                            createdAt    = java.util.Date()
-                        }
-                        count++
-                    }
-                }
-            }
-        } finally {
-            realm.close()
-        }
-        return count
-    }
+    private fun writeBatch(batch: List<ProgramData>): Int = writeProgramsToRealm(batch)
 
     private fun scheduleBackgroundSync(
         epgUrl: String,
@@ -314,6 +321,7 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
             "datasetSignature" to sigHash
         )
         val work = PeriodicWorkRequestBuilder<EpgSyncWorker>(SYNC_HOURS, TimeUnit.HOURS, 15, TimeUnit.MINUTES)
+            .setInitialDelay(SYNC_HOURS, TimeUnit.HOURS)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setInputData(input)
             .addTag("epg_sync")
@@ -328,6 +336,14 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
 
     private fun workName(playlistId: String, epgUrl: String) =
         "epg_sync_${playlistId}_${epgUrl.hashCode()}"
+
+    private fun cancelStaleBackgroundSyncs(playlistId: String) {
+        synchronized(syncLock) {
+            if (scheduledPlaylistId == playlistId) return
+            WorkManager.getInstance(reactApplicationContext).cancelAllWorkByTag("epg_sync")
+            scheduledPlaylistId = playlistId
+        }
+    }
 
     private fun sendEvent(name: String, params: WritableMap) {
         reactApplicationContext

@@ -3,17 +3,22 @@ package com.chuchplayer.epg
 import android.util.Log
 import io.realm.Realm
 import io.realm.RealmConfiguration
+import kotlinx.coroutines.sync.Mutex
 import org.json.JSONArray
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.InputStream
 import java.util.*
+import java.util.concurrent.atomic.AtomicInteger
 
 private const val TAG = "EpgUtils"
 const val HOURS_BEFORE = 12L
 const val HOURS_AFTER = 36L
 const val BATCH_SIZE = 2000
+
+val epgIngestionMutex = Mutex()
+val foregroundIngestionCount = AtomicInteger(0)
 
 fun getRealmConfig(): RealmConfiguration =
     RealmConfiguration.Builder()
@@ -97,6 +102,19 @@ fun parseXmlStream(
     channelIndex: Map<String, List<ChannelInfo>>
 ): List<ProgramData> {
     val programs = mutableListOf<ProgramData>()
+    streamXmlPrograms(inputStream, playlistId, channelIndex) { batch ->
+        programs.addAll(batch)
+    }
+    return programs
+}
+
+fun streamXmlPrograms(
+    inputStream: InputStream,
+    playlistId: String,
+    channelIndex: Map<String, List<ChannelInfo>>,
+    onBatch: (List<ProgramData>) -> Unit
+): Int {
+    val batch = ArrayList<ProgramData>(BATCH_SIZE)
     val factory = XmlPullParserFactory.newInstance().apply { isNamespaceAware = false }
     val parser = factory.newPullParser()
     parser.setInput(inputStream, "UTF-8")
@@ -110,6 +128,7 @@ fun parseXmlStream(
     var eventType = parser.eventType
 
     var totalPrograms = 0
+    var matchingPrograms = 0
     var noChannelCount = 0
     var invalidDateCount = 0
     var outsideWindowCount = 0
@@ -138,7 +157,12 @@ fun parseXmlStream(
                             totalPrograms++
                             val built = program.buildAll(lowerBound, upperBound)
                             if (built.isNotEmpty()) {
-                                programs.addAll(built)
+                                matchingPrograms += built.size
+                                batch.addAll(built)
+                                if (batch.size >= BATCH_SIZE) {
+                                    onBatch(batch.toList())
+                                    batch.clear()
+                                }
                             } else {
                                 when (program.rejectionReason) {
                                     "no-channel" -> noChannelCount++
@@ -157,13 +181,17 @@ fun parseXmlStream(
         eventType = parser.next()
     }
 
+    if (batch.isNotEmpty()) {
+        onBatch(batch.toList())
+    }
+
     Log.d(
         TAG,
-        "parseXmlStream playlist=$playlistId parsed=${programs.size} matching programs from=$totalPrograms entries " +
+        "streamXmlPrograms playlist=$playlistId parsed=$matchingPrograms matching programs from=$totalPrograms entries " +
             "noChannel=$noChannelCount invalidDate=$invalidDateCount outsideWindow=$outsideWindowCount"
     )
 
-    return programs
+    return matchingPrograms
 }
 
 fun writeProgramsToRealm(programs: List<ProgramData>): Int {
@@ -173,9 +201,14 @@ fun writeProgramsToRealm(programs: List<ProgramData>): Int {
     try {
         programs.chunked(BATCH_SIZE).forEach { batch ->
             realm.executeTransaction { r ->
+                val programIds = batch.map { programId(it) }.toTypedArray()
+                val knownIds = r.where(ProgramRealm::class.java)
+                    .`in`("id", programIds)
+                    .findAll()
+                    .mapTo(mutableSetOf()) { it.id }
                 batch.forEach { prog ->
-                    val pk = "${prog.playlistId}|${prog.channelId}|${prog.start}|${prog.end}|${prog.title}"
-                    if (r.where(ProgramRealm::class.java).equalTo("id", pk).findFirst() == null) {
+                    val pk = programId(prog)
+                    if (knownIds.add(pk)) {
                         r.createObject(ProgramRealm::class.java, pk).apply {
                             playlistId   = prog.playlistId
                             channelId    = prog.channelId
@@ -196,6 +229,9 @@ fun writeProgramsToRealm(programs: List<ProgramData>): Int {
     }
     return total
 }
+
+fun programId(program: ProgramData): String =
+    "${program.playlistId}|${program.channelId}|${program.start}|${program.end}|${program.title}"
 
 fun updatePlaylistMetadata(playlistId: String, datasetSignature: String) {
     val realm = openRealm()

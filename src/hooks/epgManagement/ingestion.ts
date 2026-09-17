@@ -13,6 +13,7 @@ interface IngestEpgDataArgs {
   channels: Channel[];
   datasetSignature: string;
   urlsToIngest: string[];
+  onProgress?: () => void;
 }
 
 export const ingestEpgData = async ({
@@ -20,6 +21,7 @@ export const ingestEpgData = async ({
   channels,
   datasetSignature,
   urlsToIngest,
+  onProgress,
 }: IngestEpgDataArgs) => {
   const errors: string[] = [];
 
@@ -61,6 +63,7 @@ export const ingestEpgData = async ({
 
         if (type === 'progress') {
           const progress = data as IngestionProgress;
+          onProgress?.();
           console.log(
             `[EPG] ${getUrlShort(progress.epgUrl)}: ${progress.programsProcessed} processed`,
           );

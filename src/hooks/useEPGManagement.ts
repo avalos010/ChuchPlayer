@@ -45,6 +45,7 @@ export const useEPGManagement = () => {
   const loadedChannelsRef = useRef<Set<string>>(new Set());
   const pendingChannelLoadsRef = useRef<Set<string>>(new Set());
   const activeEpgUrlsRef = useRef<string[]>([]);
+  const lastVisibleRefreshRef = useRef(0);
 
   const channelsSignature = useMemo(
     () => channels.map((channel) => channel.id).join("|"),
@@ -141,6 +142,14 @@ export const useEPGManagement = () => {
     [playlist, channelIdSet],
   );
 
+  const refreshVisiblePrograms = useCallback(() => {
+    const now = Date.now();
+    if (now - lastVisibleRefreshRef.current < 1_500) return;
+    lastVisibleRefreshRef.current = now;
+    loadedChannelsRef.current.clear();
+    setProgramsByChannel((current) => ({ ...current }));
+  }, []);
+
   // Track last fetch time to prevent too frequent requests
   const lastFetchTimeRef = useRef<number>(0);
 
@@ -220,13 +229,16 @@ export const useEPGManagement = () => {
           if (sig === datasetSignature && Date.now() - ts < STARTUP_SKIP_INTERVAL_MS) {
             if (cancelled) return;
             const initialIds = channels.slice(0, INITIAL_PREFETCH_COUNT).map((c) => c.id);
-            await loadProgramsForChannels(initialIds, { force: true });
+            const hasCachedPrograms = await loadProgramsForChannels(initialIds, { force: true });
             if (cancelled) return;
-            loadedSignatureRef.current = datasetSignature;
-            setEpgLastUpdated(ts);
-            setEpgStatus({ loading: false, error: null });
-            console.log("[EPG] Cold boot: cache fresh, skipped network ingest");
-            return;
+            if (hasCachedPrograms) {
+              loadedSignatureRef.current = datasetSignature;
+              setEpgLastUpdated(ts);
+              setEpgStatus({ loading: false, error: null });
+              console.log("[EPG] Cold boot: cache fresh, skipped network ingest");
+              return;
+            }
+            await AsyncStorage.removeItem(EPG_LAST_INGEST_KEY);
           }
         }
       } catch {
@@ -247,25 +259,30 @@ export const useEPGManagement = () => {
           const initialChannelIds = channels
             .slice(0, INITIAL_PREFETCH_COUNT)
             .map((channel) => channel.id);
-          await loadProgramsForChannels(initialChannelIds, { force: true });
+          const hasCachedPrograms = await loadProgramsForChannels(initialChannelIds, { force: true });
           if (cancelled) return;
 
-          loadedSignatureRef.current = datasetSignature;
-          setEpgLastUpdated(existingMetadata.lastUpdated);
-          setEpgStatus({ loading: false, error: null });
+          if (hasCachedPrograms) {
+            loadedSignatureRef.current = datasetSignature;
+            setEpgLastUpdated(existingMetadata.lastUpdated);
+            setEpgStatus({ loading: false, error: null });
 
-          const timeSinceLastUpdate = Date.now() - existingMetadata.lastUpdated;
-          if (timeSinceLastUpdate < DEFAULT_REFRESH_INTERVAL_MS) {
-            console.log("[EPG] Cache fresh, skipping re-ingest");
-            // Persist so next cold boot takes the fast path
-            AsyncStorage.setItem(
-              EPG_LAST_INGEST_KEY,
-              JSON.stringify({ sig: datasetSignature, ts: existingMetadata.lastUpdated }),
-            ).catch(() => {/* non-fatal */});
-            return;
+            const timeSinceLastUpdate = Date.now() - existingMetadata.lastUpdated;
+            if (timeSinceLastUpdate < DEFAULT_REFRESH_INTERVAL_MS) {
+              console.log("[EPG] Cache fresh, skipping re-ingest");
+              AsyncStorage.setItem(
+                EPG_LAST_INGEST_KEY,
+                JSON.stringify({ sig: datasetSignature, ts: existingMetadata.lastUpdated }),
+              ).catch(() => {/* non-fatal */});
+              return;
+            }
+            console.log("[EPG] Cache stale, re-ingesting in background");
+          } else {
+            loadedChannelsRef.current.clear();
+            pendingChannelLoadsRef.current.clear();
+            setProgramsByChannel({});
+            setEpgStatus({ loading: true, error: null });
           }
-          console.log("[EPG] Cache stale, re-ingesting in background");
-          // Fall through to re-ingest without showing the overlay.
         } else {
           // No usable cache — clear stale data and show loading overlay.
           loadedChannelsRef.current.clear();
@@ -284,6 +301,7 @@ export const useEPGManagement = () => {
           channels,
           datasetSignature: datasetSignature!,
           urlsToIngest,
+          onProgress: refreshVisiblePrograms,
         });
         errors.push(...ingestErrors);
 
@@ -307,6 +325,8 @@ export const useEPGManagement = () => {
         const postIngestChannelIds = channels
           .slice(0, INITIAL_PREFETCH_COUNT)
           .map((channel) => channel.id);
+        loadedChannelsRef.current.clear();
+        pendingChannelLoadsRef.current.clear();
         await loadProgramsForChannels(postIngestChannelIds, { force: true });
 
         if (cancelled) return;
@@ -361,7 +381,7 @@ export const useEPGManagement = () => {
     // object gets a new reference (even with identical URLs). That would cancel
     // in-flight ingestion and restart the loading spinner in a loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datasetSignature]);
+  }, [datasetSignature, refreshVisiblePrograms]);
 
   const getProgramsForChannel = useCallback(
     (channelId: string): EPGProgram[] => {

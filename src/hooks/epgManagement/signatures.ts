@@ -33,10 +33,11 @@ export const buildM3uXmltvUrl = (playlistUrl: string): string | null => {
 export const getActiveEpgUrls = (playlist: Playlist | null) => {
   if (!playlist) return [];
 
-  const explicit =
-    playlist.epgUrls && playlist.epgUrls.length > 0 ? playlist.epgUrls : [];
+  const explicit = Array.from(
+    new Set((playlist.epgUrls ?? []).map((url) => url.trim()).filter(Boolean)),
+  );
   if (explicit.length > 0) {
-    return Array.from(new Set(explicit.map((url) => url.trim()).filter(Boolean)));
+    return explicit;
   }
 
   if (playlist.sourceType === 'xtream' && playlist.xtreamCredentials) {
