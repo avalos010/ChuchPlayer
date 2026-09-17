@@ -9,6 +9,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.StringReader
@@ -74,6 +75,80 @@ class PlaylistParserModule(reactContext: ReactApplicationContext) : ReactContext
       } catch (t: Throwable) {
         Log.e(TAG, "fetchXtreamVod failed: ${t.message}", t)
         promise.reject("VOD_FETCH_ERROR", t.message, t)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun fetchXtreamSeries(serverUrl: String, username: String, password: String, promise: Promise) {
+    scope.launch {
+      try {
+        val categories = try {
+          fetchXtreamArray(serverUrl, username, password, "get_series_categories")
+        } catch (t: Throwable) {
+          Log.w(TAG, "Series categories unavailable: ${t.message}")
+          JSONArray()
+        }
+        val categoryNames = mutableMapOf<String, String>()
+        for (index in 0 until categories.length()) {
+          val category = categories.optJSONObject(index) ?: continue
+          categoryNames[category.optString("category_id")] = category.optString("category_name")
+        }
+
+        val items = fetchXtreamSeriesItems(serverUrl, username, password, categoryNames)
+        Log.d(TAG, "Fetched ${items.size()} Xtream series")
+        promise.resolve(items)
+      } catch (t: Throwable) {
+        Log.e(TAG, "fetchXtreamSeries failed: ${t.message}", t)
+        promise.reject("SERIES_FETCH_ERROR", t.message, t)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun fetchXtreamSeriesEpisodes(
+    serverUrl: String,
+    username: String,
+    password: String,
+    seriesId: String,
+    promise: Promise,
+  ) {
+    scope.launch {
+      try {
+        val response = fetchXtreamObject(serverUrl, username, password, "get_series_info", "series_id", seriesId)
+        val episodes = response.optJSONObject("episodes") ?: JSONObject()
+        val items = Arguments.createArray()
+        val seasons = episodes.keys()
+        while (seasons.hasNext()) {
+          val seasonKey = seasons.next()
+          val season = seasonKey.toIntOrNull() ?: 0
+          val entries = episodes.optJSONArray(seasonKey) ?: continue
+          for (index in 0 until entries.length()) {
+            val entry = entries.optJSONObject(index) ?: continue
+            val episodeId = entry.optString("id")
+            if (episodeId.isBlank()) continue
+            val episode = entry.optInt("episode_num", index + 1)
+            val extension = entry.optString("container_extension").removePrefix(".").ifBlank { "mp4" }
+            val info = entry.optJSONObject("info")
+            items.pushMap(Arguments.createMap().apply {
+              putString("id", "xtream-episode-$episodeId")
+              putString("name", entry.optString("title").ifBlank { "Episode $episode" })
+              putString("url", buildSeriesUrl(serverUrl, username, password, episodeId, extension))
+              putOptionalString("poster", info?.optString("movie_image").orEmpty())
+              putOptionalString("plot", info?.optString("plot").orEmpty())
+              putOptionalString("rating", info?.optString("rating").orEmpty())
+              putOptionalString("releaseDate", info?.optString("releasedate").orEmpty().ifBlank { info?.optString("release_date").orEmpty() })
+              putOptionalString("duration", info?.optString("duration").orEmpty())
+              putString("extension", extension)
+              putInt("season", season)
+              putInt("episode", episode)
+            })
+          }
+        }
+        promise.resolve(items)
+      } catch (t: Throwable) {
+        Log.e(TAG, "fetchXtreamSeriesEpisodes failed: ${t.message}", t)
+        promise.reject("SERIES_EPISODES_FETCH_ERROR", t.message, t)
       }
     }
   }
@@ -162,6 +237,64 @@ class PlaylistParserModule(reactContext: ReactApplicationContext) : ReactContext
     }
   }
 
+  private fun fetchXtreamSeriesItems(
+    serverUrl: String,
+    username: String,
+    password: String,
+    categoryNames: Map<String, String>,
+  ): WritableArray {
+    val url = buildXtreamActionUrl(serverUrl, username, password, "get_series")
+    httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+      if (!response.isSuccessful) throw IllegalStateException("get_series failed with HTTP ${response.code}")
+      val body = response.body ?: throw IllegalStateException("get_series returned an empty response")
+      val items = Arguments.createArray()
+      JsonReader(InputStreamReader(body.byteStream(), Charsets.UTF_8)).use { reader ->
+        reader.beginArray()
+        var index = 0L
+        while (reader.hasNext()) {
+          var seriesId: Long? = null
+          var fallbackId: Long? = null
+          var name = "Untitled"
+          var poster = ""
+          var categoryId = ""
+          var rating = ""
+          var releaseDate = ""
+          var plot = ""
+
+          reader.beginObject()
+          while (reader.hasNext()) {
+            when (reader.nextName()) {
+              "series_id" -> seriesId = reader.nextLongValue()
+              "num" -> fallbackId = reader.nextLongValue()
+              "name" -> name = reader.nextStringValue().ifEmpty { "Untitled" }
+              "cover", "stream_icon" -> if (poster.isEmpty()) poster = reader.nextStringValue() else reader.skipValue()
+              "category_id" -> categoryId = reader.nextStringValue()
+              "rating" -> rating = reader.nextStringValue()
+              "releaseDate", "release_date" -> if (releaseDate.isEmpty()) releaseDate = reader.nextStringValue() else reader.skipValue()
+              "plot" -> plot = reader.nextStringValue()
+              else -> reader.skipValue()
+            }
+          }
+          reader.endObject()
+
+          val id = seriesId ?: fallbackId ?: index
+          items.pushMap(Arguments.createMap().apply {
+            putString("id", "xtream-series-$id")
+            putString("name", name)
+            putOptionalString("poster", poster)
+            putString("group", categoryNames[categoryId] ?: "Uncategorized")
+            putOptionalString("rating", rating)
+            putOptionalString("releaseDate", releaseDate)
+            putOptionalString("plot", plot)
+          })
+          index++
+        }
+        reader.endArray()
+      }
+      return items
+    }
+  }
+
   private fun buildXtreamActionUrl(
     serverUrl: String,
     username: String,
@@ -174,6 +307,24 @@ class PlaylistParserModule(reactContext: ReactApplicationContext) : ReactContext
     .addQueryParameter("password", password)
     .addQueryParameter("action", action)
     .build()
+
+  private fun fetchXtreamObject(
+    serverUrl: String,
+    username: String,
+    password: String,
+    action: String,
+    parameter: String,
+    value: String,
+  ): JSONObject {
+    val url = buildXtreamActionUrl(serverUrl, username, password, action)
+      .newBuilder()
+      .addQueryParameter(parameter, value)
+      .build()
+    httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+      if (!response.isSuccessful) throw IllegalStateException("$action failed with HTTP ${response.code}")
+      return JSONObject(response.body?.string().orEmpty())
+    }
+  }
 
   private fun JsonReader.nextStringValue(): String = when (peek()) {
     JsonToken.NULL -> { nextNull(); "" }
@@ -199,6 +350,24 @@ class PlaylistParserModule(reactContext: ReactApplicationContext) : ReactContext
       .addPathSegment(username)
       .addPathSegment(password)
       .addPathSegment("$streamId.$extension")
+      .build()
+      .toString()
+  }
+
+  private fun buildSeriesUrl(
+    serverUrl: String,
+    username: String,
+    password: String,
+    episodeId: String,
+    extension: String,
+  ): String {
+    val base = serverUrl.trimEnd('/').toHttpUrlOrNull()
+      ?: throw IllegalArgumentException("Invalid Xtream server URL")
+    return base.newBuilder()
+      .addPathSegment("series")
+      .addPathSegment(username)
+      .addPathSegment(password)
+      .addPathSegment("$episodeId.$extension")
       .build()
       .toString()
   }

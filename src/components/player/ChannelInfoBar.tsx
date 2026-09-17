@@ -114,6 +114,9 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   const hasVod          = usePlayerStore((st) => (
     st.playlist?.sourceType === 'xtream' || (st.playlist?.vodItems?.length ?? 0) > 0
   ));
+  const hasSeries       = usePlayerStore((st) => (
+    st.playlist?.sourceType === 'xtream' || (st.playlist?.seriesItems?.length ?? 0) > 0
+ ));
   const showInfoBar     = useUIStore((st) => st.showInfoBar);
   const setShowInfoBar  = useUIStore((st) => st.setShowInfoBar);
 
@@ -125,7 +128,7 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   const [focused, setFocused]   = React.useState(false);
   const [imgErr, setImgErr]     = React.useState(false);
   const [focusedControlIndex, setFocusedControlIndex] = React.useState(0);
-  const vodOffset = hasVod ? 1 : 0;
+  const vodOffset = (hasVod ? 1 : 0) + (hasSeries ? 1 : 0);
   const multiIndex = 3 + vodOffset;
   const guideIndex = multiIndex + (onMultiScreen ? 1 : 0);
   const controlCount = guideIndex + 4;
@@ -325,7 +328,7 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
               {hasVod ? (
                 <Ctrl
                   icon="movie-open-outline"
-                  label="Movies"
+                  label="VOD"
                   onPress={() => {
                     setShowInfoBar(false);
                     navigation?.replace('VodCatalog');
@@ -333,6 +336,20 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                   onFocus={() => onFocus(3)}
                   onBlur={onBlur}
                   hasTVPreferredFocus={focusedControlIndex === 3}
+                />
+              ) : null}
+
+              {hasSeries ? (
+                <Ctrl
+                  icon="television-classic"
+                  label="TV Shows"
+                  onPress={() => {
+                    setShowInfoBar(false);
+                    navigation?.replace('VodCatalog', { catalog: 'series' });
+                  }}
+                  onFocus={() => onFocus(hasVod ? 4 : 3)}
+                  onBlur={onBlur}
+                  hasTVPreferredFocus={focusedControlIndex === (hasVod ? 4 : 3)}
                 />
               ) : null}
 

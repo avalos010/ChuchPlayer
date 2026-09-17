@@ -3,31 +3,35 @@ import { ActivityIndicator, FlatList, StyleSheet, Text, useWindowDimensions, Vie
 import { Image } from 'expo-image';
 import { MaterialCommunityIcons as MCI } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RouteProp } from '@react-navigation/native';
 import FocusableItem from '../components/FocusableItem';
-import { RootStackParamList, VodItem } from '../types';
+import { RootStackParamList, VodItem, VodSeries } from '../types';
 import { Theme } from '../theme/themes';
 import { useThemeStore } from '../store/useThemeStore';
 import { usePlayerStore } from '../store/usePlayerStore';
-import { fetchXtreamVodCatalog } from '../utils/xtreamParser';
+import { fetchXtreamSeriesCatalog, fetchXtreamVodCatalog } from '../utils/xtreamParser';
 import { savePlaylist } from '../utils/storage';
 
-const ALL_MOVIES = 'All Movies';
+const ALL_TITLES = 'All Titles';
 const GRID_GAP = 22;
 const PAGE_PADDING = 42;
 const EMPTY_VOD_ITEMS: VodItem[] = [];
+const EMPTY_SERIES_ITEMS: VodSeries[] = [];
 
 interface VodCatalogScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'VodCatalog'>;
+  route: RouteProp<RootStackParamList, 'VodCatalog'>;
 }
 
 interface VodCardProps {
-  item: VodItem;
+  item: VodItem | VodSeries;
   width: number;
   theme: Theme;
-  onPress: (item: VodItem) => void;
+  onPress: (item: VodItem | VodSeries) => void;
+  isSeries?: boolean;
 }
 
-const VodCard = memo<VodCardProps>(({ item, width, theme, onPress }) => {
+const VodCard = memo<VodCardProps>(({ item, width, theme, onPress, isSeries }) => {
   const year = item.releaseDate?.match(/\d{4}/)?.[0];
   return (
     <FocusableItem
@@ -39,12 +43,12 @@ const VodCard = memo<VodCardProps>(({ item, width, theme, onPress }) => {
         {item.poster ? (
           <Image source={{ uri: item.poster }} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="disk" />
         ) : (
-          <MCI name="movie-open-outline" size={52} color={theme.textMuted} />
+          <MCI name={isSeries ? 'television-classic' : 'movie-open-outline'} size={52} color={theme.textMuted} />
         )}
       </View>
       <Text style={[styles.movieTitle, { color: theme.text }]} numberOfLines={2}>{item.name}</Text>
       <Text style={[styles.movieMeta, { color: theme.textSub }]} numberOfLines={1}>
-        {[year, item.rating ? `★ ${item.rating}` : null].filter(Boolean).join('  ·  ') || item.group || 'Movie'}
+        {[year, item.rating ? `★ ${item.rating}` : null].filter(Boolean).join('  ·  ') || item.group || (isSeries ? 'TV Show' : 'Movie')}
       </Text>
     </FocusableItem>
   );
@@ -52,32 +56,39 @@ const VodCard = memo<VodCardProps>(({ item, width, theme, onPress }) => {
 
 VodCard.displayName = 'VodCard';
 
-const VodCatalogScreen: React.FC<VodCatalogScreenProps> = ({ navigation }) => {
+const VodCatalogScreen: React.FC<VodCatalogScreenProps> = ({ navigation, route }) => {
   const theme = useThemeStore((state) => state.theme);
   const playlist = usePlayerStore((state) => state.playlist);
   const { width } = useWindowDimensions();
   const items = playlist?.vodItems ?? EMPTY_VOD_ITEMS;
+  const seriesItems = playlist?.seriesItems ?? EMPTY_SERIES_ITEMS;
   const columns = Math.max(5, Math.min(7, Math.floor((width - PAGE_PADDING * 2) / 170)));
   const cardWidth = (width - PAGE_PADDING * 2 - GRID_GAP * (columns - 1)) / columns;
-  const [category, setCategory] = useState(ALL_MOVIES);
+  const [category, setCategory] = useState(ALL_TITLES);
+  const [catalogType, setCatalogType] = useState<'all' | 'series'>(route.params?.catalog === 'series' ? 'series' : 'all');
   const [reloadToken, setReloadToken] = useState(0);
   const [loading, setLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (items.length || playlist?.sourceType !== 'xtream' || !playlist.xtreamCredentials) return;
+    const needsMovies = !items.length;
+    const needsSeries = !seriesItems.length;
+    if ((!needsMovies && !needsSeries) || playlist?.sourceType !== 'xtream' || !playlist.xtreamCredentials) return;
     let cancelled = false;
     setLoading(true);
     setCatalogError(null);
 
-    fetchXtreamVodCatalog(playlist.xtreamCredentials)
-      .then(async (vodItems) => {
+    Promise.all([
+      needsMovies ? fetchXtreamVodCatalog(playlist.xtreamCredentials) : Promise.resolve(items),
+      needsSeries ? fetchXtreamSeriesCatalog(playlist.xtreamCredentials) : Promise.resolve(seriesItems),
+    ])
+      .then(async ([vodItems, fetchedSeries]) => {
         if (cancelled) return;
-        if (!vodItems.length) {
-          setCatalogError('The provider returned no VOD movies for this account.');
+        if (!vodItems.length && !fetchedSeries.length) {
+          setCatalogError('The provider returned no movies or TV shows for this account.');
           return;
         }
-        const updated = { ...playlist, vodItems, updatedAt: new Date() };
+        const updated = { ...playlist, vodItems, seriesItems: fetchedSeries, updatedAt: new Date() };
         usePlayerStore.getState().setPlaylist(updated);
         await savePlaylist(updated);
       })
@@ -89,38 +100,58 @@ const VodCatalogScreen: React.FC<VodCatalogScreenProps> = ({ navigation }) => {
       });
 
     return () => { cancelled = true; };
-  }, [items.length, playlist?.id, playlist?.sourceType, reloadToken]);
+  }, [items, playlist, reloadToken, seriesItems]);
+
+  const activeItems = catalogType === 'series' ? seriesItems : [...items, ...seriesItems];
 
   const categories = useMemo(() => {
-    const groups = new Set(items.map((item) => item.group || 'Uncategorized'));
-    return [ALL_MOVIES, ...Array.from(groups).sort((a, b) => a.localeCompare(b))];
-  }, [items]);
+    const groups = new Set(activeItems.map((item) => item.group || 'Uncategorized'));
+    return [ALL_TITLES, ...Array.from(groups).sort((a, b) => a.localeCompare(b))];
+  }, [activeItems]);
 
   const filteredItems = useMemo(
-    () => category === ALL_MOVIES ? items : items.filter((item) => (item.group || 'Uncategorized') === category),
-    [category, items],
+    () => category === ALL_TITLES ? activeItems : activeItems.filter((item) => (item.group || 'Uncategorized') === category),
+    [activeItems, category],
   );
 
   const playMovie = useCallback((item: VodItem) => {
     navigation.navigate('VodPlayer', { item });
   }, [navigation]);
 
+  const openSeries = useCallback((series: VodSeries) => {
+    navigation.navigate('VodSeries', { series });
+  }, [navigation]);
+
+  const selectCatalogType = useCallback((nextType: 'all' | 'series') => {
+    setCatalogType(nextType);
+    setCategory(ALL_TITLES);
+  }, []);
+
   const openLiveTv = useCallback(() => {
     if (playlist?.channels.length) navigation.replace('Player', {});
     else navigation.navigate('Settings');
   }, [navigation, playlist?.channels.length]);
 
-  const renderMovie = useCallback(({ item }: { item: VodItem }) => (
-    <VodCard item={item} width={cardWidth} theme={theme} onPress={playMovie} />
-  ), [cardWidth, playMovie, theme]);
+  const renderItem = useCallback(({ item }: { item: VodItem | VodSeries }) => (
+    <VodCard
+      item={item}
+      width={cardWidth}
+      theme={theme}
+      isSeries={!('url' in item)}
+      onPress={(selected) => {
+        if ('url' in selected) playMovie(selected);
+        else openSeries(selected);
+      }}
+    />
+  ), [cardWidth, openSeries, playMovie, theme]);
 
   return (
     <View style={[styles.screen, { backgroundColor: theme.bg }]}>
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={[styles.eyebrow, { color: theme.accent }]}>{playlist?.name ?? 'Playlist'}</Text>
-          <Text style={[styles.title, { color: theme.text }]}>Movies</Text>
-          <Text style={[styles.subtitle, { color: theme.textSub }]}>{filteredItems.length} titles</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{catalogType === 'series' ? 'TV Shows' : 'VOD'}</Text>
+          <Text style={[styles.subtitle, { color: theme.textSub }]}>{filteredItems.length} {catalogType === 'series' ? 'shows' : 'titles'}</Text>
         </View>
         <View style={styles.headerActions}>
           <FocusableItem
@@ -142,56 +173,71 @@ const VodCatalogScreen: React.FC<VodCatalogScreenProps> = ({ navigation }) => {
         </View>
       </View>
 
-      {items.length ? (
+      {items.length || seriesItems.length ? (
         <>
-          <FlatList
-            horizontal
-            data={categories}
-            keyExtractor={(item) => item}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categories}
-            style={styles.categoryList}
-            renderItem={({ item, index }) => {
-              const selected = item === category;
-              return (
-                <FocusableItem
-                  onPress={() => setCategory(item)}
-                  hasTVPreferredFocus={index === 0}
-                  style={[
-                    styles.category,
-                    { backgroundColor: selected ? theme.accent : theme.card, borderColor: selected ? theme.accent : theme.border },
-                  ]}
-                  focusedStyle={{ borderColor: theme.focused, borderWidth: 2, transform: [] }}
-                >
-                  <Text style={[styles.categoryText, { color: selected ? theme.accentText : theme.text }]}>{item}</Text>
-                </FocusableItem>
-              );
-            }}
-          />
-          <FlatList
-            key={columns}
-            data={filteredItems}
-            numColumns={columns}
-            keyExtractor={(item) => item.id}
-            renderItem={renderMovie}
-            contentContainerStyle={styles.grid}
-            columnWrapperStyle={{ gap: GRID_GAP }}
-            showsVerticalScrollIndicator={false}
-            initialNumToRender={columns * 2}
-            windowSize={5}
-          />
+          <View style={styles.catalogTabs}>
+            <FocusableItem
+              onPress={() => selectCatalogType('series')}
+              hasTVPreferredFocus
+              style={[styles.catalogTab, { backgroundColor: catalogType === 'series' ? theme.accent : theme.card, borderColor: catalogType === 'series' ? theme.accent : theme.border }]}
+              focusedStyle={{ borderColor: theme.focused, borderWidth: 2, transform: [] }}
+            >
+              <MCI name="television-classic" size={20} color={catalogType === 'series' ? theme.accentText : theme.text} />
+              <Text style={[styles.catalogTabText, { color: catalogType === 'series' ? theme.accentText : theme.text }]}>TV Shows</Text>
+            </FocusableItem>
+          </View>
+          <View style={styles.categoryRail}>
+            <FlatList
+              horizontal
+              data={categories}
+              keyExtractor={(item) => item}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categories}
+              style={styles.categoryList}
+              renderItem={({ item, index }) => {
+                const selected = item === category;
+                return (
+                  <FocusableItem
+                    onPress={() => setCategory(item)}
+                    hasTVPreferredFocus={index === 0}
+                    style={[
+                      styles.category,
+                      { backgroundColor: selected ? theme.accent : theme.card, borderColor: selected ? theme.accent : theme.border },
+                    ]}
+                    focusedStyle={{ borderColor: theme.focused, borderWidth: 2, transform: [] }}
+                  >
+                    <Text style={[styles.categoryText, { color: selected ? theme.accentText : theme.text }]}>{item}</Text>
+                  </FocusableItem>
+                );
+              }}
+            />
+          </View>
+          <View style={styles.gridWrap}>
+            <FlatList
+              key={columns}
+              data={filteredItems}
+              numColumns={columns}
+              keyExtractor={(item) => item.id}
+              renderItem={renderItem}
+              contentContainerStyle={styles.grid}
+              columnWrapperStyle={{ gap: GRID_GAP }}
+              showsVerticalScrollIndicator={false}
+              initialNumToRender={columns * 2}
+              windowSize={5}
+            />
+          </View>
         </>
       ) : loading ? (
         <View style={styles.empty}>
           <ActivityIndicator size="large" color={theme.accent} />
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>Loading movies</Text>
-          <Text style={[styles.emptyText, { color: theme.textSub }]}>Downloading the VOD catalog from your provider…</Text>
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>Loading VOD</Text>
+          <Text style={[styles.emptyText, { color: theme.textSub }]}>Downloading movies and TV shows from your provider…</Text>
         </View>
       ) : (
         <View style={styles.empty}>
           <MCI name="movie-off-outline" size={72} color={theme.textMuted} />
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>No movies loaded</Text>
-          <Text style={[styles.emptyText, { color: theme.textSub }]}>{catalogError ?? 'This playlist does not contain recognizable movie streams.'}</Text>
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>No VOD loaded</Text>
+          <Text style={[styles.emptyText, { color: theme.textSub }]}>{catalogError ?? 'This playlist does not contain recognizable movies or TV shows.'}</Text>
           {playlist?.sourceType === 'xtream' ? (
             <FocusableItem
               onPress={() => setReloadToken((token) => token + 1)}
@@ -210,7 +256,7 @@ const VodCatalogScreen: React.FC<VodCatalogScreenProps> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, paddingTop: 28 },
+  screen: { flex: 1, paddingTop: 56 },
   header: { minHeight: 112, paddingHorizontal: PAGE_PADDING, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerCopy: { flex: 1 },
   eyebrow: { fontSize: 13, fontWeight: '800', letterSpacing: 1.4, textTransform: 'uppercase' },
@@ -219,11 +265,16 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', gap: 14 },
   headerButton: { minWidth: 128, height: 52, paddingHorizontal: 18, borderRadius: 12, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
   headerButtonText: { fontSize: 15, fontWeight: '800' },
-  categoryList: { flexGrow: 0, marginTop: 12, marginBottom: 20 },
-  categories: { paddingHorizontal: PAGE_PADDING, gap: 12 },
+  catalogTabs: { flexDirection: 'row', paddingHorizontal: PAGE_PADDING, gap: 12, marginTop: 14 },
+  catalogTab: { height: 46, paddingHorizontal: 18, borderRadius: 23, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  catalogTabText: { fontSize: 15, fontWeight: '800' },
+  categoryRail: { height: 70, marginTop: 16, marginBottom: 8 },
+  categoryList: { flex: 1 },
+  categories: { paddingHorizontal: PAGE_PADDING, paddingVertical: 8, gap: 12, alignItems: 'center' },
   category: { height: 46, paddingHorizontal: 20, borderRadius: 23, borderWidth: 1, justifyContent: 'center' },
   categoryText: { fontSize: 15, fontWeight: '800' },
-  grid: { paddingHorizontal: PAGE_PADDING, paddingBottom: 48, gap: 26 },
+  gridWrap: { flex: 1, minHeight: 0 },
+  grid: { paddingTop: 16, paddingHorizontal: PAGE_PADDING, paddingBottom: 48, gap: 26 },
   card: { borderWidth: 2, borderColor: 'transparent', borderRadius: 13, overflow: 'hidden', paddingBottom: 8 },
   poster: { width: '100%', borderRadius: 10, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   movieTitle: { fontSize: 15, fontWeight: '800', lineHeight: 19, marginTop: 10, paddingHorizontal: 4, minHeight: 38 },

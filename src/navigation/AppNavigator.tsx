@@ -12,6 +12,7 @@ import WebPlayerScreen from '../screens/WebPlayerScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import VodCatalogScreen from '../screens/VodCatalogScreen';
 import VodPlayerScreen from '../screens/VodPlayerScreen';
+import VodSeriesScreen from '../screens/VodSeriesScreen';
 
 const ActivePlayerScreen = Platform.OS === 'web' ? WebPlayerScreen : PlayerScreen;
 
@@ -46,8 +47,8 @@ const AppNavigator = () => {
           return;
         }
 
-        if (playlists.every((playlist) => playlist.channels.length === 0) && playlists.some((playlist) => playlist.vodItems?.length)) {
-          const vodPlaylist = playlists.find((playlist) => playlist.vodItems?.length) ?? playlists[0];
+        if (playlists.every((playlist) => playlist.channels.length === 0) && playlists.some((playlist) => playlist.vodItems?.length || playlist.seriesItems?.length)) {
+          const vodPlaylist = playlists.find((playlist) => playlist.vodItems?.length || playlist.seriesItems?.length) ?? playlists[0];
           usePlayerStore.getState().setPlaylist(vodPlaylist);
           usePlayerStore.getState().setChannels(vodPlaylist.channels);
           setInitialRoute('VodCatalog');
@@ -117,6 +118,11 @@ const AppNavigator = () => {
         <Stack.Screen
           name="VodCatalog"
           component={VodCatalogScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="VodSeries"
+          component={VodSeriesScreen}
           options={{ headerShown: false }}
         />
         <Stack.Screen

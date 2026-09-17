@@ -23,6 +23,22 @@ export interface VodItem {
   extension?: string;
 }
 
+export interface VodSeries {
+  id: string;
+  name: string;
+  poster?: string;
+  backdrop?: string;
+  group?: string;
+  plot?: string;
+  rating?: string;
+  releaseDate?: string;
+}
+
+export interface VodEpisode extends VodItem {
+  season: number;
+  episode: number;
+}
+
 export interface EPGProgram {
   id: string;
   channelId: string;
@@ -44,6 +60,7 @@ export interface Playlist {
   sourceType: PlaylistSourceType;
   channels: Channel[];
   vodItems?: VodItem[];
+  seriesItems?: VodSeries[];
   epgUrls?: string[];
   createdAt: Date;
   updatedAt: Date;
@@ -86,7 +103,8 @@ export type SettingsFocusTarget =
 
 export type RootStackParamList = {
   Player: { channel?: Channel };
-  VodCatalog: undefined;
+  VodCatalog: { catalog?: 'series' } | undefined;
+  VodSeries: { series: VodSeries };
   VodPlayer: { item: VodItem };
   Settings: { focusTarget?: SettingsFocusTarget } | undefined;
 };

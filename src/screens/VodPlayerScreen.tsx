@@ -134,7 +134,7 @@ const VodPlayerScreen: React.FC<VodPlayerScreenProps> = ({ navigation, route }) 
       {isBuffering && !error ? (
         <View style={styles.loading} pointerEvents="none">
           <ActivityIndicator size="large" color="#ffffff" />
-          <Text style={styles.loadingTitle}>Loading movie…</Text>
+          <Text style={styles.loadingTitle}>Loading video…</Text>
           <Text style={styles.loadingHint}>Playback will start automatically</Text>
         </View>
       ) : null}
@@ -154,7 +154,7 @@ const VodPlayerScreen: React.FC<VodPlayerScreenProps> = ({ navigation, route }) 
           <Text style={styles.time}>{duration ? formatDuration(duration) : '0:00'}</Text>
         </View>
         <View style={styles.controls}>
-          <PlayerButton icon="arrow-left" label="Movies" onPress={() => navigation.goBack()} theme={theme} />
+          <PlayerButton icon="arrow-left" label="Back" onPress={() => navigation.goBack()} theme={theme} />
           <PlayerButton icon="rewind-30" label="Back 30s" onPress={() => seekBy(-30_000)} theme={theme} />
           <PlayerButton
             icon={isPlaying ? 'pause' : 'play'}

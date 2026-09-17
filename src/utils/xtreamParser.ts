@@ -1,4 +1,4 @@
-import { Channel, VodItem } from '../types';
+import { Channel, VodEpisode, VodItem, VodSeries } from '../types';
 import { getXtreamProxyUrl } from './xtreamProxy';
 
 export interface XtreamCodesCredentials {
@@ -62,6 +62,35 @@ export interface XtreamCodesVodStream {
   release_date?: string;
   duration?: string;
   backdrop_path?: string[];
+}
+
+export interface XtreamCodesSeries {
+  num?: number;
+  name: string;
+  series_id: number;
+  cover?: string;
+  stream_icon?: string;
+  backdrop_path?: string[];
+  plot?: string;
+  rating?: string;
+  releaseDate?: string;
+  release_date?: string;
+  category_id?: string;
+}
+
+interface XtreamCodesEpisode {
+  id: string | number;
+  title?: string;
+  episode_num?: number | string;
+  container_extension?: string;
+  info?: {
+    movie_image?: string;
+    plot?: string;
+    rating?: string;
+    releasedate?: string;
+    release_date?: string;
+    duration?: string;
+  };
 }
 
 const fetchXtreamJson = async <T>(url: string, label: string): Promise<T> => {
@@ -159,6 +188,14 @@ export const fetchXtreamVodStreams = (
   credentials: XtreamCodesCredentials,
 ): Promise<XtreamCodesVodStream[]> => fetchXtreamAction(credentials, 'get_vod_streams');
 
+export const fetchXtreamSeriesCategories = (
+  credentials: XtreamCodesCredentials,
+): Promise<XtreamCodesCategory[]> => fetchXtreamAction(credentials, 'get_series_categories');
+
+export const fetchXtreamSeries = (
+  credentials: XtreamCodesCredentials,
+): Promise<XtreamCodesSeries[]> => fetchXtreamAction(credentials, 'get_series');
+
 /**
  * Builds the stream URL for a channel
  */
@@ -182,6 +219,18 @@ export const buildXtreamVodUrl = (
   return `${baseUrl}/movie/${encodeURIComponent(
     credentials.username
   )}/${encodeURIComponent(credentials.password)}/${streamId}.${safeExtension}`;
+};
+
+export const buildXtreamSeriesUrl = (
+  credentials: XtreamCodesCredentials,
+  episodeId: number | string,
+  extension = 'mp4',
+): string => {
+  const baseUrl = credentials.serverUrl.replace(/\/$/, '');
+  const safeExtension = extension.replace(/^\./, '') || 'mp4';
+  return `${baseUrl}/series/${encodeURIComponent(
+    credentials.username,
+  )}/${encodeURIComponent(credentials.password)}/${episodeId}.${safeExtension}`;
 };
 
 /**
@@ -265,6 +314,58 @@ export const parseXtreamVodStreams = (
   });
 };
 
+export const parseXtreamSeries = (
+  series: XtreamCodesSeries[],
+  categories: XtreamCodesCategory[],
+): VodSeries[] => {
+  const categoryMap = new Map(
+    (Array.isArray(categories) ? categories : [])
+      .filter(Boolean)
+      .map((category) => [category.category_id, category.category_name]),
+  );
+  if (!Array.isArray(series)) return [];
+
+  return series.filter(Boolean).map((item, index) => ({
+    id: `xtream-series-${item.series_id ?? item.num ?? index}`,
+    name: item.name || 'Untitled',
+    poster: item.cover || item.stream_icon || undefined,
+    backdrop: item.backdrop_path?.[0],
+    group: (item.category_id && categoryMap.get(item.category_id)) || 'Uncategorized',
+    plot: item.plot || undefined,
+    rating: item.rating || undefined,
+    releaseDate: item.releaseDate || item.release_date || undefined,
+  }));
+};
+
+const parseXtreamEpisodes = (
+  episodes: Record<string, XtreamCodesEpisode[]> | undefined,
+  credentials: XtreamCodesCredentials,
+): VodEpisode[] => {
+  if (!episodes || typeof episodes !== 'object') return [];
+
+  return Object.entries(episodes).flatMap(([seasonValue, entries]) => {
+    const season = Number(seasonValue) || 0;
+    if (!Array.isArray(entries)) return [];
+    return entries.filter(Boolean).map((entry, index) => {
+      const extension = entry.container_extension || 'mp4';
+      const episode = Number(entry.episode_num) || index + 1;
+      return {
+        id: `xtream-episode-${entry.id}`,
+        name: entry.title || `Episode ${episode}`,
+        url: buildXtreamSeriesUrl(credentials, entry.id, extension),
+        poster: entry.info?.movie_image || undefined,
+        plot: entry.info?.plot || undefined,
+        rating: entry.info?.rating || undefined,
+        releaseDate: entry.info?.releasedate || entry.info?.release_date || undefined,
+        duration: entry.info?.duration || undefined,
+        extension,
+        season,
+        episode,
+      };
+    });
+  });
+};
+
 export const fetchXtreamVodCatalog = async (
   credentials: XtreamCodesCredentials,
 ): Promise<VodItem[]> => {
@@ -287,12 +388,58 @@ export const fetchXtreamVodCatalog = async (
   return parseXtreamVodStreams(streams, credentials, categories);
 };
 
+export const fetchXtreamSeriesCatalog = async (
+  credentials: XtreamCodesCredentials,
+): Promise<VodSeries[]> => {
+  const { NativeModules, Platform } = require('react-native');
+  const nativeParser = NativeModules.PlaylistParserModule;
+  if (Platform.OS === 'android') {
+    if (!nativeParser?.fetchXtreamSeries) {
+      throw new Error('The Android TV-show service is unavailable. Please install the latest app build.');
+    }
+    return nativeParser.fetchXtreamSeries(
+      credentials.serverUrl,
+      credentials.username,
+      credentials.password,
+    );
+  }
+  const [categories, series] = await Promise.all([
+    fetchXtreamSeriesCategories(credentials).catch(() => []),
+    fetchXtreamSeries(credentials),
+  ]);
+  return parseXtreamSeries(series, categories);
+};
+
+export const fetchXtreamSeriesEpisodes = async (
+  credentials: XtreamCodesCredentials,
+  seriesId: string,
+): Promise<VodEpisode[]> => {
+  const { NativeModules, Platform } = require('react-native');
+  const nativeParser = NativeModules.PlaylistParserModule;
+  if (Platform.OS === 'android') {
+    if (!nativeParser?.fetchXtreamSeriesEpisodes) {
+      throw new Error('The Android TV-show service is unavailable. Please install the latest app build.');
+    }
+    return nativeParser.fetchXtreamSeriesEpisodes(
+      credentials.serverUrl,
+      credentials.username,
+      credentials.password,
+      seriesId.replace('xtream-series-', ''),
+    );
+  }
+  const baseUrl = credentials.serverUrl.replace(/\/$/, '');
+  const url = `${baseUrl}/player_api.php?username=${encodeURIComponent(credentials.username)}&password=${encodeURIComponent(credentials.password)}&action=get_series_info&series_id=${encodeURIComponent(seriesId.replace('xtream-series-', ''))}`;
+  const data = await fetchXtreamJson<{ episodes?: Record<string, XtreamCodesEpisode[]> }>(url, 'Failed to fetch episodes');
+  return parseXtreamEpisodes(data.episodes, credentials);
+};
+
 /**
  * Fetches and parses all channels from Xtream Codes API
  */
 export interface XtreamPlaylistData {
   channels: Channel[];
   vodItems: VodItem[];
+  seriesItems: VodSeries[];
   epgUrls: string[];
 }
 
@@ -310,11 +457,15 @@ export const fetchXtreamPlaylist = async (
   await fetchXtreamUserInfo(credentials);
 
   // Fetch categories and streams in parallel
-  const [categories, streams, vodItems] = await Promise.all([
+  const [categories, streams, vodItems, seriesItems] = await Promise.all([
     fetchXtreamCategories(credentials),
     fetchXtreamStreams(credentials),
     fetchXtreamVodCatalog(credentials).catch((error) => {
       console.warn('[VOD] Catalog refresh failed:', error);
+      return [];
+    }),
+    fetchXtreamSeriesCatalog(credentials).catch((error) => {
+      console.warn('[VOD] Series refresh failed:', error);
       return [];
     }),
   ]);
@@ -329,6 +480,7 @@ export const fetchXtreamPlaylist = async (
   return {
     channels,
     vodItems,
+    seriesItems,
     epgUrls: [epgUrl],
   };
 };

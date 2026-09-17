@@ -32,9 +32,10 @@ type StoredPlaylist = Omit<Playlist, 'createdAt' | 'updatedAt'> & {
   updatedAt: string;
 };
 
-type StoredPlaylistMetadata = Omit<StoredPlaylist, 'channels' | 'vodItems'> & {
+type StoredPlaylistMetadata = Omit<StoredPlaylist, 'channels' | 'vodItems' | 'seriesItems'> & {
   channelChunkCount: number;
   vodChunkCount: number;
+  seriesChunkCount?: number;
 };
 
 const serializePlaylist = (playlist: Playlist): StoredPlaylist => ({
@@ -47,6 +48,7 @@ const deserializePlaylist = (stored: StoredPlaylist): Playlist => ({
   ...stored,
   channels: ensureUniqueChannelIds(stored.channels),
   vodItems: stored.vodItems ?? [],
+  seriesItems: stored.seriesItems ?? [],
   sourceType: stored.sourceType || 'm3u', // Default to 'm3u' for backward compatibility
   epgUrls: stored.epgUrls ?? [],
   createdAt: new Date(stored.createdAt),
@@ -54,7 +56,7 @@ const deserializePlaylist = (stored: StoredPlaylist): Playlist => ({
 });
 
 const metadataKey = (playlistId: string) => `${PLAYLIST_ITEM_PREFIX}:${playlistId}:meta`;
-const chunkKey = (playlistId: string, type: 'channels' | 'vod', index: number) =>
+const chunkKey = (playlistId: string, type: 'channels' | 'vod' | 'series', index: number) =>
   `${PLAYLIST_ITEM_PREFIX}:${playlistId}:${type}:${index}`;
 
 const chunkItems = <T>(items: T[]): T[][] => {
@@ -89,14 +91,17 @@ const readChunkedPlaylist = async (playlistId: string): Promise<Playlist | null>
   const keys = [
     ...Array.from({ length: metadata.channelChunkCount }, (_, index) => chunkKey(playlistId, 'channels', index)),
     ...Array.from({ length: metadata.vodChunkCount }, (_, index) => chunkKey(playlistId, 'vod', index)),
+    ...Array.from({ length: metadata.seriesChunkCount ?? 0 }, (_, index) => chunkKey(playlistId, 'series', index)),
   ];
   const values = keys.length ? await playlistStorage.multiGet(keys) : [];
   const channelChunks = values.slice(0, metadata.channelChunkCount);
-  const vodChunks = values.slice(metadata.channelChunkCount);
+  const vodChunks = values.slice(metadata.channelChunkCount, metadata.channelChunkCount + metadata.vodChunkCount);
+  const seriesChunks = values.slice(metadata.channelChunkCount + metadata.vodChunkCount);
   const channels = channelChunks.flatMap(([, value]) => value ? JSON.parse(value) : []);
   const vodItems = vodChunks.flatMap(([, value]) => value ? JSON.parse(value) : []);
-  const { channelChunkCount: _channelChunkCount, vodChunkCount: _vodChunkCount, ...stored } = metadata;
-  return deserializePlaylist({ ...stored, channels, vodItems });
+  const seriesItems = seriesChunks.flatMap(([, value]) => value ? JSON.parse(value) : []);
+  const { channelChunkCount: _channelChunkCount, vodChunkCount: _vodChunkCount, seriesChunkCount: _seriesChunkCount, ...stored } = metadata;
+  return deserializePlaylist({ ...stored, channels, vodItems, seriesItems });
 };
 
 const writeChunkedPlaylist = async (playlist: Playlist): Promise<void> => {
@@ -105,16 +110,19 @@ const writeChunkedPlaylist = async (playlist: Playlist): Promise<void> => {
   const stored = serializePlaylist(playlist);
   const channelChunks = chunkItems(stored.channels);
   const vodChunks = chunkItems(stored.vodItems ?? []);
-  const { channels: _channels, vodItems: _vodItems, ...rest } = stored;
+  const seriesChunks = chunkItems(stored.seriesItems ?? []);
+  const { channels: _channels, vodItems: _vodItems, seriesItems: _seriesItems, ...rest } = stored;
   const metadata: StoredPlaylistMetadata = {
     ...rest,
     channelChunkCount: channelChunks.length,
     vodChunkCount: vodChunks.length,
+    seriesChunkCount: seriesChunks.length,
   };
   const entries: [string, string][] = [
     [metadataKey(playlist.id), JSON.stringify(metadata)],
     ...channelChunks.map((chunk, index): [string, string] => [chunkKey(playlist.id, 'channels', index), JSON.stringify(chunk)]),
     ...vodChunks.map((chunk, index): [string, string] => [chunkKey(playlist.id, 'vod', index), JSON.stringify(chunk)]),
+    ...seriesChunks.map((chunk, index): [string, string] => [chunkKey(playlist.id, 'series', index), JSON.stringify(chunk)]),
   ];
   await playlistStorage.multiSet(entries);
 
@@ -127,6 +135,10 @@ const writeChunkedPlaylist = async (playlist: Playlist): Promise<void> => {
       ...Array.from(
         { length: Math.max(0, previous.vodChunkCount - vodChunks.length) },
         (_, index) => chunkKey(playlist.id, 'vod', vodChunks.length + index),
+      ),
+      ...Array.from(
+        { length: Math.max(0, (previous.seriesChunkCount ?? 0) - seriesChunks.length) },
+        (_, index) => chunkKey(playlist.id, 'series', seriesChunks.length + index),
       ),
     ];
     if (staleKeys.length) await playlistStorage.multiRemove(staleKeys);
@@ -200,6 +212,7 @@ export const deletePlaylist = async (playlistId: string): Promise<void> => {
       keys.push(
         ...Array.from({ length: metadata.channelChunkCount }, (_, chunkIndex) => chunkKey(playlistId, 'channels', chunkIndex)),
         ...Array.from({ length: metadata.vodChunkCount }, (_, chunkIndex) => chunkKey(playlistId, 'vod', chunkIndex)),
+        ...Array.from({ length: metadata.seriesChunkCount ?? 0 }, (_, chunkIndex) => chunkKey(playlistId, 'series', chunkIndex)),
       );
     }
     await playlistStorage.multiRemove(keys);

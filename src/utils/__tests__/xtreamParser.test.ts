@@ -1,12 +1,15 @@
 import {
   parseXtreamStreams,
   parseXtreamVodStreams,
+  parseXtreamSeries,
   buildXtreamStreamUrl,
   buildXtreamVodUrl,
+  buildXtreamSeriesUrl,
   XtreamCodesCredentials,
   XtreamCodesStream,
   XtreamCodesCategory,
   XtreamCodesVodStream,
+  XtreamCodesSeries,
 } from '../xtreamParser';
 
 const CREDS: XtreamCodesCredentials = {
@@ -49,6 +52,17 @@ const makeVodStream = (overrides: Partial<XtreamCodesVodStream> = {}): XtreamCod
   plot: 'A test movie.',
   releaseDate: '2026-01-10',
   duration: '01:42:00',
+  ...overrides,
+});
+
+const makeSeries = (overrides: Partial<XtreamCodesSeries> = {}): XtreamCodesSeries => ({
+  name: 'Example Show',
+  series_id: 601,
+  cover: 'https://example.com/show.jpg',
+  category_id: '2',
+  rating: '8.7',
+  plot: 'A test show.',
+  releaseDate: '2026-01-10',
   ...overrides,
 });
 
@@ -154,5 +168,23 @@ describe('Xtream VOD', () => {
       rating: '8.2',
     });
     expect(movie.url).toContain('/movie/testuser/testpass/501.mkv');
+  });
+
+  it('builds a series episode URL with the provider extension', () => {
+    expect(buildXtreamSeriesUrl(CREDS, 701, 'mkv')).toBe(
+      'https://xtream.example.com/series/testuser/testpass/701.mkv',
+    );
+  });
+
+  it('converts TV shows and resolves their categories', () => {
+    const [show] = parseXtreamSeries([makeSeries()], CATEGORIES);
+
+    expect(show).toMatchObject({
+      id: 'xtream-series-601',
+      name: 'Example Show',
+      poster: 'https://example.com/show.jpg',
+      group: 'Sports',
+      rating: '8.7',
+    });
   });
 });
