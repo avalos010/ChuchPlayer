@@ -148,6 +148,7 @@ export const useEPGManagement = () => {
     lastVisibleRefreshRef.current = now;
     loadedChannelsRef.current.clear();
     setProgramsByChannel((current) => ({ ...current }));
+    setEpgLastUpdated(now);
   }, []);
 
   // Track last fetch time to prevent too frequent requests

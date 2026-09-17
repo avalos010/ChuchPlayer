@@ -58,6 +58,9 @@ class EpgGridView(context: Context) : View(context) {
     // ── State ─────────────────────────────────────────────────────────────────
     private var channels    = emptyList<EpgChannel>()
     private var programs    = emptyMap<String, List<EpgProgram>>()
+    private var guideLoading = false
+    private var requestedIds = emptySet<String>()
+    private var queryGeneration = 0
     private var currentId: String? = null
     private var playlistId: String? = null
     private var focusedRow  = 0
@@ -96,7 +99,7 @@ class EpgGridView(context: Context) : View(context) {
         }
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             val row = ((e.y - HDR_H + epgOffsetY) / ROW_H).toInt()
-            if (row in channels.indices) { focusedRow = row; fireSelect(); invalidate() }
+            if (row in channels.indices) { focusedRow = row; maybeLoad(); fireSelect(); invalidate() }
             return true
         }
         override fun onLongPress(e: MotionEvent) {
@@ -253,6 +256,10 @@ class EpgGridView(context: Context) : View(context) {
     }
 
     fun setPlaylistId(id: String) {
+        if (playlistId != id) {
+            programs = emptyMap()
+            requestedIds = emptySet()
+        }
         playlistId = id
         maybeLoad()
     }
@@ -273,6 +280,8 @@ class EpgGridView(context: Context) : View(context) {
             }
         } catch (e: Exception) { Log.e(TAG, "parse channels", e) }
         channels = list
+        programs = emptyMap()
+        requestedIds = emptySet()
         val idx = channels.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
         focusedRow = idx
         ensureVisible(idx)
@@ -284,15 +293,31 @@ class EpgGridView(context: Context) : View(context) {
         currentId = id
         val idx = channels.indexOfFirst { it.id == id }
         if (idx >= 0) { focusedRow = idx; ensureVisible(idx) }
+        maybeLoad()
+        invalidate()
+    }
+
+    fun setGuideLoading(loading: Boolean) {
+        guideLoading = loading
         invalidate()
     }
 
     // ── Realm load ────────────────────────────────────────────────────────────
 
-    fun maybeLoad() {
+    fun maybeLoad(force: Boolean = false) {
         val pid = playlistId ?: return
         if (channels.isEmpty()) return
-        val ids = channels.map { it.id }
+        val visibleRows = max(1, (height - HDR_H) / ROW_H + 1)
+        val first = max(0, (epgOffsetY / ROW_H).toInt() - 4)
+        val last = min(channels.lastIndex, max(focusedRow + 4, first + visibleRows + 8))
+        val focusedId = channels[focusedRow].id
+        val ids = listOf(focusedId) + channels.subList(first, last + 1)
+            .map { it.id }
+            .filter { it != focusedId }
+        val idsSet = ids.toSet()
+        if (!force && idsSet == requestedIds) return
+        requestedIds = idsSet
+        val generation = ++queryGeneration
         scope.launch {
             try {
                 val realm = openRealm()
@@ -313,7 +338,11 @@ class EpgGridView(context: Context) : View(context) {
                         }
                     }
                 } finally { realm.close() }
-                mainHandler.post { programs = result; invalidate() }
+                mainHandler.post {
+                    if (generation != queryGeneration) return@post
+                    programs = programs + result
+                    invalidate()
+                }
             } catch (e: Exception) { Log.e(TAG, "realm load", e) }
         }
     }
@@ -543,7 +572,7 @@ class EpgGridView(context: Context) : View(context) {
     ) {
         val progs = programs[ch.id]
         if (progs.isNullOrEmpty()) {
-            canvas.drawText("No guide data",
+            canvas.drawText(if (guideLoading) "Loading guide…" else "No guide data",
                 CH_COL + PAD.toFloat(),
                 ry + ROW_H / 2f + tNoData.textSize / 3,
                 tNoData)
@@ -618,6 +647,7 @@ class EpgGridView(context: Context) : View(context) {
     private fun nudge(dx: Float, dy: Float) {
         epgOffsetX = (epgOffsetX + dx).coerceIn(0f, maxOffX().toFloat())
         epgOffsetY = (epgOffsetY + dy).coerceIn(0f, maxOffY().toFloat())
+        maybeLoad()
         invalidate()
     }
 
@@ -653,6 +683,7 @@ class EpgGridView(context: Context) : View(context) {
         if (scroller.computeScrollOffset()) {
             epgOffsetX = scroller.currX.toFloat().coerceIn(0f, maxOffX().toFloat())
             epgOffsetY = scroller.currY.toFloat().coerceIn(0f, maxOffY().toFloat())
+            maybeLoad()
             invalidate()
         }
     }
@@ -667,11 +698,11 @@ class EpgGridView(context: Context) : View(context) {
     override fun onKeyDown(code: Int, event: KeyEvent): Boolean {
         when (code) {
             KeyEvent.KEYCODE_DPAD_UP -> {
-                if (focusedRow > 0) { focusedRow--; ensureVisible(focusedRow); fireFocus(); invalidate() }
+                if (focusedRow > 0) { focusedRow--; ensureVisible(focusedRow); maybeLoad(); fireFocus(); invalidate() }
                 return true
             }
             KeyEvent.KEYCODE_DPAD_DOWN -> {
-                if (focusedRow < channels.lastIndex) { focusedRow++; ensureVisible(focusedRow); fireFocus(); invalidate() }
+                if (focusedRow < channels.lastIndex) { focusedRow++; ensureVisible(focusedRow); maybeLoad(); fireFocus(); invalidate() }
                 return true
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {

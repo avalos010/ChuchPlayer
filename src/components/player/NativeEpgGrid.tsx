@@ -16,6 +16,7 @@ type NativeEpgGridViewProps = {
   accentColor?: string;
   bgColor?: string;
   dataVersion?: number;
+  guideLoading?: boolean;
 };
 
 export const isNativeEpgGridAvailable =
@@ -36,6 +37,7 @@ interface Props {
   accentColor?: string;
   bgColor?: string;
   dataVersion?: number;
+  guideLoading?: boolean;
   onChannelSelect: (channelId: string, channelName: string) => void;
   onCatchupSelect?: (channelId: string, startMs: number, endMs: number, programTitle: string) => void;
   onOpenGroups?: () => void;
@@ -49,6 +51,7 @@ const NativeEpgGrid: React.FC<Props> = ({
   accentColor,
   bgColor,
   dataVersion,
+  guideLoading,
   onChannelSelect,
   onCatchupSelect,
   onOpenGroups,
@@ -95,6 +98,7 @@ const NativeEpgGrid: React.FC<Props> = ({
       accentColor={accentColor ?? '#ffffff'}
       bgColor={bgColor ?? '#0a0a0a'}
       dataVersion={dataVersion ?? 0}
+      guideLoading={guideLoading ?? false}
     />
   );
 };

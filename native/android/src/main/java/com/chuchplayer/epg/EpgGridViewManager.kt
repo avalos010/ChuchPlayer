@@ -40,6 +40,11 @@ class EpgGridViewManager(private val reactContext: ReactApplicationContext) :
     @ReactProp(name = "dataVersion", defaultInt = 0)
     fun setDataVersion(view: EpgGridView, version: Int) {
         // Re-query Realm whenever the JS side signals new data is available
-        view.maybeLoad()
+        view.maybeLoad(force = true)
+    }
+
+    @ReactProp(name = "guideLoading", defaultBoolean = false)
+    fun setGuideLoading(view: EpgGridView, loading: Boolean) {
+        view.setGuideLoading(loading)
     }
 }
