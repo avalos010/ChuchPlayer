@@ -56,4 +56,9 @@ class SideEpgViewManager(private val reactContext: ReactApplicationContext) :
     fun setBgColor(view: SideEpgView, color: String?) {
         if (!color.isNullOrEmpty()) view.setBgColor(color)
     }
+
+    @ReactProp(name = "focusTrigger", defaultInt = 0)
+    fun setFocusTrigger(view: SideEpgView, value: Int) {
+        if (value > 0) view.post { view.requestFocus() }
+    }
 }

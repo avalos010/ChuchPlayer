@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.os.Handler
 import android.os.Looper
@@ -31,6 +32,7 @@ class ChannelListView(context: Context) : View(context) {
         const val EVENT_SELECT = "CHANNEL_LIST_SELECT"
         const val EVENT_FOCUS = "CHANNEL_LIST_FOCUS"
         const val EVENT_OPEN_GROUPS = "CHANNEL_LIST_OPEN_GROUPS"
+        const val EVENT_OPEN_CATCHUP = "CHANNEL_LIST_OPEN_CATCHUP"
         const val EVENT_TAB_SELECT = "CHANNEL_LIST_TAB_SELECT"
         const val EVENT_SEARCH = "CHANNEL_LIST_SEARCH"
     }
@@ -95,6 +97,7 @@ class ChannelListView(context: Context) : View(context) {
     private val pBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = dp; color = Color.argb(40, 148, 163, 184) }
     private val pAccent = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = accent }
     private val pProgress = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(40, 148, 163, 184) }
+    private val pCatchupIcon = Paint(Paint.ANTI_ALIAS_FLAG)
     private val pChromeFocus = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE; strokeWidth = 2f * dp; color = Color.rgb(232, 242, 255)
     }
@@ -114,6 +117,7 @@ class ChannelListView(context: Context) : View(context) {
     private val tInit = text(Color.rgb(159, 179, 200), 13f, true, center = true)
     private val tInitFocus = text(Color.rgb(6, 18, 37), 13f, true, center = true)
     private val rect = RectF()
+    private val iconPath = Path()
 
     init {
         isFocusable = true
@@ -130,7 +134,7 @@ class ChannelListView(context: Context) : View(context) {
         }
 
     fun setRows(json: String) {
-        val now = System.currentTimeMillis()
+        val previouslyFocusedId = rows.getOrNull(focused)?.id
         rows = try {
             val arr = JSONArray(json)
             List(arr.length()) { i ->
@@ -149,11 +153,14 @@ class ChannelListView(context: Context) : View(context) {
         } catch (_: Exception) {
             emptyList()
         }
-        focused = rows.indexOfFirst { it.id == currentId }.takeIf { it >= 0 } ?: 0
-        chromeItem = -1
+        val retainedIndex = rows.indexOfFirst { it.id == previouslyFocusedId }
+        focused = when {
+            retainedIndex >= 0 -> retainedIndex
+            else -> rows.indexOfFirst { it.id == currentId }.takeIf { it >= 0 } ?: 0
+        }
+        if (retainedIndex < 0) chromeItem = -1
         keepFocusedVisible(false)
         invalidate()
-        mainHandler.post { requestFocus() }
     }
 
     fun setCurrentChannelId(id: String?) {
@@ -306,7 +313,7 @@ class ChannelListView(context: Context) : View(context) {
         }
         val textX = x + logo + 10f * dp
 
-        // LIVE badge (drawn first so text maxW accounts for it)
+        var trailingReserve = 6f * dp
         if (isCurrent) {
             pAccent.alpha = 255
             val badgeW = 36f * dp
@@ -314,10 +321,15 @@ class ChannelListView(context: Context) : View(context) {
             canvas.drawRoundRect(rect, 4f * dp, 4f * dp, pAccent)
             val live = text(Color.WHITE, 8f, true, center = true)
             canvas.drawText("LIVE", rect.centerX(), rect.centerY() - (live.ascent() + live.descent()) / 2f, live)
+            trailingReserve += badgeW + 6f * dp
+        }
+        if (row.catchup) {
+            val iconCenterX = width - trailingReserve - 8f * dp
+            drawCatchupIcon(canvas, iconCenterX, top + rowH / 2f, isFocused)
+            trailingReserve += 24f * dp
         }
 
-        val badgeReserve = if (isCurrent) 48f * dp else 6f * dp
-        val textMaxW = width - textX - badgeReserve
+        val textMaxW = width - textX - trailingReserve
 
         // Channel name
         val namePaint = if (isFocused) tNameFocus else tName
@@ -331,7 +343,7 @@ class ChannelListView(context: Context) : View(context) {
 
             // Progress bar (full track + filled portion)
             val barLeft = textX
-            val barRight = width - badgeReserve - 6f * dp
+            val barRight = width - trailingReserve - 6f * dp
             val barTop = top + 51f * dp
             val barBottom = barTop + 3f * dp
             rect.set(barLeft, barTop, barRight, barBottom)
@@ -359,6 +371,24 @@ class ChannelListView(context: Context) : View(context) {
             val meta = if (row.catchup) "Catchup available" else "Live TV"
             drawEllipsis(canvas, meta, textX, top + 41f * dp, textMaxW, metaPaint)
         }
+    }
+
+    private fun drawCatchupIcon(canvas: Canvas, centerX: Float, centerY: Float, focused: Boolean) {
+        val half = 6f * dp
+        val gap = 1.5f * dp
+        pCatchupIcon.color = if (focused) Color.rgb(6, 18, 37) else Color.rgb(125, 211, 252)
+        iconPath.reset()
+        iconPath.moveTo(centerX - gap, centerY)
+        iconPath.lineTo(centerX + half, centerY - half)
+        iconPath.lineTo(centerX + half, centerY + half)
+        iconPath.close()
+        canvas.drawPath(iconPath, pCatchupIcon)
+        iconPath.reset()
+        iconPath.moveTo(centerX - half - gap, centerY)
+        iconPath.lineTo(centerX - gap, centerY - half)
+        iconPath.lineTo(centerX - gap, centerY + half)
+        iconPath.close()
+        canvas.drawPath(iconPath, pCatchupIcon)
     }
 
     private fun formatTime(epochMs: Long): String {
@@ -393,7 +423,12 @@ class ChannelListView(context: Context) : View(context) {
                 return true
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                if (chromeItem in 2..4) {
+                if (chromeItem == -1) {
+                    val row = rows.getOrNull(focused)
+                    if (row?.catchup == true && focusSearch(View.FOCUS_RIGHT)?.requestFocus() != true) {
+                        fire(EVENT_OPEN_CATCHUP, row.id)
+                    }
+                } else if (chromeItem in 2..4) {
                     chromeItem = if (chromeItem == 4) 2 else chromeItem + 1
                     invalidate()
                 }

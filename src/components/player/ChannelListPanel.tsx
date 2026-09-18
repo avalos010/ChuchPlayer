@@ -234,6 +234,7 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
   const [searchQuery,      setSearchQuery]       = useState('');
   const [focusedChannelId, setFocusedChannelId]  = useState<string | null>(null);
   const [nativeListFocusTrigger, setNativeListFocusTrigger] = useState(0);
+  const [nativeSideEpgFocusTrigger, setNativeSideEpgFocusTrigger] = useState(0);
 
   // ── Slide animation ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -354,6 +355,16 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
     if (tabId === 'all' || tabId === 'fav' || tabId === 'recent') {
       setActiveTab(tabId);
     }
+  }, []);
+
+  const handleNativeOpenCatchup = useCallback((channelId: string) => {
+    focusedChannelIdRef.current = channelId;
+    setFocusedChannelId(channelId);
+    setNativeSideEpgFocusTrigger((trigger) => trigger + 1);
+  }, []);
+
+  const handleNativeReturnToChannels = useCallback(() => {
+    setNativeListFocusTrigger((trigger) => trigger + 1);
   }, []);
 
   const handleCatchupSelect = useCallback((channelId: string, startMs: number, endMs: number, programTitle: string) => {
@@ -557,6 +568,7 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
                 onChannelSelect={onChannelSelect}
                 onChannelFocus={handleChannelFocus}
                 onOpenGroups={openGroups}
+                onOpenCatchup={handleNativeOpenCatchup}
                 onTabSelect={handleNativeTabSelect}
                 onSearchPress={() => setSearchQuery('')}
               />
@@ -588,6 +600,8 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
                   bgColor={withAlphaAndroid(theme.bg, 0)}
                   onCatchupSelect={handleCatchupSelect}
                   onOpenGroups={openGroups}
+                  onReturnToChannels={handleNativeReturnToChannels}
+                  focusTrigger={nativeSideEpgFocusTrigger}
                 />
               ) : (
                 <EpgDetailPanel

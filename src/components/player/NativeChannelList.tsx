@@ -47,6 +47,7 @@ interface NativeChannelListProps {
   onChannelSelect: (channel: Channel) => void;
   onChannelFocus: (channelId: string) => void;
   onOpenGroups: () => void;
+  onOpenCatchup: (channelId: string) => void;
   onTabSelect?: (tabId: string) => void;
   onSearchPress?: () => void;
 }
@@ -67,6 +68,7 @@ const NativeChannelList: React.FC<NativeChannelListProps> = ({
   onChannelSelect,
   onChannelFocus,
   onOpenGroups,
+  onOpenCatchup,
   onTabSelect,
   onSearchPress,
 }) => {
@@ -87,6 +89,12 @@ const NativeChannelList: React.FC<NativeChannelListProps> = ({
       },
     );
     const groupsSub = DeviceEventEmitter.addListener('CHANNEL_LIST_OPEN_GROUPS', onOpenGroups);
+    const catchupSub = DeviceEventEmitter.addListener(
+      'CHANNEL_LIST_OPEN_CATCHUP',
+      (event: { channelId?: string }) => {
+        if (event.channelId && channelMap.has(event.channelId)) onOpenCatchup(event.channelId);
+      },
+    );
     const tabSub = DeviceEventEmitter.addListener(
       'CHANNEL_LIST_TAB_SELECT',
       (event: { tabId?: string }) => {
@@ -98,10 +106,11 @@ const NativeChannelList: React.FC<NativeChannelListProps> = ({
       selectSub.remove();
       focusSub.remove();
       groupsSub.remove();
+      catchupSub.remove();
       tabSub.remove();
       searchSub.remove();
     };
-  }, [channelMap, onChannelFocus, onChannelSelect, onOpenGroups, onSearchPress, onTabSelect]);
+  }, [channelMap, onChannelFocus, onChannelSelect, onOpenCatchup, onOpenGroups, onSearchPress, onTabSelect]);
 
   const channelsJson = useMemo(
     () =>

@@ -19,6 +19,7 @@ type NativeSideEpgViewProps = {
   clockFormat?: '12h' | '24h';
   accentColor?: string;
   bgColor?: string;
+  focusTrigger?: number;
 };
 
 export const isNativeSideEpgAvailable =
@@ -40,6 +41,8 @@ interface NativeSideEpgProps {
   bgColor?: string;
   onCatchupSelect?: (channelId: string, startMs: number, endMs: number, programTitle: string) => void;
   onOpenGroups?: () => void;
+  onReturnToChannels?: () => void;
+  focusTrigger?: number;
 }
 
 const NativeSideEpg: React.FC<NativeSideEpgProps> = ({
@@ -52,6 +55,8 @@ const NativeSideEpg: React.FC<NativeSideEpgProps> = ({
   bgColor,
   onCatchupSelect,
   onOpenGroups,
+  onReturnToChannels,
+  focusTrigger,
 }) => {
   useEffect(() => {
     const catchupSub = DeviceEventEmitter.addListener(
@@ -62,11 +67,13 @@ const NativeSideEpg: React.FC<NativeSideEpgProps> = ({
       },
     );
     const groupsSub = DeviceEventEmitter.addListener('SIDE_EPG_OPEN_GROUPS', () => onOpenGroups?.());
+    const returnSub = DeviceEventEmitter.addListener('SIDE_EPG_RETURN_TO_CHANNEL_LIST', () => onReturnToChannels?.());
     return () => {
       catchupSub.remove();
       groupsSub.remove();
+      returnSub.remove();
     };
-  }, [onCatchupSelect, onOpenGroups]);
+  }, [onCatchupSelect, onOpenGroups, onReturnToChannels]);
 
   const programsJson = useMemo(
     () =>
@@ -97,6 +104,7 @@ const NativeSideEpg: React.FC<NativeSideEpgProps> = ({
       clockFormat={clockFormat}
       accentColor={accentColor}
       bgColor={bgColor}
+      focusTrigger={focusTrigger ?? 0}
     />
   );
 };

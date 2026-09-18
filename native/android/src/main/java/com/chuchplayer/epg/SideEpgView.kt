@@ -33,6 +33,7 @@ class SideEpgView(context: Context) : View(context) {
     companion object {
         const val EVENT_CATCHUP_SELECT = "SIDE_EPG_CATCHUP_SELECT"
         const val EVENT_OPEN_GROUPS = "SIDE_EPG_OPEN_GROUPS"
+        const val EVENT_RETURN_TO_CHANNEL_LIST = "SIDE_EPG_RETURN_TO_CHANNEL_LIST"
     }
 
     data class Program(
@@ -299,7 +300,7 @@ class SideEpgView(context: Context) : View(context) {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_LEFT -> {
-                fireOpenGroups()
+                if (focusSearch(View.FOCUS_LEFT)?.requestFocus() != true) fireReturnToChannelList()
                 return true
             }
             KeyEvent.KEYCODE_DPAD_UP -> {
@@ -377,6 +378,13 @@ class SideEpgView(context: Context) : View(context) {
         (context as? ReactContext)
             ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             ?.emit(EVENT_OPEN_GROUPS, event)
+    }
+
+    private fun fireReturnToChannelList() {
+        val event = Arguments.createMap().apply { putString("channelId", channelId) }
+        (context as? ReactContext)
+            ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            ?.emit(EVENT_RETURN_TO_CHANNEL_LIST, event)
     }
 
     private fun queueLogo(url: String) {
