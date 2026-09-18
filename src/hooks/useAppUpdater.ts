@@ -5,8 +5,10 @@ import {
   RemoteVersion,
   fetchRemoteVersion,
   getInstalledVersionCode,
+  getSupportedAbis,
   downloadAndInstall,
   createProgressEmitter,
+  resolveApkUrl,
 } from '../services/appUpdater';
 
 type State =
@@ -55,7 +57,9 @@ export const useAppUpdater = () => {
     });
 
     try {
-      await downloadAndInstall(remote.apkUrl);
+      const apkUrl = resolveApkUrl(remote, await getSupportedAbis());
+      if (!apkUrl) throw new Error('No compatible APK is available for this device');
+      await downloadAndInstall(apkUrl);
     } catch (e) {
       setState({ phase: 'error', message: String(e) });
     } finally {

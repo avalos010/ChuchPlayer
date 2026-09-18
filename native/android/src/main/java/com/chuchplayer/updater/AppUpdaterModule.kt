@@ -2,6 +2,7 @@ package com.chuchplayer.updater
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.facebook.react.bridge.*
@@ -29,6 +30,13 @@ class AppUpdaterModule(private val reactContext: ReactApplicationContext) :
         } catch (e: PackageManager.NameNotFoundException) {
             promise.reject("VERSION_ERROR", e)
         }
+    }
+
+    @ReactMethod
+    fun getSupportedAbis(promise: Promise) {
+        val abis = Arguments.createArray()
+        Build.SUPPORTED_ABIS.forEach(abis::pushString)
+        promise.resolve(abis)
     }
 
     /** Downloads APK from [apkUrl], reporting progress via events, then triggers install. */
