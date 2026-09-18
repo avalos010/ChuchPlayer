@@ -66,6 +66,7 @@ describe('settings', () => {
     expect(settings.autoPlay).toBe(true);
     expect(settings.theme).toBe('dark');
     expect(settings.maxMultiScreens).toBe(4);
+    expect(settings.autoFrameRate).toBe(false);
   });
 
   it('round-trips saved settings', async () => {

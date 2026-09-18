@@ -18,7 +18,7 @@ class ExoPlayerViewManager : SimpleViewManager<PlayerView>() {
     }
 
     override fun onDropViewInstance(view: PlayerView) {
-        ExoPlayerHolder.pendingViews.remove(view)
+        ExoPlayerHolder.detachPlayer(view)
         view.player = null
         super.onDropViewInstance(view)
     }

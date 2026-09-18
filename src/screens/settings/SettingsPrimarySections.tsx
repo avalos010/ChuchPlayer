@@ -201,6 +201,21 @@ export function SettingsPrimarySections(props: SettingsPrimarySectionsProps) {
               />
             }
           />
+          <SettingRow styles={styles} rowFocusedStyle={rowFocusedStyle}
+            title="Auto Frame Rate"
+            desc="Match your TV refresh rate to the main video's frame rate"
+            top
+            onPress={() => updateSetting('autoFrameRate', !(settings.autoFrameRate ?? false))}
+            right={
+              <Switch
+                value={settings.autoFrameRate ?? false}
+                onValueChange={value => updateSetting('autoFrameRate', value)}
+                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
+                thumbColor={(settings.autoFrameRate ?? false) ? '#0a0a0a' : '#555555'}
+                disabled={loading}
+              />
+            }
+          />
           <View style={styles.settingRowTop}>
             <Text style={styles.settingTitle}>Buffer Mode</Text>
             <Text style={[styles.settingDesc, { marginBottom: 14 }]}>

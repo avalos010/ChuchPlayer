@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS: Settings = {
   channelRefreshIntervalMinutes: 120,
   bufferMode: 'balanced',
   hardwareDecoder: true,
+  autoFrameRate: false,
   infoBarTimeoutSeconds: 6,
   showChannelNumbers: false,
   clockFormat: '24h',

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, ScrollView, Text, View } from 'react-native';
+import { NativeModules, Platform, ScrollView, Text, View } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import FocusableItem from '../components/FocusableItem';
@@ -39,6 +39,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
     channelRefreshIntervalMinutes: 15,
     bufferMode: 'balanced',
     hardwareDecoder: true,
+    autoFrameRate: false,
     infoBarTimeoutSeconds: 6,
     showChannelNumbers: false,
     clockFormat: '24h',
@@ -159,6 +160,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
       setSettings(updated);
       await saveSettings(updated);
       syncInterfacePreferences(updated);
+      if (key === 'autoFrameRate' && Platform.OS === 'android') {
+        void NativeModules.ExoPlayerModule?.setAutoFrameRate(Boolean(value)).catch(() => undefined);
+      }
     } catch (err) {
       setSettings(prev);
       setTimeout(() => showError('Could not save settings.', String(err)), 100);

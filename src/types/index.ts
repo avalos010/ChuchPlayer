@@ -86,6 +86,7 @@ export interface Settings {
   // New settings
   bufferMode?: 'low_latency' | 'balanced' | 'smooth';
   hardwareDecoder?: boolean;
+  autoFrameRate?: boolean;
   infoBarTimeoutSeconds?: number;
   showChannelNumbers?: boolean;
   clockFormat?: '12h' | '24h';

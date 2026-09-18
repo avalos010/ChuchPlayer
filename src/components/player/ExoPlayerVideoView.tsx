@@ -6,6 +6,7 @@ import {
   requireNativeComponent,
 } from 'react-native';
 import type { PlayerPlaybackStatus, PlayerVideoHandle, PlayerVideoProps } from '../../types/video';
+import { getSettings } from '../../utils/storage';
 
 const { ExoPlayerModule } = NativeModules;
 
@@ -64,9 +65,17 @@ const ExoPlayerVideoView = forwardRef<PlayerVideoHandle, PlayerVideoProps>(
     // Load source whenever the URI changes (PlayerVideoStage re-keys this component on channel change)
     useEffect(() => {
       if (!uri) return;
-      ExoPlayerModule.loadSource(uri).catch((err: any) => {
-        onError?.(err?.message ?? 'Failed to load stream');
-      });
+      let active = true;
+      void getSettings()
+        .then((settings) => ExoPlayerModule.setAutoFrameRate?.(settings.autoFrameRate ?? false))
+        .catch(() => undefined)
+        .finally(() => {
+          if (!active) return;
+          ExoPlayerModule.loadSource(uri).catch((err: any) => {
+            onError?.(err?.message ?? 'Failed to load stream');
+          });
+        });
+      return () => { active = false; };
     }, [uri]);
 
     // Bridge native player events to existing PlayerVideoStage callbacks

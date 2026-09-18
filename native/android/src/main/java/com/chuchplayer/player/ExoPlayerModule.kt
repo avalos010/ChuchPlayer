@@ -30,7 +30,12 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
       .setLoadControl(createLoadControl())
       .setMediaSourceFactory(createMediaSourceFactory())
       .build()
-      .apply { addListener(createPlayerListener()) }
+      .apply {
+        addListener(createPlayerListener())
+        setVideoFrameMetadataListener { _, _, format, _ ->
+          ExoPlayerHolder.updateVideoFrameRate(format.frameRate)
+        }
+      }
 
     ExoPlayerHolder.onPlayerCreated(p)
     return p
@@ -183,6 +188,14 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
   fun setBufferConfig(minMs: Int, maxMs: Int, promise: Promise) {
     Log.d(TAG, "setBufferConfig: min=$minMs max=$maxMs (requires player rebuild)")
     promise.resolve(true)
+  }
+
+  @ReactMethod
+  fun setAutoFrameRate(enabled: Boolean, promise: Promise) {
+    scope.launch {
+      ExoPlayerHolder.setAutoFrameRate(enabled)
+      promise.resolve(true)
+    }
   }
 
   @ReactMethod
