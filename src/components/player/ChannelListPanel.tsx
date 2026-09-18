@@ -1,9 +1,8 @@
 import React, {
-  useRef, useEffect, useState, useCallback, useMemo, useImperativeHandle,
+  useRef, useEffect, useState, useCallback, useMemo,
 } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Platform, Animated, ScrollView,
+  View, Text, TextInput, TouchableOpacity, Platform, Animated,
 } from 'react-native';
 
 const KeyEvent = Platform.OS === 'android'
@@ -15,21 +14,18 @@ import FocusableItem from '../FocusableItem';
 import ChannelListItem from '../ChannelListItem';
 import NativeChannelList, { isNativeChannelListAvailable } from './NativeChannelList';
 import NativeSideEpg, { isNativeSideEpgAvailable } from './NativeSideEpg';
+import ChannelSideEpg from './ChannelSideEpg';
 import { Channel, EPGProgram } from '../../types';
 import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useFavorites } from '../../hooks/useFavorites';
 import { useRecentChannels } from '../../hooks/useRecentChannels';
-import { isTvLikePlatform } from '../../utils/platform';
-import { formatClockTime } from '../../utils/time';
 import { useThemeStore } from '../../store/useThemeStore';
-import { Theme, withAlpha, withAlphaAndroid } from '../../theme/themes';
-
-// Side list translucency — lets the video show through behind the panel.
-// PANEL_ALPHA is the single backdrop on the panel container; layers above it must be
-// transparent (or a light TINT_ALPHA) or the alphas stack and the video disappears.
-const PANEL_ALPHA = 0.8;
-const TINT_ALPHA = 0.35;
+import { withAlphaAndroid } from '../../theme/themes';
+import {
+  GROUPS_PANEL_W, SLIDE_DUR, TABS, TOTAL_W, TV, TabId,
+} from './ChannelListPanel.constants';
+import { createChannelListPanelStyles } from './ChannelListPanel.styles';
 
 interface ChannelListPanelProps {
   onChannelSelect: (channel: Channel) => void;
@@ -40,155 +36,6 @@ interface ChannelListPanelProps {
   showChannelNumbers?: boolean;
   clockFormat?: '12h' | '24h';
 }
-
-type TabId = 'all' | 'fav' | 'recent';
-
-const TV = isTvLikePlatform;
-const PANEL_W  = TV ? 340 : 300;
-const EPG_W    = TV ? 400 : 290;
-const TOTAL_W  = PANEL_W + EPG_W;
-const GROUPS_PANEL_W = TV ? 300 : 240;
-const SLIDE_DUR = 120;
-
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'all',    label: 'All' },
-  { id: 'fav',    label: '★ Fav' },
-  { id: 'recent', label: '🕒 Recent' },
-];
-
-// ─── Focused-channel EPG panel ────────────────────────────────────────────────
-interface EpgDetailPanelProps {
-  channel: Channel | null;
-  programs: EPGProgram[];
-  now: number;
-  clockFormat: '12h' | '24h';
-  onCatchupSelect?: (channelId: string, startMs: number, endMs: number, programTitle: string) => void;
-}
-
-const EPG_ROW_H = TV ? 88 : 74;
-
-const EpgDetailPanelInner = React.forwardRef<ScrollView, EpgDetailPanelProps>(
-  ({ channel, programs, now, clockFormat, onCatchupSelect }, ref) => {
-    const theme = useThemeStore((s) => s.theme);
-    const ep = useMemo(() => createEpgStyles(theme), [theme]);
-    const ROW_FOCUSED = useMemo(() => ({
-      backgroundColor: theme.card,
-      borderColor: theme.focused,
-      borderWidth: 1,
-      transform: [] as any[],
-      elevation: 4,
-    }), [theme]);
-    const scrollRef = useRef<ScrollView>(null);
-
-    // Expose the scroll ref so ChannelListPanel can forward it
-    useImperativeHandle(ref, () => scrollRef.current as ScrollView, []);
-
-    // Auto-scroll so current program is near the top when channel changes
-    useEffect(() => {
-      if (!programs.length) return;
-      const idx = programs.findIndex((p) => p.start.getTime() <= now && p.end.getTime() > now);
-      if (idx > 1) {
-        const t = setTimeout(
-          () => scrollRef.current?.scrollTo({ y: (idx - 1) * EPG_ROW_H, animated: false }),
-          50,
-        );
-        return () => clearTimeout(t);
-      }
-    }, [channel?.id, programs]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Scroll focused row into view
-    const handleRowFocus = useCallback((index: number) => {
-      scrollRef.current?.scrollTo({
-        y: Math.max(0, (index - 1) * EPG_ROW_H),
-        animated: true,
-      });
-    }, []);
-
-    if (!channel) {
-      return (
-        <View style={ep.empty}>
-          <Text style={ep.emptyTxt}>Focus a channel</Text>
-        </View>
-      );
-    }
-
-    const hasCatchup = channel.catchupAvailable;
-
-    return (
-      <View style={ep.root}>
-        {/* Header */}
-        <View style={ep.chHeader}>
-          <Text style={ep.chName} numberOfLines={1}>{channel.name}</Text>
-          {hasCatchup && (
-            <View style={ep.catchupBadge}><Text style={ep.catchupTxt}>⏮ catchup</Text></View>
-          )}
-        </View>
-
-        <ScrollView
-          ref={scrollRef}
-          scrollEnabled
-          showsVerticalScrollIndicator={false}
-          style={ep.scroll}
-        >
-          {programs.length === 0 ? (
-            <Text style={ep.noProg}>No guide data</Text>
-          ) : (
-            programs.map((p, index) => {
-              const isCurrent  = p.start.getTime() <= now && p.end.getTime() > now;
-              const isPast     = p.end.getTime() <= now;
-              const canCatchup = isPast && hasCatchup;
-              return (
-                <FocusableItem
-                  key={p.id}
-                  onPress={() => { if (canCatchup && channel) onCatchupSelect?.(channel.id, p.start.getTime(), p.end.getTime(), p.title); }}
-                  onFocus={() => handleRowFocus(index)}
-                  style={[
-                    ep.row,
-                    isCurrent && ep.rowCurrent,
-                    isPast && !canCatchup && ep.rowPastNoCatchup,
-                  ]}
-                  focusedStyle={ROW_FOCUSED}
-                >
-                  <View style={ep.rowLeft}>
-                    <Text style={[ep.time, isCurrent && ep.timeCurrent, isPast && !canCatchup && ep.timeGray]}>
-                      {formatClockTime(p.start, clockFormat, { hour: 'numeric', minute: '2-digit' })}
-                    </Text>
-                    {canCatchup && <Text style={ep.catchupDot}>⏮</Text>}
-                    {isCurrent && <View style={ep.nowDot} />}
-                  </View>
-                  <View style={ep.rowRight}>
-                    <Text
-                      style={[ep.title, isCurrent && ep.titleCurrent, isPast && !canCatchup && ep.titleGray]}
-                      numberOfLines={1}
-                    >
-                      {p.title}
-                    </Text>
-                    <Text style={[ep.dur, isCurrent && ep.durCurrent]}>
-                      {formatClockTime(p.start, clockFormat, { hour: 'numeric', minute: '2-digit' })} – {formatClockTime(p.end, clockFormat, { hour: 'numeric', minute: '2-digit' })}
-                    </Text>
-                    {typeof p.description === 'string' && p.description.trim().length > 0 && (
-                      <Text style={ep.desc} numberOfLines={1}>{p.description.trim()}</Text>
-                    )}
-                  </View>
-                </FocusableItem>
-              );
-            })
-          )}
-        </ScrollView>
-      </View>
-    );
-  },
-);
-
-EpgDetailPanelInner.displayName = 'EpgDetailPanel';
-
-const EpgDetailPanel = React.memo(EpgDetailPanelInner, (prev, next) =>
-  prev.channel?.id        === next.channel?.id        &&
-  prev.programs           === next.programs           &&
-  prev.clockFormat        === next.clockFormat        &&
-  prev.onCatchupSelect    === next.onCatchupSelect    &&
-  Math.abs(prev.now - next.now) < 60_000,
-);
 
 // ─── Main component ──────────────────────────────────────────────────────────
 const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
@@ -201,7 +48,7 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
   clockFormat = '24h',
 }) => {
   const theme = useThemeStore((s) => s.theme);
-  const st    = useMemo(() => createStyles(theme), [theme]);
+  const st    = useMemo(() => createChannelListPanelStyles(theme), [theme]);
   const TAB_FOCUSED     = useMemo(() => ({ backgroundColor: theme.card, borderColor: theme.focused, borderWidth: 1.5, transform: [] as any[], elevation: 3 }), [theme]);
   const TAB_ACT_FOCUSED = useMemo(() => ({ backgroundColor: theme.cardActive, borderColor: theme.accent, borderWidth: 1.5, transform: [] as any[], elevation: 4 }), [theme]);
   const GRP_FOCUSED     = useMemo(() => ({ backgroundColor: theme.card, borderColor: theme.focused, borderWidth: 1.5, transform: [] as any[], elevation: 3 }), [theme]);
@@ -604,7 +451,7 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
                   focusTrigger={nativeSideEpgFocusTrigger}
                 />
               ) : (
-                <EpgDetailPanel
+                <ChannelSideEpg
                   channel={focusedChannel}
                   programs={focusedPrograms}
                   now={nowMs}
@@ -627,322 +474,3 @@ const ChannelListPanel: React.FC<ChannelListPanelProps> = (props) => {
 };
 
 export default ChannelListPanel;
-
-// ─── Panel styles ─────────────────────────────────────────────────────────────
-const createStyles = (theme: Theme) => StyleSheet.create({
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
-    zIndex: 15,
-    elevation: 15,
-  },
-  panel: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: TOTAL_W,
-    backgroundColor: withAlpha(theme.bg, PANEL_ALPHA),
-    borderRightWidth: 1,
-    borderRightColor: theme.border,
-    zIndex: 20,
-    elevation: 20,
-  },
-  header: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-  },
-  headerLeft: {
-    width: PANEL_W,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: TV ? 10 : 8,
-    paddingTop: TV ? 16 : 12,
-    paddingBottom: TV ? 8 : 6,
-  },
-  headerEpg: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    paddingHorizontal: TV ? 12 : 10,
-    paddingBottom: TV ? 10 : 8,
-    borderLeftWidth: 1,
-    borderLeftColor: theme.border,
-    backgroundColor: withAlpha(theme.surface, TINT_ALPHA),
-  },
-  headerEpgTxt: {
-    color: theme.textMuted,
-    fontSize: TV ? 10 : 9,
-    fontWeight: '800',
-    letterSpacing: 2,
-  },
-  groupsArrow: {
-    width: TV ? 34 : 28,
-    height: TV ? 34 : 28,
-    borderRadius: 8,
-    backgroundColor: theme.card,
-    borderWidth: 1,
-    borderColor: theme.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  groupsArrowTxt: {
-    color: theme.textSub,
-    fontSize: TV ? 22 : 18,
-    fontWeight: '700',
-    lineHeight: TV ? 26 : 22,
-  },
-  headerTitle: {
-    color: theme.text,
-    fontSize: TV ? 16 : 14,
-    fontWeight: '800',
-    flex: 1,
-    letterSpacing: -0.3,
-  },
-  headerCount: {
-    color: theme.textMuted,
-    fontSize: TV ? 12 : 10,
-    fontWeight: '700',
-  },
-  searchArea: {
-    width: PANEL_W,
-  },
-  searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.card,
-    borderRadius: 8,
-    marginHorizontal: TV ? 10 : 8,
-    marginTop: TV ? 8 : 6,
-    marginBottom: TV ? 4 : 3,
-    paddingHorizontal: 10,
-    gap: 6,
-    height: TV ? 36 : 30,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  searchIcon: { fontSize: 12 },
-  searchInput: {
-    flex: 1,
-    color: theme.textSub,
-    fontSize: TV ? 13 : 11,
-    fontWeight: '500',
-    paddingVertical: 0,
-  },
-  clearBtn: { color: theme.textMuted, fontSize: 11, fontWeight: '700', padding: 4 },
-  tabsArea: {
-    width: PANEL_W,
-  },
-  tabsRow: {
-    flexDirection: 'row',
-    marginHorizontal: TV ? 10 : 8,
-    marginBottom: TV ? 6 : 4,
-    gap: 4,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: TV ? 6 : 4,
-    borderRadius: 6,
-    backgroundColor: theme.card,
-    borderWidth: 1,
-    borderColor: theme.border,
-    alignItems: 'center',
-  },
-  tabActive: {
-    backgroundColor: theme.cardActive,
-    borderColor: theme.accent,
-  },
-  tabTxt: { color: theme.textMuted, fontSize: TV ? 11 : 9, fontWeight: '700' },
-  tabTxtActive: { color: theme.accent },
-  groupsBtn: {
-    paddingVertical: TV ? 6 : 4,
-    paddingHorizontal: TV ? 12 : 8,
-    borderRadius: 6,
-    backgroundColor: theme.card,
-    borderWidth: 1,
-    borderColor: theme.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  groupsBtnTxt: { color: theme.textMuted, fontSize: TV ? 11 : 9, fontWeight: '700' },
-  columnHeadings: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: theme.border,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-    backgroundColor: theme.surface,
-  },
-  channelHeading: {
-    width: PANEL_W,
-    paddingHorizontal: TV ? 12 : 10,
-    paddingVertical: TV ? 8 : 6,
-  },
-  guideHeading: {
-    flex: 1,
-    paddingHorizontal: TV ? 12 : 10,
-    paddingVertical: TV ? 8 : 6,
-    borderLeftWidth: 1,
-    borderLeftColor: theme.border,
-  },
-  columnEyebrow: {
-    color: theme.textMuted,
-    fontSize: TV ? 9 : 8,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-  },
-  columnTitle: {
-    color: theme.textSub,
-    fontSize: TV ? 13 : 11,
-    fontWeight: '800',
-    marginTop: 2,
-  },
-  content: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  channelCol: {
-    width: PANEL_W,
-    flex: 0,
-  },
-  epgCol: {
-    flex: 1,
-    borderLeftWidth: 1,
-    borderLeftColor: theme.border,
-    backgroundColor: withAlpha(theme.surface, TINT_ALPHA),
-    overflow: 'hidden',
-  },
-  emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  emptyTxt: {
-    color: theme.textMuted,
-    fontSize: TV ? 13 : 11,
-    fontWeight: '500',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-});
-
-// ─── EpgDetailPanel styles ────────────────────────────────────────────────────
-const createEpgStyles = (theme: Theme) => StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  empty: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyTxt: {
-    color: theme.textMuted,
-    fontSize: TV ? 11 : 9,
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: TV ? 18 : 15,
-  },
-  chHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: TV ? 12 : 10,
-    paddingVertical: TV ? 10 : 8,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-    backgroundColor: theme.surface,
-  },
-  chName: {
-    flex: 1,
-    color: theme.textSub,
-    fontSize: TV ? 14 : 12,
-    fontWeight: '700',
-  },
-  catchupBadge: {
-    backgroundColor: theme.card,
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderWidth: 1,
-    borderColor: theme.accent,
-  },
-  catchupTxt: {
-    color: theme.accent,
-    fontSize: TV ? 9 : 8,
-    fontWeight: '700',
-  },
-  scroll: {
-    flex: 1,
-  },
-  noProg: {
-    color: theme.textMuted,
-    fontSize: TV ? 11 : 9,
-    fontWeight: '500',
-    padding: 16,
-    textAlign: 'center',
-  },
-  row: {
-    flexDirection: 'row',
-    paddingHorizontal: TV ? 10 : 8,
-    paddingVertical: TV ? 8 : 6,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-    minHeight: 72,
-    alignItems: 'flex-start',
-  },
-  rowCurrent: {
-    backgroundColor: theme.cardActive,
-    borderLeftWidth: 3,
-    borderLeftColor: theme.accent,
-  },
-  rowPastNoCatchup: {
-    opacity: 0.35,
-  },
-  rowLeft: {
-    width: TV ? 44 : 38,
-    alignItems: 'center',
-    gap: 4,
-    paddingTop: 2,
-  },
-  time: {
-    color: theme.textMuted,
-    fontSize: TV ? 10 : 9,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  timeCurrent: { color: theme.accent },
-  timeGray: { color: theme.textMuted },
-  catchupDot: {
-    fontSize: TV ? 9 : 8,
-    color: theme.accent,
-  },
-  nowDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: theme.accent,
-  },
-  rowRight: {
-    flex: 1,
-    gap: 3,
-    paddingLeft: TV ? 6 : 4,
-  },
-  title: {
-    color: theme.textSub,
-    fontSize: TV ? 13 : 11,
-    fontWeight: '600',
-    lineHeight: TV ? 17 : 15,
-  },
-  titleCurrent: { color: theme.text },
-  titleGray: { color: theme.textMuted },
-  dur: {
-    color: theme.textMuted,
-    fontSize: TV ? 10 : 9,
-    fontWeight: '500',
-  },
-  durCurrent: { color: theme.textSub },
-  desc: {
-    color: theme.textMuted,
-    fontSize: TV ? 11 : 10,
-    fontWeight: '400' as const,
-    marginTop: 2,
-  },
-});
