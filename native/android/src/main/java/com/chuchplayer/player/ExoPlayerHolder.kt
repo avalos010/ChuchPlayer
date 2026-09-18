@@ -44,10 +44,15 @@ object ExoPlayerHolder {
     private fun applyFrameRate(frameRate: Float) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         attachedViews.forEach { view ->
-            (view.videoSurfaceView as? SurfaceView)?.setFrameRate(
-                frameRate,
-                Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
-            )
+            val surface = (view.videoSurfaceView as? SurfaceView)?.holder?.surface
+            if (surface?.isValid != true) return@forEach
+            try {
+                surface.setFrameRate(
+                    frameRate,
+                    Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
+                )
+            } catch (_: IllegalStateException) {
+            }
         }
     }
 

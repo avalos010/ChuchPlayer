@@ -5,6 +5,12 @@ import { Animated, Dimensions, Platform } from 'react-native';
 import { useUIStore } from './useUIStore';
 import type { PlayerVideoHandle } from '../types/video';
 
+export interface VideoInfo {
+  width: number;
+  height: number;
+  frameRate?: number;
+}
+
 interface PlayerState {
   // Core Player State
   channel: Channel | null;
@@ -17,6 +23,7 @@ interface PlayerState {
   channels: Channel[];
   playlist: Playlist | null;
   channelNumberInput: string;
+  videoInfo: VideoInfo | null;
 
   // Actions for Player State
   setChannel: (channel: Channel | null) => void;
@@ -28,6 +35,7 @@ interface PlayerState {
   setChannels: (channels: Channel[]) => void;
   setPlaylist: (playlist: Playlist | null) => void;
   setChannelNumberInput: (input: string) => void;
+  setVideoInfo: (videoInfo: VideoInfo | null) => void;
 
   // Video handlers
   handleVideoReady: () => void;
@@ -71,6 +79,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   channels: [],
   playlist: null,
   channelNumberInput: '',
+  videoInfo: null,
 
   // Player State Actions
   setChannel: (channel) => set((s) => ({
@@ -85,6 +94,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setChannels: (channels) => set({ channels }),
   setPlaylist: (playlist) => set({ playlist }),
   setChannelNumberInput: (input) => set({ channelNumberInput: input }),
+  setVideoInfo: (videoInfo) => set({ videoInfo }),
 
   // Video handlers
   handleVideoReady: () => {

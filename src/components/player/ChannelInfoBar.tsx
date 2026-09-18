@@ -41,6 +41,16 @@ const LOGO_SZ = TV ? 60 : 44;
 const aspectLabel = (m: ResizeMode) =>
   m === ResizeMode.COVER ? 'Cover' : m === ResizeMode.CONTAIN ? 'Fit' : 'Fill';
 
+const videoQualityLabel = (height: number, frameRate?: number) => {
+  const commonHeights = [2160, 1440, 1080, 720, 576, 480];
+  const labelHeight = commonHeights.find((value) => Math.abs(value - height) <= 8) ?? height;
+  if (!frameRate) return `${labelHeight}p`;
+  const fps = Math.abs(frameRate - Math.round(frameRate)) < 0.02
+    ? Math.round(frameRate).toString()
+    : frameRate.toFixed(2);
+  return `${labelHeight}p · ${fps} fps`;
+};
+
 // ─── Control button ───────────────────────────────────────────────────────────
 const ICON_SZ = TV ? 22 : 18;
 
@@ -110,6 +120,7 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
 
   const isPlaying       = usePlayerStore((st) => st.isPlaying);
   const resizeMode      = usePlayerStore((st) => st.resizeMode);
+  const videoInfo       = usePlayerStore((st) => st.videoInfo);
   const cycleResizeMode = usePlayerStore((st) => st.cycleResizeMode);
   const hasVod          = usePlayerStore((st) => (
     st.playlist?.sourceType === 'xtream' || (st.playlist?.vodItems?.length ?? 0) > 0
@@ -250,6 +261,11 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
               <Text style={s.chName} numberOfLines={1}>{channel.name}</Text>
               {channel.catchupAvailable && (
                 <View style={s.catchupBadge}><Text style={s.catchupTxt}>⏮</Text></View>
+              )}
+              {videoInfo && (
+                <View style={s.qualityBadge}>
+                  <Text style={s.qualityTxt}>{videoQualityLabel(videoInfo.height, videoInfo.frameRate)}</Text>
+                </View>
               )}
               {sleepLabel && (
                 <View style={s.sleepBadge}><Text style={s.sleepTxt}>💤 {sleepLabel}</Text></View>
@@ -510,6 +526,19 @@ const createStyles = (theme: Theme) => StyleSheet.create({
   },
   catchupTxt: {
     color: theme.accent,
+    fontSize: TV ? 11 : 9,
+    fontWeight: '700',
+  },
+  qualityBadge: {
+    backgroundColor: theme.card,
+    borderRadius: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  qualityTxt: {
+    color: theme.textSub,
     fontSize: TV ? 11 : 9,
     fontWeight: '700',
   },

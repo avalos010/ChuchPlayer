@@ -65,6 +65,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const loading = usePlayerStore((state) => state.loading);
   const error = usePlayerStore((state) => state.error);
   const resizeMode = usePlayerStore((state) => state.resizeMode);
+  const setVideoInfo = usePlayerStore((state) => state.setVideoInfo);
   
   // UI store state
   const showEPG = useUIStore((state) => state.showEPG);
@@ -139,10 +140,26 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   // Show info bar when channel changes; track recents
   useEffect(() => {
     if (!channel) return;
+    setVideoInfo(null);
     useUIStore.getState().setShowControls(false);
     useUIStore.getState().setShowInfoBar(true);
     addRecent(channel.id);
-  }, [channel?.id]);
+  }, [channel?.id, setVideoInfo]);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      'PLAYER_VIDEO_INFO',
+      (event: { width: number; height: number; frameRate?: number }) => {
+        const current = usePlayerStore.getState().videoInfo;
+        setVideoInfo({
+          width: event.width,
+          height: event.height,
+          frameRate: event.frameRate ?? current?.frameRate,
+        });
+      },
+    );
+    return () => sub.remove();
+  }, [setVideoInfo]);
 
   // Listen for EPG_PROGRAM_INFO events from native long-press
   useEffect(() => {

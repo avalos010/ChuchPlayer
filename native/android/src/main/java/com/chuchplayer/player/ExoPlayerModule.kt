@@ -10,6 +10,7 @@ import androidx.media3.exoplayer.source.MediaSource
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import kotlinx.coroutines.*
+import kotlin.math.abs
 
 class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
   private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -19,7 +20,13 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
     private const val EVENT_STATE_CHANGED = "PLAYER_STATE_CHANGED"
     private const val EVENT_ERROR = "PLAYER_ERROR"
     private const val EVENT_PROGRESS = "PLAYER_PROGRESS"
+    private const val EVENT_VIDEO_INFO = "PLAYER_VIDEO_INFO"
   }
+
+  private var videoWidth = 0
+  private var videoHeight = 0
+  private var videoFrameRate = 0f
+  private var lastVideoPresentationTimeUs = C.TIME_UNSET
 
   override fun getName() = "ExoPlayerModule"
 
@@ -32,8 +39,12 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
       .build()
       .apply {
         addListener(createPlayerListener())
-        setVideoFrameMetadataListener { _, _, format, _ ->
-          ExoPlayerHolder.updateVideoFrameRate(format.frameRate)
+        setVideoFrameMetadataListener { presentationTimeUs, _, format, _ ->
+          if (format.frameRate in 1f..240f) {
+            updateVideoFrameRate(format.frameRate)
+          } else {
+            updateVideoFrameRateFromPresentationTime(presentationTimeUs)
+          }
         }
       }
 
@@ -92,6 +103,53 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
         putBoolean("isPlaying", isPlaying)
       })
     }
+
+    override fun onVideoSizeChanged(videoSize: VideoSize) {
+      if (videoSize.width == videoWidth && videoSize.height == videoHeight) return
+      videoWidth = videoSize.width
+      videoHeight = videoSize.height
+      sendVideoInfo()
+    }
+
+    override fun onTracksChanged(tracks: Tracks) {
+      val frameRate = tracks.groups
+        .filter { it.type == C.TRACK_TYPE_VIDEO }
+        .flatMap { group -> (0 until group.length).map(group::getTrackFormat) }
+        .firstOrNull { it.frameRate in 1f..240f }
+        ?.frameRate
+        ?: return
+      updateVideoFrameRate(frameRate)
+    }
+  }
+
+  private fun updateVideoFrameRate(frameRate: Float) {
+    if (frameRate !in 1f..240f || abs(frameRate - videoFrameRate) < 0.01f) return
+    videoFrameRate = frameRate
+    ExoPlayerHolder.updateVideoFrameRate(frameRate)
+    sendVideoInfo()
+  }
+
+  private fun updateVideoFrameRateFromPresentationTime(presentationTimeUs: Long) {
+    val previousTimeUs = lastVideoPresentationTimeUs
+    lastVideoPresentationTimeUs = presentationTimeUs
+    if (previousTimeUs == C.TIME_UNSET) return
+
+    val intervalUs = presentationTimeUs - previousTimeUs
+    if (intervalUs !in 8_000L..66_667L) return
+
+    val estimatedRate = 1_000_000f / intervalUs
+    val standardRate = floatArrayOf(23.976f, 24f, 25f, 29.97f, 30f, 50f, 59.94f, 60f)
+      .minBy { abs(it - estimatedRate) }
+    updateVideoFrameRate(if (abs(standardRate - estimatedRate) < 2f) standardRate else estimatedRate)
+  }
+
+  private fun sendVideoInfo() {
+    if (videoWidth <= 0 || videoHeight <= 0) return
+    sendEvent(EVENT_VIDEO_INFO, Arguments.createMap().apply {
+      putInt("width", videoWidth)
+      putInt("height", videoHeight)
+      if (videoFrameRate > 0f) putDouble("frameRate", videoFrameRate.toDouble())
+    })
   }
 
   @ReactMethod
@@ -99,6 +157,10 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
     scope.launch {
       try {
         Log.d(TAG, "loadSource: $url")
+        videoWidth = 0
+        videoHeight = 0
+        videoFrameRate = 0f
+        lastVideoPresentationTimeUs = C.TIME_UNSET
         val p = getOrCreatePlayer()
         p.setMediaItem(MediaItem.Builder().setUri(url).build())
         p.prepare()
