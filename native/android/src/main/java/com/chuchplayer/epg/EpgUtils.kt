@@ -8,9 +8,11 @@ import org.json.JSONArray
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.io.BufferedInputStream
 import java.io.InputStream
 import java.util.*
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.zip.GZIPInputStream
 
 private const val TAG = "EpgUtils"
 const val HOURS_BEFORE = 12L
@@ -117,7 +119,7 @@ fun streamXmlPrograms(
     val batch = ArrayList<ProgramData>(BATCH_SIZE)
     val factory = XmlPullParserFactory.newInstance().apply { isNamespaceAware = false }
     val parser = factory.newPullParser()
-    parser.setInput(inputStream, "UTF-8")
+    parser.setInput(openXmlInputStream(inputStream), "UTF-8")
 
     val now = System.currentTimeMillis()
     val lowerBound = now - HOURS_BEFORE * 3_600_000L
@@ -192,6 +194,14 @@ fun streamXmlPrograms(
     )
 
     return matchingPrograms
+}
+
+private fun openXmlInputStream(inputStream: InputStream): InputStream {
+    val buffered = BufferedInputStream(inputStream)
+    buffered.mark(2)
+    val isGzip = buffered.read() == 0x1f && buffered.read() == 0x8b
+    buffered.reset()
+    return if (isGzip) GZIPInputStream(buffered) else buffered
 }
 
 fun writeProgramsToRealm(programs: List<ProgramData>): Int {

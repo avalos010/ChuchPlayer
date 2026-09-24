@@ -26,6 +26,12 @@ import {
   getActiveEpgUrls,
 } from "./epgManagement/signatures";
 
+const EPG_INGESTION_ERROR_MESSAGE =
+  "Some guide sources are unavailable or unreadable. Listings may be missing or out of date, but your channels can still play. Check the EPG URL in playlist settings or try again.";
+
+const EPG_LOAD_ERROR_MESSAGE =
+  "The TV guide couldn't be loaded. Your channels can still play. Try refreshing, or check the EPG source in playlist settings.";
+
 export const useEPGManagement = () => {
   const channels = usePlayerStore((state) => state.channels);
   const playlist = usePlayerStore((state) => state.playlist);
@@ -343,7 +349,7 @@ export const useEPGManagement = () => {
 
         const errorMessage =
           errors.length > 0 && errors.length === urlsToIngest.length
-            ? errors.join("\n")
+            ? EPG_INGESTION_ERROR_MESSAGE
             : null;
 
         setEpgStatus({ loading: false, error: errorMessage });
@@ -352,9 +358,8 @@ export const useEPGManagement = () => {
           return;
         }
 
-        const message =
-          error instanceof Error ? error.message : "Unknown error";
-        setEpgStatus({ loading: false, error: message });
+        console.error("[EPG] Guide loading failed:", error);
+        setEpgStatus({ loading: false, error: EPG_LOAD_ERROR_MESSAGE });
       }
     };
 

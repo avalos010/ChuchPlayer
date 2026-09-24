@@ -7,6 +7,38 @@ import type { Settings } from '../types';
 import { getSettings } from '../utils/storage';
 import { showError } from '../utils/toast';
 
+const getPlaybackErrorMessage = (error: string) => {
+  const message = error.toLowerCase();
+
+  if (
+    message.includes('unrecognizedinputformatexception') ||
+    message.includes('could read the stream')
+  ) {
+    return 'This channel uses a video format this device cannot play. Try another channel.';
+  }
+  if (message.includes('404') || message.includes('not found')) {
+    return "The provider couldn't find this channel's stream. It may be offline or the playlist link may be out of date.";
+  }
+  if (
+    message.includes('403') ||
+    message.includes('forbidden') ||
+    message.includes('401') ||
+    message.includes('unauthorized')
+  ) {
+    return 'The provider denied access to this stream. Check your playlist or provider account.';
+  }
+  if (
+    message.includes('network') ||
+    message.includes('connectexception') ||
+    message.includes('unknownhost') ||
+    message.includes('sockettimeout')
+  ) {
+    return "Couldn't reach the stream server. Check your internet connection and try again.";
+  }
+
+  return "Couldn't play this channel. Try another channel or check the playlist link.";
+};
+
 export const useVideoPlayback = (videoRef: React.RefObject<PlayerVideoHandle | null>) => {
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
   const settingsRef = useRef<Settings | null>(null);
@@ -71,10 +103,11 @@ export const useVideoPlayback = (videoRef: React.RefObject<PlayerVideoHandle | n
         const errorDetails = typeof status.error === 'string'
           ? status.error
           : (status.error as any)?.message || 'Unknown playback error';
-        setError('Stream playback error. Please check your connection.');
+        const errorMessage = getPlaybackErrorMessage(errorDetails);
+        setError(errorMessage);
         setLoading(false); // Clear loading on error
         setTimeout(() => {
-          showError('Stream playback error. Please check your connection.', errorDetails);
+          showError(errorMessage, errorDetails);
         }, 100);
       }
       return;
@@ -181,25 +214,16 @@ export const useVideoPlayback = (videoRef: React.RefObject<PlayerVideoHandle | n
     console.error('Video onError callback:', error);
     setLoading(false);
 
-    // Parse error to provide better user feedback
-    let errorMsg = 'Failed to load stream. Please check your connection and try again.';
-    const errorString = String(error);
-
-    // Check for ExoPlayer unrecognized format error
-    if (errorString.includes('UnrecognizedInputFormatException') ||
-      errorString.includes('could read the stream')) {
-      errorMsg = 'Stream format not supported. This channel may not be available or the stream format is incompatible.';
-    } else if (errorString.includes('NetworkError') || errorString.includes('network')) {
-      errorMsg = 'Network error. Please check your internet connection.';
-    } else if (errorString.includes('404') || errorString.includes('Not Found')) {
-      errorMsg = 'Stream not found. This channel may no longer be available.';
-    } else if (errorString.includes('403') || errorString.includes('Forbidden')) {
-      errorMsg = 'Access denied. This stream may require authentication.';
-    }
+    const errorString = error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : (error as any)?.message ?? String(error);
+    const errorMsg = getPlaybackErrorMessage(errorString);
 
     setError(errorMsg);
     setTimeout(() => {
-      showError('Video load error', errorMsg);
+      showError(errorMsg, errorString);
     }, 100);
   }, [setLoading, setError]);
 

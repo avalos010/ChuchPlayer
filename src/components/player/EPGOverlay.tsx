@@ -289,7 +289,7 @@ const EPGOverlay: React.FC<EPGOverlayProps> = ({
           ) : epgError ? (
             <View style={s.errBox}>
               <Text style={s.errTitle}>Guide unavailable</Text>
-              <Text style={s.errDesc} numberOfLines={2}>{epgError}</Text>
+              <Text style={s.errDesc} numberOfLines={3}>{epgError}</Text>
             </View>
           ) : (
             <View style={s.statusRow}>
