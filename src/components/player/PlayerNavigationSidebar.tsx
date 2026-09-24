@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { MaterialCommunityIcons as MCI } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import FocusableItem from '../FocusableItem';
 import { RootStackParamList } from '../../types';
 import { usePlayerStore } from '../../store/usePlayerStore';
@@ -9,6 +9,10 @@ import { useUIStore } from '../../store/useUIStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { Theme, withAlpha } from '../../theme/themes';
 import { NAVIGATION_PANEL_W, TV } from './ChannelListPanel.constants';
+
+const KeyEvent = Platform.OS === 'android'
+  ? (require('react-native-keyevent').default ?? require('react-native-keyevent'))
+  : null;
 
 interface PlayerNavigationSidebarProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Player'>;
@@ -34,6 +38,14 @@ const PlayerNavigationSidebar: React.FC<PlayerNavigationSidebarProps> = ({ navig
   useEffect(() => {
     setPreferInitialFocus(true);
   }, [visible]);
+
+  useEffect(() => {
+    if (!visible || !KeyEvent) return undefined;
+    KeyEvent.onKeyDownListener((event: { keyCode: number }) => {
+      if (event.keyCode === 22) setShowPrimaryNavigation(false);
+    });
+    return () => KeyEvent.removeKeyDownListener();
+  }, [visible, setShowPrimaryNavigation]);
 
   const closeSidebar = useCallback(() => {
     setShowPrimaryNavigation(false);

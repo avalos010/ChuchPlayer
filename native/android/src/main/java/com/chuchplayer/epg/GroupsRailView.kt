@@ -113,6 +113,7 @@ class GroupsRailView(context: Context) : View(context) {
 
     fun setPrimaryNavigationOpen(open: Boolean) {
         primaryNavigationOpen = open
+        if (!open) post { requestFocus() }
     }
 
     private fun parseItems(json: String): List<Item> {
