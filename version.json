@@ -1,6 +1,12 @@
 {
-  "versionCode": 10002,
-  "versionName": "1.0.2",
-  "apkUrl": "https://github.com/avalos010/ChuchPlayer/releases/download/v1.0.2/chuchplayer-v1.0.2.apk",
-  "releaseNotes": "Initial release"
+  "versionCode": 10003,
+  "versionName": "1.0.3",
+  "apkUrl": "https://github.com/avalos010/ChuchPlayer/releases/download/v1.0.3/chuchplayer-v1.0.3-arm64-v8a.apk",
+  "releaseNotes": "Initial release",
+  "apkUrls": {
+    "arm64-v8a": "https://github.com/avalos010/ChuchPlayer/releases/download/v1.0.3/chuchplayer-v1.0.3-arm64-v8a.apk",
+    "armeabi-v7a": "https://github.com/avalos010/ChuchPlayer/releases/download/v1.0.3/chuchplayer-v1.0.3-armeabi-v7a.apk",
+    "x86": "https://github.com/avalos010/ChuchPlayer/releases/download/v1.0.3/chuchplayer-v1.0.3-x86.apk",
+    "x86_64": "https://github.com/avalos010/ChuchPlayer/releases/download/v1.0.3/chuchplayer-v1.0.3-x86_64.apk"
+  }
 }
