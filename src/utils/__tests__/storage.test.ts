@@ -72,7 +72,6 @@ describe('settings', () => {
   it('round-trips saved settings', async () => {
     const custom: Settings = {
       autoPlay: false,
-      showEPG: true,
       theme: 'light',
       multiScreenEnabled: false,
       maxMultiScreens: 2,
@@ -89,7 +88,7 @@ describe('settings', () => {
   it('applies defaults for missing optional fields (backward compat)', async () => {
     // Simulate old stored settings without multiScreenEnabled
     (AsyncStorage.getItem as jest.Mock).mockResolvedValueOnce(
-      JSON.stringify({ autoPlay: true, showEPG: false, theme: 'dark' })
+      JSON.stringify({ autoPlay: true, theme: 'dark' })
     );
     const settings = await getSettings();
     expect(settings.multiScreenEnabled).toBe(true);

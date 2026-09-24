@@ -14,7 +14,6 @@ const RECENT_CHANNELS_KEY = '@chuchPlayer:recentChannels';
 
 export const DEFAULT_SETTINGS: Settings = {
   autoPlay: true,
-  showEPG: false,
   theme: 'dark',
   multiScreenEnabled: true,
   maxMultiScreens: 4,

@@ -8,6 +8,7 @@ import { usePlayerStore } from '../../store/usePlayerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useThemeStore } from '../../store/useThemeStore';
 import { Theme, withAlpha, withAlphaAndroid } from '../../theme/themes';
+import { NAVIGATION_PANEL_W } from './ChannelListPanel.constants';
 
 const PANEL_ALPHA = 0.8;
 import { getPlaylists } from '../../utils/storage';
@@ -22,6 +23,9 @@ interface GroupsPlaylistsPanelProps {
 
 const TV = isTvLikePlatform;
 const PANEL_W = TV ? 300 : 240;
+const KeyEvent = Platform.OS === 'android'
+  ? (require('react-native-keyevent').default ?? require('react-native-keyevent'))
+  : null;
 
 type ListItem =
   | { type: 'section'; title: string; id: string }
@@ -36,7 +40,9 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const showGroupsPlaylists    = useUIStore((s) => s.showGroupsPlaylists);
+  const showPrimaryNavigation  = useUIStore((s) => s.showPrimaryNavigation);
   const setShowGroupsPlaylists = useUIStore((s) => s.setShowGroupsPlaylists);
+  const setShowPrimaryNavigation = useUIStore((s) => s.setShowPrimaryNavigation);
   const setShowChannelList     = useUIStore((s) => s.setShowChannelList);
   const selectedGroup          = useUIStore((s) => s.selectedGroup);
   const setSelectedGroup       = useUIStore((s) => s.setSelectedGroup);
@@ -48,6 +54,37 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
   const [loadingPlaylists, setLoadingPlaylists] = useState(true);
   const hasSetInitialFocusRef                   = useRef(false);
   const listRef                                 = useRef<FlatList<ListItem>>(null);
+  const useNativeRail = Platform.OS === 'android' && TV && isNativeGroupsRailAvailable;
+
+  const handleOpenNavigation = useCallback(() => {
+    setShowPrimaryNavigation(true);
+  }, [setShowPrimaryNavigation]);
+
+  const handleCloseNavigation = useCallback(() => {
+    setShowPrimaryNavigation(false);
+  }, [setShowPrimaryNavigation]);
+
+  useEffect(() => {
+    if (!showGroupsPlaylists) return;
+    if (Platform.OS === 'android' && !useNativeRail && KeyEvent) {
+      KeyEvent.onKeyDownListener((event: { keyCode: number }) => {
+        if (event.keyCode === 21) {
+          setShowPrimaryNavigation(true);
+        }
+      });
+      return () => KeyEvent.removeKeyDownListener();
+    }
+    if (Platform.OS === 'web') {
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== 'ArrowLeft') return;
+        setShowPrimaryNavigation(true);
+        event.preventDefault();
+      };
+      window.addEventListener('keydown', onKeyDown);
+      return () => window.removeEventListener('keydown', onKeyDown);
+    }
+    return undefined;
+  }, [setShowPrimaryNavigation, showGroupsPlaylists, useNativeRail]);
 
   useEffect(() => {
     getPlaylists()
@@ -207,8 +244,6 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
   if (!showGroupsPlaylists) return null;
 
   const activeGroupLabel = selectedGroup || 'All Channels';
-  const useNativeRail = Platform.OS === 'android' && TV && isNativeGroupsRailAvailable;
-
   if (useNativeRail) {
     return (
       <>
@@ -218,7 +253,7 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
           focusable={false}
           onPress={() => setShowGroupsPlaylists(false)}
         />
-        <View style={styles.panel}>
+        <View style={[styles.panel, showPrimaryNavigation && { left: NAVIGATION_PANEL_W }]}>
           <NativeGroupsRail
             style={{ flex: 1 }}
             groups={groupModels}
@@ -227,9 +262,12 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
             currentPlaylistId={playlist?.id}
             accentColor={theme.accent}
             bgColor={withAlphaAndroid(theme.surface, 0)}
+            primaryNavigationOpen={showPrimaryNavigation}
             onGroupSelect={handleGroupPress}
             onPlaylistSelect={handleNativePlaylistSelect}
             onClose={handleNativeClose}
+            onOpenNavigation={handleOpenNavigation}
+            onCloseNavigation={handleCloseNavigation}
           />
         </View>
       </>
@@ -244,7 +282,7 @@ const GroupsPlaylistsPanel: React.FC<GroupsPlaylistsPanelProps> = ({
         focusable={false}
         onPress={() => setShowGroupsPlaylists(false)}
       />
-      <View style={styles.panel}>
+      <View style={[styles.panel, showPrimaryNavigation && { left: NAVIGATION_PANEL_W }]}>
         <View style={styles.header}>
           <View style={styles.headerText}>
             <Text style={styles.headerTitle} numberOfLines={1}>Groups & Playlists</Text>

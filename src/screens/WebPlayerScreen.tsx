@@ -62,10 +62,6 @@ const WebPlayerScreen: React.FC<WebPlayerScreenProps> = ({ navigation, route }) 
   }, [channel?.id]);
 
   useEffect(() => {
-    setGuideOpen(interfacePreferences.showEPG);
-  }, [interfacePreferences.showEPG]);
-
-  useEffect(() => {
     const id = setInterval(() => setClock(new Date()), 30_000);
     return () => clearInterval(id);
   }, []);

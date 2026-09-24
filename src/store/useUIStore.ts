@@ -21,6 +21,7 @@ interface UIState {
   showEPGGrid: boolean;
   showChannelList: boolean;
   showGroupsPlaylists: boolean;
+  showPrimaryNavigation: boolean;
   showChannelNumberPad: boolean;
   showVolumeIndicator: boolean;
   showControls: boolean;
@@ -37,6 +38,7 @@ interface UIState {
   setShowEPGGrid: (show: boolean) => void;
   setShowChannelList: (show: boolean) => void;
   setShowGroupsPlaylists: (show: boolean) => void;
+  setShowPrimaryNavigation: (show: boolean) => void;
   setShowChannelNumberPad: (show: boolean) => void;
   setShowVolumeIndicator: (show: boolean) => void;
   setShowControls: (show: boolean) => void;
@@ -58,6 +60,7 @@ export const useUIStore = create<UIState>((set) => ({
   showEPGGrid: false,
   showChannelList: false,
   showGroupsPlaylists: false,
+  showPrimaryNavigation: false,
   showChannelNumberPad: false,
   showVolumeIndicator: false,
   showControls: false,
@@ -72,7 +75,10 @@ export const useUIStore = create<UIState>((set) => ({
   setShowEPG: (show) => set({ showEPG: show }),
   setShowEPGGrid: (show) => set({ showEPGGrid: show }),
   setShowChannelList: (show) => set({ showChannelList: show }),
-  setShowGroupsPlaylists: (show) => set({ showGroupsPlaylists: show }),
+  setShowGroupsPlaylists: (show) => set(show
+    ? { showGroupsPlaylists: true }
+    : { showGroupsPlaylists: false, showPrimaryNavigation: false }),
+  setShowPrimaryNavigation: (show) => set({ showPrimaryNavigation: show }),
   setShowChannelNumberPad: (show) => set({ showChannelNumberPad: show }),
   setShowVolumeIndicator: (show) => set({ showVolumeIndicator: show }),
   setShowControls: (show) => set({ showControls: show }),
@@ -90,6 +96,7 @@ export const useUIStore = create<UIState>((set) => ({
     showEPGGrid: false,
     showChannelList: false,
     showGroupsPlaylists: false,
+    showPrimaryNavigation: false,
     showChannelNumberPad: false,
     showControls: false,
     showInfoBar: false,

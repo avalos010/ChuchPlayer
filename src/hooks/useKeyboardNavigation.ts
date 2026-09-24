@@ -236,6 +236,10 @@ export const useKeyboardNavigation = ({
         h.exitPIP();
         return true;
       }
+      if (ui.showPrimaryNavigation) {
+        ui.setShowPrimaryNavigation(false);
+        return true;
+      }
       if (ui.showGroupsPlaylists) {
         ui.setShowGroupsPlaylists(false);
         return true;

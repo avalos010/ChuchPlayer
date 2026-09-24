@@ -31,7 +31,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [settings, setSettings] = useState<Settings>({
     autoPlay: true,
-    showEPG: false,
     theme: 'dark',
     multiScreenEnabled: true,
     maxMultiScreens: 4,
@@ -415,7 +414,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
           <View style={styles.settingsStats}>
             <View style={styles.statPill}><Text style={styles.statValue}>{playlists.length}</Text><Text style={styles.statLabel}>Playlists</Text></View>
             <View style={styles.statPill}><Text style={styles.statValue}>{settings.clockFormat ?? '24h'}</Text><Text style={styles.statLabel}>Clock</Text></View>
-            <View style={styles.statPill}><Text style={styles.statValue}>{settings.showEPG ? 'On' : 'Off'}</Text><Text style={styles.statLabel}>EPG</Text></View>
           </View>
         </View>
         <SettingsPrimarySections styles={styles} settings={settings} playlists={playlists} loadingPlaylists={loadingPlaylists} renderPlaylistItem={renderPlaylistItem} onAddPlaylist={openCreatePlaylistModal} addPlaylistRef={addPlaylistRef} shouldPreferFocus={shouldPreferFocus} setSectionOffset={setSectionOffset} themeId={themeId} setTheme={setTheme} setCustomAccentInput={setCustomAccentInput} setCustomBgInput={setCustomBgInput} customAccentInput={customAccentInput} customBgInput={customBgInput} setCustom={setCustom} resetTheme={resetTheme} updateSetting={updateSetting} loading={loading} focusedStyle={BTN_FOCUSED} rowFocusedStyle={ROW_FOCUSED} />

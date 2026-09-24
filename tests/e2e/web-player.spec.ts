@@ -41,7 +41,6 @@ const channels: Channel[] = [
 
 const baseSettings: Settings = {
   autoPlay: true,
-  showEPG: false,
   theme: 'dark',
   multiScreenEnabled: true,
   maxMultiScreens: 4,
@@ -283,21 +282,18 @@ test('keyboard navigation opens the list, tunes channels, and toggles the EPG', 
   await expect(page.getByTestId('web-sidebar')).toBeVisible();
 });
 
-test('saved interface options drive web UI state', async ({ page }) => {
+test('saved interface options do not automatically open the guide', async ({ page }) => {
   await bootPlayer(page, {
     settings: {
       showChannelNumbers: true,
       clockFormat: '12h',
-      showEPG: true,
       infoBarTimeoutSeconds: 0,
     },
   });
 
-  await expect(page.getByTestId('web-main-epg')).toBeVisible();
-  await expect(page.getByTestId('web-main-epg-channel-e2e-news')).toContainText('101');
+  await expect(page.getByTestId('web-main-epg')).toHaveCount(0);
   await expect(page.getByTestId('web-clock')).toContainText(/AM|PM/);
 
-  await page.getByTestId('web-main-epg-close').click();
   await page.getByTestId('web-channel-row-e2e-news').click();
   await expect(page.getByTestId('web-sidebar')).toHaveCount(0);
 

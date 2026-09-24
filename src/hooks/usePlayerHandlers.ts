@@ -15,10 +15,12 @@ export const usePlayerHandlers = (
   const showEPG = useUIStore((state) => state.showEPG);
   const showEPGGrid = useUIStore((state) => state.showEPGGrid);
   const showGroupsPlaylists = useUIStore((state) => state.showGroupsPlaylists);
+  const showPrimaryNavigation = useUIStore((state) => state.showPrimaryNavigation);
   const showChannelList = useUIStore((state) => state.showChannelList);
   const setShowEPG = useUIStore((state) => state.setShowEPG);
   const setShowEPGGrid = useUIStore((state) => state.setShowEPGGrid);
   const setShowGroupsPlaylists = useUIStore((state) => state.setShowGroupsPlaylists);
+  const setShowPrimaryNavigation = useUIStore((state) => state.setShowPrimaryNavigation);
   const setShowChannelList = useUIStore((state) => state.setShowChannelList);
   const setShowControls = useUIStore((state) => state.setShowControls);
   const setShowInfoBar = useUIStore((state) => state.setShowInfoBar);
@@ -129,6 +131,13 @@ export const usePlayerHandlers = (
       return;
     }
 
+    if (showPrimaryNavigation) return;
+
+    if (showGroupsPlaylists) {
+      setShowPrimaryNavigation(true);
+      return;
+    }
+
     // If the channel list is already open, toggle into groups/playlists instead
     if (showChannelList && !showGroupsPlaylists) {
       setShowGroupsPlaylists(true);
@@ -139,23 +148,25 @@ export const usePlayerHandlers = (
     if (showEPG) {
       setShowEPG(false);
     }
-    if (showGroupsPlaylists) {
-      setShowGroupsPlaylists(false);
-    }
-
     setShowChannelList(true);
   }, [
     showEPGGrid,
     showEPG,
     showGroupsPlaylists,
+    showPrimaryNavigation,
     showChannelList,
     channels.length,
     setShowChannelList,
     setShowEPG,
     setShowGroupsPlaylists,
+    setShowPrimaryNavigation,
   ]);
 
   const handleBack = useCallback(() => {
+    if (showPrimaryNavigation) {
+      setShowPrimaryNavigation(false);
+      return;
+    }
     // If groups/playlists menu is showing, close it and show channel list
     if (showGroupsPlaylists) {
       setShowGroupsPlaylists(false);
@@ -192,11 +203,13 @@ export const usePlayerHandlers = (
   }, [
     showChannelList,
     showGroupsPlaylists,
+    showPrimaryNavigation,
     showEPG,
     showEPGGrid,
     channels.length,
     setShowChannelList,
     setShowGroupsPlaylists,
+    setShowPrimaryNavigation,
     setShowEPG,
     setShowEPGGrid,
   ]);

@@ -16,6 +16,7 @@ import EPGOverlay from '../components/player/EPGOverlay';
 import EPGGridView from '../components/player/EPGGridView';
 import ChannelListPanel from '../components/player/ChannelListPanel';
 import GroupsPlaylistsPanel from '../components/player/GroupsPlaylistsPanel';
+import PlayerNavigationSidebar from '../components/player/PlayerNavigationSidebar';
 import ChannelNumberPad from '../components/player/ChannelNumberPad';
 import VolumeIndicator from '../components/player/VolumeIndicator';
 import MultiScreenControls from '../components/player/MultiScreenControls';
@@ -72,6 +73,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const showEPGGrid = useUIStore((state) => state.showEPGGrid);
   const showChannelList = useUIStore((state) => state.showChannelList);
   const showGroupsPlaylists = useUIStore((state) => state.showGroupsPlaylists);
+  const showPrimaryNavigation = useUIStore((state) => state.showPrimaryNavigation);
   const showProgramInfo = useUIStore((state) => state.showProgramInfo);
   const showSleepTimer = useUIStore((state) => state.showSleepTimer);
   const showChannelNumberPad = useUIStore((state) => state.showChannelNumberPad);
@@ -214,13 +216,14 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
       !showEPGGrid &&
       !showChannelList &&
       !showGroupsPlaylists &&
+      !showPrimaryNavigation &&
       !showProgramInfo &&
       !showSleepTimer &&
       !showChannelNumberPad
     ) {
       centerZoneRef.current?.focus?.();
     }
-  }, [showEPG, showEPGGrid, showChannelList, showGroupsPlaylists, showProgramInfo, showSleepTimer, showChannelNumberPad]);
+  }, [showEPG, showEPGGrid, showChannelList, showGroupsPlaylists, showPrimaryNavigation, showProgramInfo, showSleepTimer, showChannelNumberPad]);
 
   useEffect(() => {
     if (!channel) return;
@@ -269,8 +272,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   // D-pad right: single screen → jump to previously-watched channel.
   // Multi-screen → cycle the next screen to fullscreen.
   const handleRightDpad = useCallback(() => {
-    const { showEPGGrid, showEPG, showChannelList, showGroupsPlaylists } = useUIStore.getState();
-    if (showEPGGrid || showEPG || showChannelList || showGroupsPlaylists) return;
+    const { showEPGGrid, showEPG, showChannelList, showGroupsPlaylists, showPrimaryNavigation } = useUIStore.getState();
+    if (showEPGGrid || showEPG || showChannelList || showGroupsPlaylists || showPrimaryNavigation) return;
 
     const ms = useMultiScreenStore.getState();
     if (ms.isMultiScreenMode && ms.screens.length > 0) {
@@ -327,6 +330,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     showEPGGrid,
     showChannelList,
     showGroupsPlaylists,
+    showPrimaryNavigation,
     showProgramInfo,
     showSleepTimer,
     showChannelNumberPad,
@@ -470,11 +474,13 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       {/* Groups & Playlists Panel */}
       <GroupsPlaylistsPanel />
 
+      <PlayerNavigationSidebar navigation={navigation} />
+
       {/* Volume Indicator */}
       <VolumeIndicator />
 
       {/* Channel Info Bar */}
-      {showInfoBar && !showEPGGrid && !showEPG && !showChannelList && !showGroupsPlaylists && !showProgramInfo && !showSleepTimer && !showChannelNumberPad && (
+      {showInfoBar && !showEPGGrid && !showEPG && !showChannelList && !showGroupsPlaylists && !showPrimaryNavigation && !showProgramInfo && !showSleepTimer && !showChannelNumberPad && (
         <ChannelInfoBar
           channel={channel}
           currentProgram={currentProgram}

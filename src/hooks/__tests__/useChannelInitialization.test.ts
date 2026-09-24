@@ -80,7 +80,6 @@ const playlist: Playlist = {
 
 const settings = {
   autoPlay: true,
-  showEPG: false,
   maxMultiScreens: 4,
 };
 

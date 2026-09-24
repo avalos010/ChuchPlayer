@@ -3,6 +3,7 @@ export interface PlayerModalOverlayState {
   showEPGGrid: boolean;
   showChannelList: boolean;
   showGroupsPlaylists: boolean;
+  showPrimaryNavigation: boolean;
   showProgramInfo: boolean;
   showSleepTimer: boolean;
   showChannelNumberPad: boolean;
@@ -14,6 +15,7 @@ export const hasPlayerModalOverlay = (state: PlayerModalOverlayState) =>
   state.showEPGGrid ||
   state.showChannelList ||
   state.showGroupsPlaylists ||
+  state.showPrimaryNavigation ||
   state.showProgramInfo ||
   state.showSleepTimer ||
   state.showChannelNumberPad ||

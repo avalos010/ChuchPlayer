@@ -25,7 +25,6 @@ const useInterfacePreferencesStore = create<InterfacePreferencesState>((set) => 
 
 export const syncInterfacePreferences = (
   settings?: Partial<{
-    showEPG: boolean;
     infoBarTimeoutSeconds: number;
     showChannelNumbers: boolean;
     clockFormat: '12h' | '24h';

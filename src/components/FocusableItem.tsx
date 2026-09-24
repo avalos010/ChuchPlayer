@@ -227,7 +227,6 @@ const FocusableItem = forwardRef<FocusableItemHandle, FocusableItemProps>(({
       }
 
       pressableRef.current?.focus?.();
-      pressableRef.current?.setNativeProps?.({ hasTVPreferredFocus: true });
     },
   }));
 

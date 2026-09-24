@@ -75,7 +75,6 @@ export interface Playlist {
 export interface Settings {
   defaultPlaylist?: string;
   autoPlay: boolean;
-  showEPG: boolean;
   theme: string;
   customAccent?: string;
   customBg?: string;
@@ -104,7 +103,7 @@ export type SettingsFocusTarget =
 
 export type RootStackParamList = {
   Player: { channel?: Channel };
-  VodCatalog: { catalog?: 'series' } | undefined;
+  VodCatalog: { catalog?: 'movies' | 'series' } | undefined;
   VodSeries: { series: VodSeries };
   VodPlayer: { item: VodItem };
   Settings: { focusTarget?: SettingsFocusTarget } | undefined;

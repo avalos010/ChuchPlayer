@@ -23,7 +23,7 @@ import { useRecentChannels } from '../../hooks/useRecentChannels';
 import { useThemeStore } from '../../store/useThemeStore';
 import { withAlphaAndroid } from '../../theme/themes';
 import {
-  GROUPS_PANEL_W, SLIDE_DUR, TABS, TOTAL_W, TV, TabId,
+  GROUPS_PANEL_W, NAVIGATION_PANEL_W, SLIDE_DUR, TABS, TOTAL_W, TV, TabId,
 } from './ChannelListPanel.constants';
 import { createChannelListPanelStyles } from './ChannelListPanel.styles';
 
@@ -54,6 +54,7 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
   const GRP_FOCUSED     = useMemo(() => ({ backgroundColor: theme.card, borderColor: theme.focused, borderWidth: 1.5, transform: [] as any[], elevation: 3 }), [theme]);
 
   const showGroupsPlaylists    = useUIStore((s) => s.showGroupsPlaylists);
+  const showPrimaryNavigation = useUIStore((s) => s.showPrimaryNavigation);
   const setShowGroupsPlaylists = useUIStore((s) => s.setShowGroupsPlaylists);
   const selectedGroup          = useUIStore((s) => s.selectedGroup);
   const setSelectedGroup       = useUIStore((s) => s.setSelectedGroup);
@@ -287,7 +288,9 @@ const ChannelListPanelInner: React.FC<ChannelListPanelProps> = ({
   if (!showChannelList) return null;
 
   const groupLabel   = selectedGroup && selectedGroup !== 'All Channels' ? selectedGroup : 'All Channels';
-  const groupsOffset = showGroupsPlaylists ? GROUPS_PANEL_W : 0;
+  const groupsOffset = showGroupsPlaylists
+    ? GROUPS_PANEL_W + (showPrimaryNavigation ? NAVIGATION_PANEL_W : 0)
+    : 0;
   const focusedGuideLabel = focusedChannel?.name || 'Focused channel';
 
   return (

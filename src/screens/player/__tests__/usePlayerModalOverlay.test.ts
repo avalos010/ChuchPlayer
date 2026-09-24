@@ -5,6 +5,7 @@ const closedState = (): PlayerModalOverlayState => ({
   showEPGGrid: false,
   showChannelList: false,
   showGroupsPlaylists: false,
+  showPrimaryNavigation: false,
   showProgramInfo: false,
   showSleepTimer: false,
   showChannelNumberPad: false,

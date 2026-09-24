@@ -78,13 +78,11 @@ export const useChannelInitialization = ({
             const first = playlists[0];
             setPlaylist(first);
             setChannels(first.channels);
-            setShowEPGGrid(settings.showEPG);
           }
         } else if (playlists.length > 0) {
           const first = playlists[0];
           setPlaylist(first);
           setChannels(first.channels);
-          setShowEPGGrid(settings.showEPG);
         }
       } catch (error) {
         console.error('Error during channel initialization:', error);
@@ -125,7 +123,7 @@ export const useChannelInitialization = ({
         setMaxScreens(settings.maxMultiScreens);
         setCurrentProgram(getCurrentProgram(channelId));
         setShowEPG(false);
-        setShowEPGGrid(settings.showEPG);
+        setShowEPGGrid(false);
 
         if (isMultiScreenMode && screens.length === 0) addScreen(channel);
 

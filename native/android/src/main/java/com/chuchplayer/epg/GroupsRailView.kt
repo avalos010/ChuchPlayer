@@ -23,6 +23,8 @@ class GroupsRailView(context: Context) : View(context) {
         const val EVENT_GROUP_SELECT = "GROUPS_RAIL_GROUP_SELECT"
         const val EVENT_PLAYLIST_SELECT = "GROUPS_RAIL_PLAYLIST_SELECT"
         const val EVENT_CLOSE = "GROUPS_RAIL_CLOSE"
+        const val EVENT_OPEN_NAVIGATION = "GROUPS_RAIL_OPEN_NAVIGATION"
+        const val EVENT_CLOSE_NAVIGATION = "GROUPS_RAIL_CLOSE_NAVIGATION"
     }
 
     data class Item(
@@ -48,6 +50,7 @@ class GroupsRailView(context: Context) : View(context) {
     private var rows = emptyList<Item>()
     private var focused = 0
     private var offsetY = 0f
+    private var primaryNavigationOpen = false
     private var bg = Color.rgb(7, 11, 18)
     private var accent = Color.rgb(27, 144, 255)
 
@@ -106,6 +109,10 @@ class GroupsRailView(context: Context) : View(context) {
             pBg.color = bg
             invalidate()
         } catch (_: Exception) {}
+    }
+
+    fun setPrimaryNavigationOpen(open: Boolean) {
+        primaryNavigationOpen = open
     }
 
     private fun parseItems(json: String): List<Item> {
@@ -209,8 +216,20 @@ class GroupsRailView(context: Context) : View(context) {
                 moveFocus(1)
                 return true
             }
-            KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_BACK -> {
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (primaryNavigationOpen) {
+                    emit(EVENT_CLOSE_NAVIGATION, Arguments.createMap())
+                } else {
+                    fireClose()
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_BACK -> {
                 fireClose()
+                return true
+            }
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                emit(EVENT_OPEN_NAVIGATION, Arguments.createMap())
                 return true
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {

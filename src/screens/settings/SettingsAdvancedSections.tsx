@@ -89,21 +89,6 @@ export function SettingsAdvancedSections(props: SettingsAdvancedSectionsProps) {
               ))}
             </View>
           </View>
-          <SettingRow styles={styles} rowFocusedStyle={rowFocusedStyle}
-            title="Show EPG Guide"
-            desc="Display the program guide when available"
-            top
-            onPress={() => updateSetting('showEPG', !settings.showEPG)}
-            right={
-              <Switch
-                value={settings.showEPG}
-                onValueChange={v => updateSetting('showEPG', v)}
-                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
-                thumbColor={settings.showEPG ? '#0a0a0a' : '#555555'}
-                disabled={loading}
-              />
-            }
-          />
         </Card>
 
         <Divider styles={styles} />

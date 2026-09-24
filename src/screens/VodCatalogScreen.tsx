@@ -65,7 +65,7 @@ const VodCatalogScreen: React.FC<VodCatalogScreenProps> = ({ navigation, route }
   const columns = Math.max(5, Math.min(7, Math.floor((width - PAGE_PADDING * 2) / 170)));
   const cardWidth = (width - PAGE_PADDING * 2 - GRID_GAP * (columns - 1)) / columns;
   const [category, setCategory] = useState(ALL_TITLES);
-  const [catalogType, setCatalogType] = useState<'all' | 'series'>(route.params?.catalog === 'series' ? 'series' : 'all');
+  const [catalogType, setCatalogType] = useState<'all' | 'movies' | 'series'>(route.params?.catalog ?? 'all');
   const [reloadToken, setReloadToken] = useState(0);
   const [loading, setLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -102,7 +102,11 @@ const VodCatalogScreen: React.FC<VodCatalogScreenProps> = ({ navigation, route }
     return () => { cancelled = true; };
   }, [items, playlist, reloadToken, seriesItems]);
 
-  const activeItems = catalogType === 'series' ? seriesItems : [...items, ...seriesItems];
+  const activeItems = catalogType === 'series'
+    ? seriesItems
+    : catalogType === 'movies'
+      ? items
+      : [...items, ...seriesItems];
 
   const categories = useMemo(() => {
     const groups = new Set(activeItems.map((item) => item.group || 'Uncategorized'));
@@ -122,7 +126,7 @@ const VodCatalogScreen: React.FC<VodCatalogScreenProps> = ({ navigation, route }
     navigation.navigate('VodSeries', { series });
   }, [navigation]);
 
-  const selectCatalogType = useCallback((nextType: 'all' | 'series') => {
+  const selectCatalogType = useCallback((nextType: 'all' | 'movies' | 'series') => {
     setCatalogType(nextType);
     setCategory(ALL_TITLES);
   }, []);
@@ -150,8 +154,8 @@ const VodCatalogScreen: React.FC<VodCatalogScreenProps> = ({ navigation, route }
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={[styles.eyebrow, { color: theme.accent }]}>{playlist?.name ?? 'Playlist'}</Text>
-          <Text style={[styles.title, { color: theme.text }]}>{catalogType === 'series' ? 'TV Shows' : 'VOD'}</Text>
-          <Text style={[styles.subtitle, { color: theme.textSub }]}>{filteredItems.length} {catalogType === 'series' ? 'shows' : 'titles'}</Text>
+          <Text style={[styles.title, { color: theme.text }]}>{catalogType === 'series' ? 'TV Shows' : catalogType === 'movies' ? 'Movies' : 'VOD'}</Text>
+          <Text style={[styles.subtitle, { color: theme.textSub }]}>{filteredItems.length} {catalogType === 'series' ? 'shows' : catalogType === 'movies' ? 'movies' : 'titles'}</Text>
         </View>
         <View style={styles.headerActions}>
           <FocusableItem

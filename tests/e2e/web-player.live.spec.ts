@@ -24,7 +24,6 @@ const livePlaylist: Omit<Playlist, 'createdAt' | 'updatedAt'> & {
 
 const liveSettings: Settings = {
   autoPlay: true,
-  showEPG: false,
   theme: 'dark',
   multiScreenEnabled: true,
   maxMultiScreens: 4,

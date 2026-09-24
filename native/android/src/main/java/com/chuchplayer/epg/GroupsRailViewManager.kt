@@ -31,4 +31,9 @@ class GroupsRailViewManager(private val reactContext: ReactApplicationContext) :
     fun setBgColor(view: GroupsRailView, color: String?) {
         if (!color.isNullOrEmpty()) view.setBgColor(color)
     }
+
+    @ReactProp(name = "primaryNavigationOpen")
+    fun setPrimaryNavigationOpen(view: GroupsRailView, open: Boolean) {
+        view.setPrimaryNavigationOpen(open)
+    }
 }

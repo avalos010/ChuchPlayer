@@ -14,6 +14,7 @@ type NativeGroupsRailViewProps = {
   playlists: string;
   accentColor?: string;
   bgColor?: string;
+  primaryNavigationOpen: boolean;
 };
 
 export const isNativeGroupsRailAvailable =
@@ -38,9 +39,12 @@ interface NativeGroupsRailProps {
   currentPlaylistId?: string;
   accentColor?: string;
   bgColor?: string;
+  primaryNavigationOpen: boolean;
   onGroupSelect: (group: string | null) => void;
   onPlaylistSelect: (playlistId: string) => void;
   onClose: () => void;
+  onOpenNavigation: () => void;
+  onCloseNavigation: () => void;
 }
 
 const NativeGroupsRail: React.FC<NativeGroupsRailProps> = ({
@@ -51,9 +55,12 @@ const NativeGroupsRail: React.FC<NativeGroupsRailProps> = ({
   currentPlaylistId,
   accentColor,
   bgColor,
+  primaryNavigationOpen,
   onGroupSelect,
   onPlaylistSelect,
   onClose,
+  onOpenNavigation,
+  onCloseNavigation,
 }) => {
   useEffect(() => {
     const groupSub = DeviceEventEmitter.addListener(
@@ -67,12 +74,16 @@ const NativeGroupsRail: React.FC<NativeGroupsRailProps> = ({
       },
     );
     const closeSub = DeviceEventEmitter.addListener('GROUPS_RAIL_CLOSE', onClose);
+    const navigationSub = DeviceEventEmitter.addListener('GROUPS_RAIL_OPEN_NAVIGATION', onOpenNavigation);
+    const closeNavigationSub = DeviceEventEmitter.addListener('GROUPS_RAIL_CLOSE_NAVIGATION', onCloseNavigation);
     return () => {
       groupSub.remove();
       playlistSub.remove();
       closeSub.remove();
+      navigationSub.remove();
+      closeNavigationSub.remove();
     };
-  }, [onClose, onGroupSelect, onPlaylistSelect]);
+  }, [onClose, onCloseNavigation, onGroupSelect, onOpenNavigation, onPlaylistSelect]);
 
   const groupsJson = useMemo(
     () =>
@@ -113,6 +124,7 @@ const NativeGroupsRail: React.FC<NativeGroupsRailProps> = ({
       playlists={playlistsJson}
       accentColor={accentColor}
       bgColor={bgColor}
+      primaryNavigationOpen={primaryNavigationOpen}
     />
   );
 };

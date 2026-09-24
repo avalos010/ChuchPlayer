@@ -13,13 +13,11 @@ describe('interface preferences', () => {
   it('picks interface-facing settings from saved settings', () => {
     expect(
       getInterfacePreferencesFromSettings({
-        showEPG: true,
         infoBarTimeoutSeconds: 10,
         showChannelNumbers: true,
         clockFormat: '12h',
       }),
     ).toEqual({
-      showEPG: true,
       infoBarTimeoutSeconds: 10,
       showChannelNumbers: true,
       clockFormat: '12h',
