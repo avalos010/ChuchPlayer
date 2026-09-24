@@ -57,7 +57,6 @@ const CH1 = makeChannel('ch-1');
 const CH2 = makeChannel('ch-2');
 
 const defaultProps = () => ({
-  videoRef: { current: null } as any,
   getCurrentProgram: jest.fn().mockReturnValue(null),
   setHasUserInteracted: jest.fn(),
   hasUserInteracted: false,
@@ -119,19 +118,40 @@ describe('handleChannelSelect', () => {
 });
 
 describe('D-pad guards', () => {
-  it('handleUpDpad skips when isSwitchingChannelRef is true', async () => {
+  it('accepts another D-pad channel change without waiting for player cleanup', async () => {
     const props = defaultProps();
     const { result } = renderHook(() => useChannelNavigation(props));
-
-    // Manually set the switching ref
-    result.current.isSwitchingChannelRef.current = true;
-    mockPlayerState.navigateToChannel = jest.fn();
+    mockPlayerState.channel = CH1;
+    mockPlayerState.channels = [CH1, CH2];
+    mockPlayerState.navigateToChannel = jest.fn()
+      .mockReturnValueOnce(CH2)
+      .mockReturnValueOnce(CH1);
 
     await act(async () => {
       await result.current.handleUpDpad();
+      mockPlayerState.channel = CH2;
+      await result.current.handleDownDpad();
     });
 
-    expect(mockPlayerState.navigateToChannel).not.toHaveBeenCalled();
+    expect(mockPlayerState.navigateToChannel).toHaveBeenNthCalledWith(1, 'prev', [CH1, CH2], CH1.id);
+    expect(mockPlayerState.navigateToChannel).toHaveBeenNthCalledWith(2, 'next', [CH1, CH2], CH2.id);
+    expect(mockPlayerSetState).toHaveBeenCalledTimes(2);
+  });
+
+  it('recovers to channel one when the current channel is missing from the list', async () => {
+    mockPlayerState.channel = makeChannel('stale-channel');
+    mockPlayerState.channels = [CH1, CH2];
+    mockPlayerState.navigateToChannel = jest.fn().mockReturnValue(null);
+
+    const { result } = renderHook(() => useChannelNavigation(defaultProps()));
+
+    await act(async () => {
+      await result.current.handleDownDpad();
+    });
+
+    expect(mockPlayerSetState).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: CH1, loading: true, error: null }),
+    );
   });
 
   it('handleDownDpad skips when showEPGGrid is true', async () => {
@@ -142,7 +162,7 @@ describe('D-pad guards', () => {
     const { result } = renderHook(() => useChannelNavigation(props));
 
     await act(async () => {
-      await result.current.handleDownDpad();
+      result.current.handleDownDpad();
     });
 
     expect(mockPlayerState.navigateToChannel).not.toHaveBeenCalled();

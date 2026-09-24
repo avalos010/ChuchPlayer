@@ -1,12 +1,10 @@
-import { useCallback, useRef } from 'react';
+import { useCallback } from 'react';
 import { Channel, EPGProgram } from '../types';
-import type { PlayerVideoHandle } from '../types/video';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
 import { useEPGStore } from '../store/useEPGStore';
 
 interface UseChannelNavigationProps {
-  videoRef: React.RefObject<PlayerVideoHandle | null>;
   getCurrentProgram: (channelId: string) => EPGProgram | null;
   setHasUserInteracted: (value: boolean) => void;
   hasUserInteracted: boolean;
@@ -15,22 +13,16 @@ interface UseChannelNavigationProps {
 }
 
 export const useChannelNavigation = ({
-  videoRef,
   getCurrentProgram,
   setHasUserInteracted,
   hasUserInteracted,
   centerZoneRef,
   setShowChannelInfoCard,
 }: UseChannelNavigationProps) => {
-  // Only subscribe to state that drives re-renders needed by callers
-  const channel = usePlayerStore((state) => state.channel);
-
   // EPG state
   const setCurrentProgram = useEPGStore((state) => state.setCurrentProgram);
-  const isSwitchingChannelRef = useRef(false);
-  const channelSwitchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleChannelSelect = useCallback(async (selectedChannel: Channel) => {
+  const handleChannelSelect = useCallback((selectedChannel: Channel) => {
     const { channel: currentChannel } = usePlayerStore.getState();
     const { showEPGGrid, setShowChannelList, setShowEPGGrid } = useUIStore.getState();
 
@@ -40,15 +32,6 @@ export const useChannelNavigation = ({
       setShowChannelList(false);
       setShowChannelInfoCard?.(true);
       return;
-    }
-
-    if (videoRef.current) {
-      try {
-        await videoRef.current.pauseAsync();
-        await videoRef.current.unloadAsync();
-      } catch {
-        // ignore cleanup errors
-      }
     }
 
     usePlayerStore.setState({
@@ -66,90 +49,53 @@ export const useChannelNavigation = ({
   }, [
     hasUserInteracted,
     setHasUserInteracted,
-    videoRef,
     getCurrentProgram,
     setCurrentProgram,
     setShowChannelInfoCard,
   ]);
 
-  const switchChannel = useCallback(async (
+  const switchChannel = useCallback((
     newChannel: Channel,
     exitPIP?: () => void
   ) => {
-    if (isSwitchingChannelRef.current) return;
+    const prevChannel = usePlayerStore.getState().channel;
+    if (prevChannel?.id === newChannel.id) return;
 
-    if (channelSwitchTimeoutRef.current) {
-      clearTimeout(channelSwitchTimeoutRef.current);
-      channelSwitchTimeoutRef.current = null;
-    }
+    exitPIP?.();
 
-    isSwitchingChannelRef.current = true;
+    usePlayerStore.setState({
+      loading: true, error: null, isPlaying: false,
+      previousChannel: prevChannel ?? usePlayerStore.getState().previousChannel,
+      channel: newChannel,
+    });
+    const program = getCurrentProgram(newChannel.id);
+    setCurrentProgram(program);
+    setShowChannelInfoCard?.(true);
+    centerZoneRef?.current?.focus?.();
+  }, [getCurrentProgram, setCurrentProgram, centerZoneRef, setShowChannelInfoCard]);
 
-    try {
-      if (videoRef.current) {
-        try {
-          await videoRef.current.pauseAsync();
-          await videoRef.current.unloadAsync();
-        } catch {
-          // ignore cleanup errors
-        }
-      }
-
-      exitPIP?.();
-
-      const prevChannel = usePlayerStore.getState().channel;
-      usePlayerStore.setState({
-        loading: true, error: null, isPlaying: false,
-        previousChannel: prevChannel && prevChannel.id !== newChannel.id ? prevChannel : usePlayerStore.getState().previousChannel,
-        channel: newChannel,
-      });
-      const program = getCurrentProgram(newChannel.id);
-      setCurrentProgram(program);
-      setShowChannelInfoCard?.(true);
-
-      isSwitchingChannelRef.current = false;
-      if (channelSwitchTimeoutRef.current) {
-        clearTimeout(channelSwitchTimeoutRef.current);
-        channelSwitchTimeoutRef.current = null;
-      }
-
-      if (centerZoneRef?.current) {
-        centerZoneRef.current?.focus?.();
-      }
-    } catch {
-      isSwitchingChannelRef.current = false;
-      if (channelSwitchTimeoutRef.current) {
-        clearTimeout(channelSwitchTimeoutRef.current);
-        channelSwitchTimeoutRef.current = null;
-      }
-      usePlayerStore.getState().setError('Failed to switch channel. Please try again.');
-    }
-  }, [videoRef, getCurrentProgram, setCurrentProgram, centerZoneRef, setShowChannelInfoCard]);
-
-  const handleUpDpad = useCallback(async (exitPIP?: () => void) => {
+  const handleUpDpad = useCallback((exitPIP?: () => void) => {
     const { showEPGGrid, showEPG, showGroupsPlaylists } = useUIStore.getState();
     if (showEPGGrid || showEPG || showGroupsPlaylists) return;
-    if (isSwitchingChannelRef.current) return;
-
     const { channel: currentChannel, channels: currentChannels, navigateToChannel } = usePlayerStore.getState();
     if (currentChannel && currentChannels.length > 0) {
-      const newChannel = navigateToChannel('prev', currentChannels, currentChannel.id);
+      const newChannel = navigateToChannel('prev', currentChannels, currentChannel.id)
+        ?? currentChannels[currentChannels.length - 1];
       if (newChannel && newChannel.id !== currentChannel.id) {
-        await switchChannel(newChannel, exitPIP);
+        switchChannel(newChannel, exitPIP);
       }
     }
   }, [switchChannel]);
 
-  const handleDownDpad = useCallback(async (exitPIP?: () => void) => {
+  const handleDownDpad = useCallback((exitPIP?: () => void) => {
     const { showEPGGrid, showEPG, showGroupsPlaylists } = useUIStore.getState();
     if (showEPGGrid || showEPG || showGroupsPlaylists) return;
-    if (isSwitchingChannelRef.current) return;
-
     const { channel: currentChannel, channels: currentChannels, navigateToChannel } = usePlayerStore.getState();
     if (currentChannel && currentChannels.length > 0) {
-      const newChannel = navigateToChannel('next', currentChannels, currentChannel.id);
+      const newChannel = navigateToChannel('next', currentChannels, currentChannel.id)
+        ?? currentChannels[0];
       if (newChannel && newChannel.id !== currentChannel.id) {
-        await switchChannel(newChannel, exitPIP);
+        switchChannel(newChannel, exitPIP);
       }
     }
   }, [switchChannel]);
@@ -159,7 +105,5 @@ export const useChannelNavigation = ({
     handleUpDpad,
     handleDownDpad,
     switchChannel,
-    isSwitchingChannelRef,
-    channelSwitchTimeoutRef,
   };
 };

@@ -45,6 +45,9 @@ import PlayerVideoStage from './player/PlayerVideoStage';
 import PlayerMultiScreenStage from './player/PlayerMultiScreenStage';
 import { hasPlayerModalOverlay } from './player/usePlayerModalOverlay';
 
+const KeyEvent = Platform.OS === 'android'
+  ? (require('react-native-keyevent').default ?? require('react-native-keyevent'))
+  : null;
 
 interface PlayerScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Player'>;
@@ -79,6 +82,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const showChannelNumberPad = useUIStore((state) => state.showChannelNumberPad);
   const showInfoBar = useUIStore((state) => state.showInfoBar);
   const showControls = useUIStore((state) => state.showControls);
+  const hasChannel = channel != null;
   
   // EPG store state
   const currentProgram = useEPGStore((state) => state.currentProgram);
@@ -119,7 +123,6 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
     handleDownDpad,
     switchChannel,
   } = useChannelNavigation({
-    videoRef,
     getCurrentProgram,
     setHasUserInteracted,
     hasUserInteracted,
@@ -305,25 +308,13 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     return { pipPreviewWidth: w, pipPreviewHeight: w * (9 / 16) };
   }, []);
 
-  const handleUpDpadPress = useCallback(() => {
-    handleUpDpad(exitPIP);
-    setTimeout(() => centerZoneRef.current?.focus?.(), 50);
-  }, [handleUpDpad, exitPIP]);
-
   const handleUpDpadFocus = useCallback(() => {
-    handleUpDpad(exitPIP);
-    setTimeout(() => centerZoneRef.current?.focus?.(), 10);
-  }, [handleUpDpad, exitPIP]);
-
-  const handleDownDpadPress = useCallback(() => {
-    handleDownDpad(exitPIP);
-    setTimeout(() => centerZoneRef.current?.focus?.(), 50);
-  }, [handleDownDpad, exitPIP]);
+    centerZoneRef.current?.focus?.();
+  }, []);
 
   const handleDownDpadFocus = useCallback(() => {
-    handleDownDpad(exitPIP);
-    setTimeout(() => centerZoneRef.current?.focus?.(), 10);
-  }, [handleDownDpad, exitPIP]);
+    centerZoneRef.current?.focus?.();
+  }, []);
 
   const hasModalOverlay = hasPlayerModalOverlay({
     showEPG,
@@ -336,6 +327,48 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     showChannelNumberPad,
     showInfoBar: showInfoBar && showControls,
   });
+
+  useEffect(() => {
+    if (
+      !KeyEvent ||
+      !hasChannel ||
+      showEPG ||
+      showEPGGrid ||
+      showChannelList ||
+      showGroupsPlaylists ||
+      showPrimaryNavigation ||
+      showProgramInfo ||
+      showSleepTimer ||
+      showChannelNumberPad ||
+      showControls ||
+      showMultiScreenControls ||
+      isMultiScreenMode
+    ) return undefined;
+
+    KeyEvent.onKeyDownListener((event: { keyCode: number }) => {
+      if (event.keyCode === 19) handleUpDpad(exitPIP);
+      else if (event.keyCode === 20) handleDownDpad(exitPIP);
+      else if (event.keyCode === 23 || event.keyCode === 66) handleCenterPress();
+    });
+    return () => KeyEvent.removeKeyDownListener();
+  }, [
+    hasChannel,
+    showEPG,
+    showEPGGrid,
+    showChannelList,
+    showGroupsPlaylists,
+    showPrimaryNavigation,
+    showProgramInfo,
+    showSleepTimer,
+    showChannelNumberPad,
+    showControls,
+    showMultiScreenControls,
+    isMultiScreenMode,
+    handleUpDpad,
+    handleDownDpad,
+    handleCenterPress,
+    exitPIP,
+  ]);
 
   // If in multi-screen mode, show multi-screen view
   if (isMultiScreenMode && screens.length > 0) {
@@ -360,9 +393,9 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
         onCenterPress={handleCenterPress}
         onLeftPress={handleLeftDpad}
         onRightPress={handleRightDpad}
-        onUpPress={handleUpDpadPress}
+        onUpPress={handleUpDpadFocus}
         onUpFocus={handleUpDpadFocus}
-        onDownPress={handleDownDpadPress}
+        onDownPress={handleDownDpadFocus}
         onDownFocus={handleDownDpadFocus}
         hasUserInteracted={hasUserInteracted}
         isPlaying={isPlaying}

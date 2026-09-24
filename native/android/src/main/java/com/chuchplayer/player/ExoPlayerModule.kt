@@ -14,6 +14,9 @@ import kotlin.math.abs
 
 class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
   private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+  private var activeSourceGeneration = 0L
+  private var retryAttempt = 0
+  private var retryJob: Job? = null
 
   companion object {
     private const val TAG = "ExoPlayerModule"
@@ -21,6 +24,8 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
     private const val EVENT_ERROR = "PLAYER_ERROR"
     private const val EVENT_PROGRESS = "PLAYER_PROGRESS"
     private const val EVENT_VIDEO_INFO = "PLAYER_VIDEO_INFO"
+    private const val MAX_SOURCE_RETRIES = 5
+    private const val SOURCE_RETRY_DELAY_MS = 1_000L
   }
 
   private var videoWidth = 0
@@ -90,6 +95,25 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
       val rootCause = generateSequence(error as Throwable) { it.cause }.last()
       val detail = "${error.errorCodeName}: ${rootCause.javaClass.simpleName}: ${rootCause.message}"
       Log.e(TAG, "Player error: $detail", error)
+
+      if (retryAttempt < MAX_SOURCE_RETRIES) {
+        retryAttempt += 1
+        val attempt = retryAttempt
+        val generation = activeSourceGeneration
+        val player = ExoPlayerHolder.player
+        Log.w(TAG, "Retrying live source (attempt $attempt/$MAX_SOURCE_RETRIES) in ${SOURCE_RETRY_DELAY_MS * attempt}ms")
+        sendEvent(EVENT_STATE_CHANGED, Arguments.createMap().apply {
+          putString("state", "buffering")
+          putInt("stateInt", Player.STATE_BUFFERING)
+        })
+        retryJob?.cancel()
+        retryJob = scope.launch {
+          delay(SOURCE_RETRY_DELAY_MS * attempt)
+          if (generation == activeSourceGeneration && player != null) player.prepare()
+        }
+        return
+      }
+
       sendEvent(EVENT_ERROR, Arguments.createMap().apply {
         putString("error", detail)
       })
@@ -157,6 +181,10 @@ class ExoPlayerModule(reactContext: ReactApplicationContext) : ReactContextBaseJ
     scope.launch {
       try {
         Log.d(TAG, "loadSource: $url")
+        activeSourceGeneration += 1
+        retryAttempt = 0
+        retryJob?.cancel()
+        retryJob = null
         videoWidth = 0
         videoHeight = 0
         videoFrameRate = 0f
