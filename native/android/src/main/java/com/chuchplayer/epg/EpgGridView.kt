@@ -482,7 +482,7 @@ class EpgGridView(context: Context) : View(context) {
             try {
                 val req = Request.Builder().url(url).build()
                 val bytes = http.newCall(req).execute().use { it.body?.bytes() } ?: return@launch
-                val raw = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@launch
+                val raw = decodeLogoBitmap(bytes, (LOGO_R * 2f).toInt()) ?: return@launch
                 logoCache.put(url, raw)
                 mainHandler.post { invalidate() }
             } catch (_: Exception) {

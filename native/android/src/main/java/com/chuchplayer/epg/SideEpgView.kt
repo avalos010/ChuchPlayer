@@ -2,7 +2,6 @@ package com.chuchplayer.epg
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -393,7 +392,7 @@ class SideEpgView(context: Context) : View(context) {
             try {
                 val bytes = http.newCall(Request.Builder().url(url).build())
                     .execute().use { it.body?.bytes() }
-                val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                val bitmap = bytes?.let { decodeLogoBitmap(it, logoSize) }
                 if (bitmap != null) {
                     logoCache.put(url, bitmap)
                     mainHandler.post { invalidate() }
