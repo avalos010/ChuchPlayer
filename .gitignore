@@ -49,3 +49,5 @@ artifacts/
 /android/local.properties
 # Native source code (tracked in git)
 !/native/
+
+.vscode
