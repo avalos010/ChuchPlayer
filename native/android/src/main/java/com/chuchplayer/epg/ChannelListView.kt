@@ -27,6 +27,14 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.max
 import kotlin.math.min
 
+internal fun calculateLogoSampleSize(width: Int, height: Int, targetSize: Int): Int {
+    var sampleSize = 1
+    while (min(width / (sampleSize * 2), height / (sampleSize * 2)) >= targetSize) {
+        sampleSize *= 2
+    }
+    return sampleSize
+}
+
 class ChannelListView(context: Context) : View(context) {
     companion object {
         const val EVENT_SELECT = "CHANNEL_LIST_SELECT"
@@ -570,13 +578,28 @@ class ChannelListView(context: Context) : View(context) {
 
     private fun maxOffY() = max(0, rows.size * rowH - max(0, height - chromeH))
 
+    private fun decodeLogo(bytes: ByteArray): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        val sampleSize = calculateLogoSampleSize(bounds.outWidth, bounds.outHeight, logo)
+
+        return BitmapFactory.decodeByteArray(
+            bytes,
+            0,
+            bytes.size,
+            BitmapFactory.Options().apply { inSampleSize = sampleSize },
+        )
+    }
+
     private fun queueLogo(url: String) {
         if (url.isBlank() || failedLogos.contains(url) || logoCache.get(url) != null || !loadingLogos.add(url)) return
         logoExecutor.execute {
             try {
                 val bytes = http.newCall(Request.Builder().url(url).build())
                     .execute().use { it.body?.bytes() }
-                val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                val bitmap = bytes?.let(::decodeLogo)
                 if (bitmap != null) {
                     logoCache.put(url, bitmap)
                     mainHandler.post { invalidate() }
