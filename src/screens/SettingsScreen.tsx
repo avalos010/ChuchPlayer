@@ -11,7 +11,7 @@ import { fetchXtreamPlaylist } from '../utils/xtreamParser';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
 import { useThemeStore } from '../store/useThemeStore';
-import { useSleepTimer } from '../hooks/useSleepTimer';
+import { setSleepTimer } from '../hooks/useSleepTimer';
 import { syncInterfacePreferences } from '../hooks/interfacePreferences/useInterfacePreferences';
 import { confirmAction } from '../utils/platform';
 import PlaylistModal from './settings/PlaylistModal';
@@ -79,7 +79,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
   const { themeId, customAccent, customBg, setTheme, setCustom, resetTheme } = useThemeStore();
   const [customAccentInput, setCustomAccentInput] = useState(customAccent);
   const [customBgInput,     setCustomBgInput]     = useState(customBg);
-  const { setTimer: setSleepTimer } = useSleepTimer();
   const hasPlayer = !!usePlayerStore.getState().channel;
   const focusTarget = route.params?.focusTarget;
   const setSectionOffset = useCallback(

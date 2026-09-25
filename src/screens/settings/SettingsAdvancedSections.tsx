@@ -97,7 +97,7 @@ export function SettingsAdvancedSections(props: SettingsAdvancedSectionsProps) {
         <SectionTitle styles={styles} label="Sleep Timer" />
         <Card styles={styles}>
           <Text style={styles.settingDesc} numberOfLines={2}>
-            Playback will automatically stop after the selected duration.
+            Playback will automatically pause after the selected duration.
           </Text>
           <View style={[styles.chipRow, { marginTop: 14 }]}>
             {[
@@ -107,6 +107,7 @@ export function SettingsAdvancedSections(props: SettingsAdvancedSectionsProps) {
               { label: '45 min', min: 45 },
               { label: '1 hour', min: 60 },
               { label: '90 min', min: 90 },
+              { label: '2 hours', min: 120 },
             ].map(opt => (
               <FocusableItem
                 key={opt.min}

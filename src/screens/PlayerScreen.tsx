@@ -39,7 +39,7 @@ import { usePlayerHandlers } from '../hooks/usePlayerHandlers';
 import { useEPGManagement } from '../hooks/useEPGManagement';
 import { useFavorites } from '../hooks/useFavorites';
 import { useRecentChannels } from '../hooks/useRecentChannels';
-import { useSleepTimer } from '../hooks/useSleepTimer';
+import { useSleepTimerLabel } from '../hooks/useSleepTimer';
 import { useInterfacePreferences } from '../hooks/interfacePreferences/useInterfacePreferences';
 import PlayerDpadZones from './player/PlayerDpadZones';
 import PlayerVideoStage from './player/PlayerVideoStage';
@@ -116,7 +116,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   const { setShowChannelInfoCard } = useChannelInfo({ showOnInitialLoad: true });
   const { toggleFavorite, isFavorite } = useFavorites(channels);
   const { recentChannels, addRecent } = useRecentChannels(channels);
-  const { label: sleepLabel } = useSleepTimer();
+  const sleepLabel = useSleepTimerLabel();
   const {
     hasUserInteracted,
     setHasUserInteracted,

@@ -82,6 +82,14 @@ export const useKeyboardNavigation = ({
       const player = usePlayerStore.getState();
       const h = handlersRef.current;
 
+      if (ui.showSleepTimer) {
+        if (e.key === 'Escape' || e.key === 'Backspace') {
+          ui.setShowSleepTimer(false);
+          e.preventDefault();
+        }
+        return;
+      }
+
       const {
         showEPGGrid, showChannelList, showChannelNumberPad, showEPG, showGroupsPlaylists,
         setShowEPGGrid, setShowChannelList, setShowChannelNumberPad, setShowEPG, setShowGroupsPlaylists,
@@ -244,6 +252,10 @@ export const useKeyboardNavigation = ({
       const player = usePlayerStore.getState();
       const h = handlersRef.current;
 
+      if (ui.showSleepTimer) {
+        ui.setShowSleepTimer(false);
+        return true;
+      }
       if (ui.showChannelNumberPad) {
         ui.setShowChannelNumberPad(false);
         player.setChannelNumberInput('');
