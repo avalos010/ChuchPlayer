@@ -62,6 +62,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
 
   const [selectedGroup, setSelectedGroup] = useState('All');
   const [showGroupRail, setShowGroupRail] = useState(false);
+  const [nativeGridFocusTrigger, setNativeGridFocusTrigger] = useState(0);
   const flashRef      = useRef<FlashList<ChannelRowData>>(null);
   const hScrollRef    = useRef<ScrollView>(null);
   const [focusedId, setFocusedId]       = useState<string | null>(null);
@@ -161,10 +162,15 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     setTimeout(() => { try { navigation?.navigate('Settings', { focusTarget: 'epg' }); } catch {} }, 100);
   }, [setShowEPGGrid, onExitPIP, navigation]);
 
+  const closeGroupRail = useCallback(() => {
+    setShowGroupRail(false);
+    setNativeGridFocusTrigger((trigger) => trigger + 1);
+  }, []);
+
   const handleGroupSelect = useCallback((group: string) => {
     setSelectedGroup(group);
-    setShowGroupRail(false);
-  }, []);
+    closeGroupRail();
+  }, [closeGroupRail]);
 
   const filteredChannels = useMemo(() => {
     if (!channels?.length) return [];
@@ -320,7 +326,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
         e.preventDefault();
         const currentGroupIndex = Math.max(0, groupNames.indexOf(selectedGroup));
         if (e.key === 'Escape' || e.key === 'ArrowRight') {
-          setShowGroupRail(false);
+          closeGroupRail();
           return;
         }
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -331,7 +337,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
           return;
         }
         if (e.key === 'Enter') {
-          setShowGroupRail(false);
+          closeGroupRail();
           return;
         }
         return;
@@ -386,6 +392,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     return () => window.removeEventListener('keydown', handleGridKeyDown);
   }, [
     buildFocusedInfo,
+    closeGroupRail,
     channel?.id,
     filteredChannels,
     focusedId,
@@ -400,25 +407,10 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   ]);
 
   useEffect(() => {
-    if (!showEPGGrid || !KeyEvent) return;
+    if (!showEPGGrid || !KeyEvent || (USE_NATIVE_GRID && !showGroupRail)) return;
     KeyEvent.onKeyDownListener((e: { keyCode: number }) => {
       if (showGroupRail) {
-        const currentGroupIndex = Math.max(0, groupNames.indexOf(selectedGroup));
-        if (e.keyCode === 22 || e.keyCode === 4) {
-          setShowGroupRail(false);
-          return;
-        }
-        if (e.keyCode === 19 || e.keyCode === 20) {
-          const nextIndex = e.keyCode === 19
-            ? Math.max(0, currentGroupIndex - 1)
-            : Math.min(groupNames.length - 1, currentGroupIndex + 1);
-          setSelectedGroup(groupNames[nextIndex] ?? selectedGroup);
-          return;
-        }
-        if (e.keyCode === 23 || e.keyCode === 66) {
-          setShowGroupRail(false);
-          return;
-        }
+        if (e.keyCode === 21 || e.keyCode === 22 || e.keyCode === 4) closeGroupRail();
         return;
       }
       if (e.keyCode === 21) {
@@ -431,7 +423,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
       if (e.keyCode === 22) syncTimelineScroll(horizontalScrollXRef.current + SLOT_W, true);
     });
     return () => KeyEvent.removeKeyDownListener();
-  }, [showEPGGrid, showGroupRail, groupNames, selectedGroup, minTimelineX, syncTimelineScroll]);
+  }, [showEPGGrid, showGroupRail, minTimelineX, syncTimelineScroll, closeGroupRail]);
 
   if (!showEPGGrid || !channels.length || !navigation) return null;
 
@@ -464,6 +456,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     initFocusId={initFocusId}
     minTimelineX={minTimelineX}
     nativeDataVersion={nativeDataVersion}
+    nativeGridFocusTrigger={nativeGridFocusTrigger}
     onTimelineScroll={(x) => setTimelineScrollX((previous) => Math.abs(previous - x) > 3 ? x : previous)}
     onViewableItemsChanged={onViewableItemsChanged}
     playlistId={playlist?.id ?? ''}
@@ -471,6 +464,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
     renderItem={renderItem}
     selectedGroup={selectedGroup}
     setShowGroupRail={setShowGroupRail}
+    closeGroupRail={closeGroupRail}
     showChannelNumbers={showChannelNumbers}
     showGroupRail={showGroupRail}
     syncTimelineScroll={syncTimelineScroll}

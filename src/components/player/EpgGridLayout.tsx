@@ -33,6 +33,7 @@ interface EpgGridLayoutProps {
   initFocusId: string | null;
   minTimelineX: number;
   nativeDataVersion: number;
+  nativeGridFocusTrigger: number;
   onTimelineScroll: (x: number) => void;
   onViewableItemsChanged: ({ viewableItems }: { viewableItems: any[] }) => void;
   playlistId: string;
@@ -40,6 +41,7 @@ interface EpgGridLayoutProps {
   renderItem: (info: ListRenderItemInfo<ChannelRowData>) => React.ReactElement;
   selectedGroup: string;
   setShowGroupRail: React.Dispatch<React.SetStateAction<boolean>>;
+  closeGroupRail: () => void;
   showChannelNumbers: boolean;
   showGroupRail: boolean;
   syncTimelineScroll: (x: number, animated?: boolean) => void;
@@ -51,7 +53,7 @@ interface EpgGridLayoutProps {
 }
 
 export function EpgGridLayout({
-  channel, channelData, channels, clockFormat, epgError, epgLoading, filteredChannels, flashRef, focusedId, focusedInfo, groups, handleClose, handleGroupSelect, handleManualEpgRefresh, handleNativeChannelSelect, handleNativeOpenGroups, handleSettings, hasAnyData, horizontalScrollXRef, hScrollRef, initFocusId, minTimelineX, nativeDataVersion, onTimelineScroll, onViewableItemsChanged, playlistId, playlistName, renderItem, selectedGroup, setShowGroupRail, showChannelNumbers, showGroupRail, syncTimelineScroll, theme, timePos, timelineScrollX, useNativeGrid, buildFocusedInfo,
+  channel, channelData, channels, clockFormat, epgError, epgLoading, filteredChannels, flashRef, focusedId, focusedInfo, groups, handleClose, handleGroupSelect, handleManualEpgRefresh, handleNativeChannelSelect, handleNativeOpenGroups, handleSettings, hasAnyData, horizontalScrollXRef, hScrollRef, initFocusId, minTimelineX, nativeDataVersion, nativeGridFocusTrigger, onTimelineScroll, onViewableItemsChanged, playlistId, playlistName, renderItem, selectedGroup, setShowGroupRail, closeGroupRail, showChannelNumbers, showGroupRail, syncTimelineScroll, theme, timePos, timelineScrollX, useNativeGrid, buildFocusedInfo,
 }: EpgGridLayoutProps) {
   return <View style={s.root}>
     <EpgInfoPanel info={focusedInfo ?? (channel ? buildFocusedInfo(channel.id) : null)} channel={channel} channels={channels} theme={theme} showChannelNumbers={showChannelNumbers} clockFormat={clockFormat} />
@@ -66,10 +68,10 @@ export function EpgGridLayout({
         <FocusableItem onPress={handleClose} style={[s.hBtn, s.hBtnClose]} focusedStyle={HDR_BTN_FOCUSED}><Text style={[s.hBtnIcon, { color: '#737373' }]}>✕</Text></FocusableItem>
       </View>
     </View>
-    {showGroupRail && groups.length > 1 ? <GroupRail groups={groups} selectedGroup={selectedGroup} onSelect={handleGroupSelect} onClose={() => setShowGroupRail(false)} /> : null}
+    {showGroupRail && groups.length > 1 ? <GroupRail groups={groups} selectedGroup={selectedGroup} onSelect={handleGroupSelect} onClose={closeGroupRail} /> : null}
     {!epgLoading && epgError && <View pointerEvents="none" style={s.errBanner}><Text style={s.errTxt}>⚠  {epgError}</Text></View>}
     <View style={[s.gridWrap, showGroupRail && { marginLeft: GROUP_RAIL_W }]}>
-      {useNativeGrid ? <NativeEpgGrid style={{ flex: 1 }} playlistId={playlistId} channels={filteredChannels} currentChannelId={channel?.id} accentColor={theme.accent} bgColor={theme.bg} dataVersion={nativeDataVersion} guideLoading={epgLoading} onChannelSelect={handleNativeChannelSelect} onOpenGroups={handleNativeOpenGroups} /> : <>
+      {useNativeGrid ? <NativeEpgGrid style={{ flex: 1 }} playlistId={playlistId} channels={filteredChannels} currentChannelId={channel?.id} accentColor={theme.accent} bgColor={theme.bg} dataVersion={nativeDataVersion} focusTrigger={nativeGridFocusTrigger} guideLoading={epgLoading} onChannelSelect={handleNativeChannelSelect} onOpenGroups={handleNativeOpenGroups} /> : <>
         <ScrollView ref={hScrollRef} style={{ flex: 1 }} horizontal showsHorizontalScrollIndicator={false} scrollEventThrottle={16} onScroll={(event) => {
           const x = event.nativeEvent.contentOffset.x;
           if (x < minTimelineX) { syncTimelineScroll(minTimelineX, false); return; }

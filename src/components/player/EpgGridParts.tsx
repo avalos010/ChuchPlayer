@@ -1,7 +1,7 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { Image } from 'expo-image';
-import FocusableItem from '../FocusableItem';
+import FocusableItem, { type FocusableItemHandle } from '../FocusableItem';
 import { Channel, EPGProgram } from '../../types';
 import { useThemeStore } from '../../store/useThemeStore';
 import { formatClockTime } from '../../utils/time';
@@ -92,11 +92,19 @@ export const TimeHeader = memo<{ currentTimePosition?: number; timelineScrollX: 
 
 export const GroupRail = memo<{ groups: EpgGroupItem[]; selectedGroup: string; onSelect: (group: string) => void; onClose: () => void }>(({ groups, selectedGroup, onSelect, onClose }) => {
   const theme = useThemeStore((state) => state.theme);
+  const firstGroupRef = useRef<FocusableItemHandle>(null);
+
+  useEffect(() => {
+    if (!TV) return undefined;
+    const frame = requestAnimationFrame(() => firstGroupRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
   return <View style={s.groupRail}>
     <View style={s.groupRailHeader}><Text style={s.groupRailTitle}>Groups</Text><FocusableItem onPress={onClose} style={s.groupRailClose} focusedStyle={HDR_BTN_FOCUSED}><Text style={s.groupRailCloseTxt}>›</Text></FocusableItem></View>
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.groupRailScroll}>{groups.map((group) => {
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.groupRailScroll}>{groups.map((group, index) => {
       const active = selectedGroup === group.name;
-      return <FocusableItem key={group.name} onPress={() => onSelect(group.name)} hasTVPreferredFocus={active} style={[s.groupRailItem, active && s.groupRailItemActive]} focusedStyle={{ backgroundColor: '#e8f2ff', borderColor: '#ffffff', borderWidth: 2, transform: [], elevation: 6 }}><View style={[s.groupRailAccent, active && { backgroundColor: theme.accent }]} /><View style={s.groupRailMeta}><Text style={[s.groupRailName, active && s.groupRailNameActive]} numberOfLines={1}>{group.name}</Text><Text style={[s.groupRailCount, active && s.groupRailCountActive]}>{group.count} channels</Text></View></FocusableItem>;
+      return <FocusableItem key={group.name} ref={index === 0 ? firstGroupRef : undefined} onPress={() => onSelect(group.name)} hasTVPreferredFocus={index === 0} style={[s.groupRailItem, active && s.groupRailItemActive]} focusedStyle={{ backgroundColor: '#e8f2ff', borderColor: '#ffffff', borderWidth: 2, transform: [], elevation: 6 }}><View style={[s.groupRailAccent, active && { backgroundColor: theme.accent }]} /><View style={s.groupRailMeta}><Text style={[s.groupRailName, active && s.groupRailNameActive]} numberOfLines={1}>{group.name}</Text><Text style={[s.groupRailCount, active && s.groupRailCountActive]}>{group.count} channels</Text></View></FocusableItem>;
     })}</ScrollView>
   </View>;
 });

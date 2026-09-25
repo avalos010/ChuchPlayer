@@ -43,6 +43,11 @@ class EpgGridViewManager(private val reactContext: ReactApplicationContext) :
         view.maybeLoad(force = true)
     }
 
+    @ReactProp(name = "focusTrigger", defaultInt = 0)
+    fun setFocusTrigger(view: EpgGridView, value: Int) {
+        if (value > 0) view.post { view.requestFocus() }
+    }
+
     @ReactProp(name = "guideLoading", defaultBoolean = false)
     fun setGuideLoading(view: EpgGridView, loading: Boolean) {
         view.setGuideLoading(loading)

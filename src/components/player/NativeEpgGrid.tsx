@@ -16,6 +16,7 @@ type NativeEpgGridViewProps = {
   accentColor?: string;
   bgColor?: string;
   dataVersion?: number;
+  focusTrigger?: number;
   guideLoading?: boolean;
 };
 
@@ -37,6 +38,7 @@ interface Props {
   accentColor?: string;
   bgColor?: string;
   dataVersion?: number;
+  focusTrigger?: number;
   guideLoading?: boolean;
   onChannelSelect: (channelId: string, channelName: string) => void;
   onCatchupSelect?: (channelId: string, startMs: number, endMs: number, programTitle: string) => void;
@@ -51,6 +53,7 @@ const NativeEpgGrid: React.FC<Props> = ({
   accentColor,
   bgColor,
   dataVersion,
+  focusTrigger,
   guideLoading,
   onChannelSelect,
   onCatchupSelect,
@@ -98,6 +101,7 @@ const NativeEpgGrid: React.FC<Props> = ({
       accentColor={accentColor ?? '#ffffff'}
       bgColor={bgColor ?? '#0a0a0a'}
       dataVersion={dataVersion ?? 0}
+      focusTrigger={focusTrigger ?? 0}
       guideLoading={guideLoading ?? false}
     />
   );
