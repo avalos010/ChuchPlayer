@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   DeviceEventEmitter,
   Dimensions,
+  NativeModules,
   Platform,
   Text,
   View,
@@ -91,6 +92,13 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   // Multi-screen state
   const { isMultiScreenMode, screens } = useMultiScreenStore();
   const [showMultiScreenControls, setShowMultiScreenControls] = useState(false);
+
+  useEffect(() => {
+    if (!isMultiScreenMode) return;
+    useUIStore.getState().setShowControls(false);
+    useUIStore.getState().setShowInfoBar(false);
+    if (Platform.OS === 'android') void NativeModules.ExoPlayerModule.pause();
+  }, [isMultiScreenMode]);
 
   // Custom hooks
   const {
@@ -375,9 +383,9 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     return (
       <PlayerMultiScreenStage
         channels={channels}
-        onChannelSelect={handleChannelSelect}
         showControls={showMultiScreenControls}
         onCloseControls={handleMultiScreenClose}
+        onOpenControls={handleMultiScreenPress}
       />
     );
   }
@@ -453,7 +461,6 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       {/* Multi-Screen Controls Modal */}
       <MultiScreenControls
         channels={channels}
-        onChannelSelect={handleChannelSelect}
         isVisible={showMultiScreenControls}
         onClose={handleMultiScreenClose}
       />

@@ -4,6 +4,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useUIStore } from '../store/useUIStore';
+import { useMultiScreenStore } from '../store/useMultiScreenStore';
 import { useVideoPlayback } from './useVideoPlayback';
 
 interface UseKeyboardNavigationProps {
@@ -67,6 +68,16 @@ export const useKeyboardNavigation = ({
     if (Platform.OS !== 'web') return undefined;
 
     const handleKeyPress = (e: KeyboardEvent) => {
+      const multiScreen = useMultiScreenStore.getState();
+      if (multiScreen.isMultiScreenMode) {
+        if (e.key === 'Escape' || e.key === 'Backspace') {
+          if (multiScreen.fullscreenScreenId) multiScreen.setFullscreenScreen(null);
+          else multiScreen.clearAllScreens();
+          e.preventDefault();
+        }
+        return;
+      }
+
       const ui = useUIStore.getState();
       const player = usePlayerStore.getState();
       const h = handlersRef.current;
@@ -222,6 +233,13 @@ export const useKeyboardNavigation = ({
   // Android back button — reads current state via getState() to avoid stale closures
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      const multiScreen = useMultiScreenStore.getState();
+      if (multiScreen.isMultiScreenMode) {
+        if (multiScreen.fullscreenScreenId) multiScreen.setFullscreenScreen(null);
+        else multiScreen.clearAllScreens();
+        return true;
+      }
+
       const ui = useUIStore.getState();
       const player = usePlayerStore.getState();
       const h = handlersRef.current;

@@ -23,9 +23,10 @@ class MultiExoPlayerView(context: Context) : FrameLayout(context) {
 
     private val TAG = "MultiExoPlayerView"
     private var player: ExoPlayer? = null
+    private var desiredVolume = 1f
     private val playerView: PlayerView = PlayerView(context).apply {
         useController = false
-        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
     }
 
@@ -50,6 +51,7 @@ class MultiExoPlayerView(context: Context) : FrameLayout(context) {
             .setMediaSourceFactory(DefaultMediaSourceFactory(http))
             .build()
             .apply {
+                volume = desiredVolume
                 addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
                         val s = when (state) {
@@ -93,7 +95,8 @@ class MultiExoPlayerView(context: Context) : FrameLayout(context) {
     }
 
     fun setVolume(volume: Float) {
-        player?.volume = volume.coerceIn(0f, 1f)
+        desiredVolume = volume.coerceIn(0f, 1f)
+        player?.volume = desiredVolume
     }
 
     override fun onDetachedFromWindow() {

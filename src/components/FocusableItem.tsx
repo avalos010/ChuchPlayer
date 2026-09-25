@@ -20,6 +20,7 @@ interface FocusableItemProps {
   onBlur?: () => void;
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
+  contentStyle?: StyleProp<ViewStyle>;
   focusedStyle?: StyleProp<ViewStyle>;
   className?: string;
   disabled?: boolean;
@@ -36,6 +37,7 @@ const FocusableItem = forwardRef<FocusableItemHandle, FocusableItemProps>(({
   onBlur,
   children,
   style,
+  contentStyle,
   focusedStyle,
   className,
   disabled = false,
@@ -242,7 +244,7 @@ const FocusableItem = forwardRef<FocusableItemHandle, FocusableItemProps>(({
       hasTVPreferredFocus={hasTVPreferredFocus}
       {...tvFocusProps}
     >
-      <View pointerEvents="none">{children}</View>
+      <View pointerEvents="none" style={contentStyle}>{children}</View>
     </Pressable>
   );
 });

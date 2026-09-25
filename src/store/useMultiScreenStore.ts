@@ -62,15 +62,12 @@ export const useMultiScreenStore = create<MultiScreenState>((set, get) => ({
       channel,
       isPlaying: true,
       volume: 1.0,
-      isMuted: false,
-      isFocused: state.screens.length === 0, // First screen is focused by default
+      isMuted: state.screens.length > 0,
+      isFocused: state.screens.length === 0,
     };
-    
-    // Unfocus all other screens
-    const updatedScreens = state.screens.map(s => ({ ...s, isFocused: false }));
-    
+
     set({
-      screens: [...updatedScreens, newScreen],
+      screens: [...state.screens, newScreen],
       isMultiScreenMode: true,
     });
   },
@@ -79,13 +76,13 @@ export const useMultiScreenStore = create<MultiScreenState>((set, get) => ({
     const state = get();
     const remainingScreens = state.screens.filter(s => s.id !== screenId);
 
-    // If removing the focused screen, focus the first remaining screen
-    if (remainingScreens.length > 0 && state.screens.find(s => s.id === screenId)?.isFocused) {
-      remainingScreens[0].isFocused = true;
-    }
+    const focusedRemoved = state.screens.some(s => s.id === screenId && s.isFocused);
+    const nextScreens = focusedRemoved
+      ? remainingScreens.map((s, index) => ({ ...s, isFocused: index === 0, isMuted: index !== 0 }))
+      : remainingScreens;
 
     set({
-      screens: remainingScreens,
+      screens: nextScreens,
       isMultiScreenMode: remainingScreens.length > 1,
       featuredScreenId: state.featuredScreenId === screenId ? null : state.featuredScreenId,
       fullscreenScreenId: state.fullscreenScreenId === screenId ? null : state.fullscreenScreenId,
@@ -109,12 +106,21 @@ export const useMultiScreenStore = create<MultiScreenState>((set, get) => ({
   },
 
   setFocusedScreen: (screenId) => {
-    set((state) => ({
-      screens: state.screens.map(s => ({
-        ...s,
-        isFocused: s.id === screenId,
-      })),
-    }));
+    set((state) => {
+      if (!state.screens.some(s => s.id === screenId)) return state;
+      if (state.screens.every(s => s.isFocused === (s.id === screenId) && s.isMuted === (s.id !== screenId))) return state;
+      return {
+        screens: state.screens.map(s => {
+          const isFocused = s.id === screenId;
+          if (s.isFocused === isFocused && s.isMuted === !isFocused) return s;
+          return {
+            ...s,
+            isFocused,
+            isMuted: !isFocused,
+          };
+        }),
+      };
+    });
   },
   
   toggleMultiScreenMode: () => {
@@ -135,7 +141,7 @@ export const useMultiScreenStore = create<MultiScreenState>((set, get) => ({
     set((state) => ({
       fullscreenScreenId: screenId,
       screens: screenId
-        ? state.screens.map((s) => ({ ...s, isFocused: s.id === screenId }))
+        ? state.screens.map((s) => ({ ...s, isFocused: s.id === screenId, isMuted: s.id !== screenId }))
         : state.screens,
     }));
   },
@@ -149,7 +155,7 @@ export const useMultiScreenStore = create<MultiScreenState>((set, get) => ({
     const next = screens[(idx + 1) % screens.length];
     set({
       fullscreenScreenId: next.id,
-      screens: screens.map((s) => ({ ...s, isFocused: s.id === next.id })),
+      screens: screens.map((s) => ({ ...s, isFocused: s.id === next.id, isMuted: s.id !== next.id })),
     });
   },
 
@@ -186,4 +192,3 @@ export const useMultiScreenStore = create<MultiScreenState>((set, get) => ({
     return state.screens.length < state.maxScreens;
   },
 }));
-

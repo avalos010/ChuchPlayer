@@ -32,6 +32,28 @@ describe('addScreen', () => {
     useMultiScreenStore.getState().addScreen(makeChannel('a'));
     const { screens } = useMultiScreenStore.getState();
     expect(screens[0].isFocused).toBe(true);
+    expect(screens[0].isMuted).toBe(false);
+  });
+
+  it('keeps one audio source when adding and focusing tiles', () => {
+    const { addScreen, setFocusedScreen } = useMultiScreenStore.getState();
+    addScreen(makeChannel('a'));
+    addScreen(makeChannel('b'));
+    const initialScreens = useMultiScreenStore.getState().screens;
+    expect(initialScreens.map((screen) => [screen.isFocused, screen.isMuted])).toEqual([
+      [true, false],
+      [false, true],
+    ]);
+
+    setFocusedScreen(initialScreens[1].id);
+    const switchedScreens = useMultiScreenStore.getState().screens;
+    expect(switchedScreens.map((screen) => [screen.isFocused, screen.isMuted])).toEqual([
+      [false, true],
+      [true, false],
+    ]);
+
+    setFocusedScreen(initialScreens[1].id);
+    expect(useMultiScreenStore.getState().screens).toBe(switchedScreens);
   });
 
   it('ignores duplicate channels', () => {
@@ -145,6 +167,21 @@ describe('removeScreen', () => {
     addScreen(makeChannel('b'));
     removeScreen(useMultiScreenStore.getState().screens[1].id);
     expect(useMultiScreenStore.getState().isMultiScreenMode).toBe(false);
+  });
+
+  it('moves audio to another tile when the selected tile is removed', () => {
+    const { addScreen, setFocusedScreen, removeScreen } = useMultiScreenStore.getState();
+    addScreen(makeChannel('a'));
+    addScreen(makeChannel('b'));
+    addScreen(makeChannel('c'));
+    const second = useMultiScreenStore.getState().screens[1].id;
+    setFocusedScreen(second);
+    removeScreen(second);
+
+    const screens = useMultiScreenStore.getState().screens;
+    expect(screens[0].isFocused).toBe(true);
+    expect(screens[0].isMuted).toBe(false);
+    expect(screens[1].isMuted).toBe(true);
   });
 });
 

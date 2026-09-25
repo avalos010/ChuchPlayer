@@ -6,16 +6,16 @@ import MultiScreenControls from '../../components/player/MultiScreenControls';
 
 interface PlayerMultiScreenStageProps {
   channels: Channel[];
-  onChannelSelect: (channel: Channel) => void;
   showControls: boolean;
   onCloseControls: () => void;
+  onOpenControls: () => void;
 }
 
 const PlayerMultiScreenStage: React.FC<PlayerMultiScreenStageProps> = ({
   channels,
-  onChannelSelect,
   showControls,
   onCloseControls,
+  onOpenControls,
 }) => {
   const { width, height } = Dimensions.get('window');
 
@@ -32,10 +32,9 @@ const PlayerMultiScreenStage: React.FC<PlayerMultiScreenStageProps> = ({
           : undefined
       }
     >
-      <MultiScreenView channels={channels} onChannelSelect={onChannelSelect} />
+      <MultiScreenView channels={channels} onOpenControls={onOpenControls} />
       <MultiScreenControls
         channels={channels}
-        onChannelSelect={onChannelSelect}
         isVisible={showControls}
         onClose={onCloseControls}
       />

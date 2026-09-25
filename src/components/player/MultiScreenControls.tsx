@@ -10,7 +10,6 @@ import { isTvLikePlatform } from '../../utils/platform';
 
 interface MultiScreenControlsProps {
   channels: Channel[];
-  onChannelSelect: (channel: Channel) => void;
   isVisible: boolean;
   onClose: () => void;
 }
@@ -19,7 +18,6 @@ const TV = isTvLikePlatform;
 
 const MultiScreenControlsInner: React.FC<Omit<MultiScreenControlsProps, 'isVisible'>> = ({
   channels,
-  onChannelSelect,
   onClose,
 }) => {
   const theme = useThemeStore((s) => s.theme);
@@ -72,7 +70,6 @@ const MultiScreenControlsInner: React.FC<Omit<MultiScreenControlsProps, 'isVisib
 
   const handleAddScreen = (channel: Channel) => {
     addScreen(channel);
-    onChannelSelect(channel);
   };
 
   const handleExit = () => {

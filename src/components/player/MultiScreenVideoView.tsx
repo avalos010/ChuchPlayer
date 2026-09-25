@@ -77,7 +77,7 @@ const MultiScreenVideoView: React.FC<MultiScreenVideoViewProps> = ({
     <Video
       source={{ uri: source }}
       style={[{ flex: 1 }, style] as any}
-      resizeMode={ResizeMode.COVER}
+      resizeMode={ResizeMode.CONTAIN}
       shouldPlay={playing}
       volume={volume}
       useNativeControls={false}
