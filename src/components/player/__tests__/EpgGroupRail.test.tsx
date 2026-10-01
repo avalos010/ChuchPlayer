@@ -1,4 +1,24 @@
-const mockFocusItem = jest.fn();
+import type { ReactElement, ReactNode } from 'react';
+
+interface FocusableTestProps {
+  children?: ReactNode;
+  hasTVPreferredFocus?: boolean;
+  onFocus?: () => void;
+  onPress: () => void;
+}
+
+interface TestNode {
+  props: FocusableTestProps;
+  findAllByType: (type: string) => TestNode[];
+}
+
+interface TestTree {
+  root: TestNode;
+  update: (element: ReactElement) => void;
+  unmount: () => void;
+}
+
+const mockFocusRequest = jest.fn<void, []>();
 
 jest.mock('react-native', () => ({
   Platform: { OS: 'android' },
@@ -14,83 +34,128 @@ jest.mock('react-native', () => ({
 jest.mock('expo-image', () => ({ Image: 'Image' }));
 
 jest.mock('../../FocusableItem', () => {
-  const React = require('react');
+  const React = require('react') as typeof import('react');
   return {
     __esModule: true,
-    default: React.forwardRef((props: any, ref: any) => {
-      React.useImperativeHandle(ref, () => ({
-        getNativeNode: () => null,
-        focus: () => mockFocusItem(props),
-      }));
+    default: (props: FocusableTestProps) => {
+      React.useEffect(() => {
+        if (props.hasTVPreferredFocus) mockFocusRequest();
+      }, [props.hasTVPreferredFocus]);
       return React.createElement('FocusableItem', props, props.children);
-    }),
+    },
   };
 });
 
 jest.mock('../../../store/useThemeStore', () => ({
-  useThemeStore: (selector: (state: any) => unknown) => selector({ theme: { accent: '#33aaff' } }),
+  useThemeStore: (selector: (state: { theme: { accent: string } }) => unknown) =>
+    selector({ theme: { accent: '#33aaff' } }),
 }));
 
 import React from 'react';
-const renderer = require('react-test-renderer') as any;
+const renderer = require('react-test-renderer') as {
+  act: (callback: () => void | Promise<void>) => Promise<void>;
+  create: (element: ReactElement) => TestTree;
+};
 const { act } = renderer;
 import { GroupRail } from '../EpgGridParts';
 
+const groups = [
+  { name: 'All', count: 10 },
+  { name: 'News', count: 4 },
+  { name: 'Sports', count: 2 },
+];
+
+const groupItems = (tree: TestTree) => tree.root
+  .findAllByType('FocusableItem')
+  .filter((item) => typeof item.props.hasTVPreferredFocus === 'boolean');
+
+const renderRail = (onSelect = jest.fn(), items = groups) => (
+  <GroupRail groups={items} selectedGroup="Sports" onSelect={onSelect} onClose={jest.fn()} />
+);
+
 describe('EPG group rail focus', () => {
-  const originalRequestAnimationFrame = (globalThis as any).requestAnimationFrame;
-  const originalCancelAnimationFrame = (globalThis as any).cancelAnimationFrame;
+  const originalRequestAnimationFrame = Object.getOwnPropertyDescriptor(globalThis, 'requestAnimationFrame');
+  const originalCancelAnimationFrame = Object.getOwnPropertyDescriptor(globalThis, 'cancelAnimationFrame');
+  let tree: TestTree;
 
   beforeAll(() => {
-    (globalThis as any).requestAnimationFrame = (callback: (time: number) => void) => {
+    globalThis.requestAnimationFrame = (callback) => {
       callback(0);
       return 1;
     };
-    (globalThis as any).cancelAnimationFrame = jest.fn();
+    globalThis.cancelAnimationFrame = jest.fn();
   });
 
   afterAll(() => {
-    if (originalRequestAnimationFrame) {
-      (globalThis as any).requestAnimationFrame = originalRequestAnimationFrame;
-    } else {
-      delete (globalThis as any).requestAnimationFrame;
-    }
-    if (originalCancelAnimationFrame) {
-      (globalThis as any).cancelAnimationFrame = originalCancelAnimationFrame;
-    } else {
-      delete (globalThis as any).cancelAnimationFrame;
+    for (const [name, descriptor] of [
+      ['requestAnimationFrame', originalRequestAnimationFrame],
+      ['cancelAnimationFrame', originalCancelAnimationFrame],
+    ] as const) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+      else Reflect.deleteProperty(globalThis, name);
     }
   });
 
-  beforeEach(() => mockFocusItem.mockClear());
+  beforeEach(() => mockFocusRequest.mockClear());
+  afterEach(async () => {
+    await act(() => tree.unmount());
+    jest.restoreAllMocks();
+  });
+
+  it('requests initial focus only after the opening frame', async () => {
+    let pendingFrame: FrameRequestCallback | undefined;
+    jest.spyOn(globalThis, 'requestAnimationFrame').mockImplementationOnce((callback) => {
+      pendingFrame = callback;
+      return 1;
+    });
+    await act(() => { tree = renderer.create(renderRail()); });
+
+    expect(groupItems(tree).every((item) => !item.props.hasTVPreferredFocus)).toBe(true);
+    expect(mockFocusRequest).not.toHaveBeenCalled();
+
+    await act(() => { pendingFrame?.(0); });
+
+    expect(groupItems(tree).map((item) => item.props.hasTVPreferredFocus)).toEqual([true, false, false]);
+    expect(mockFocusRequest).toHaveBeenCalledTimes(1);
+  });
 
   it('focuses the first group even when a later group is selected', async () => {
     const onSelect = jest.fn();
-    let tree: any;
+    await act(() => { tree = renderer.create(renderRail(onSelect)); });
 
-    await act(async () => {
-      tree = renderer.create(
-        <GroupRail
-          groups={[
-            { name: 'All', count: 10 },
-            { name: 'News', count: 4 },
-            { name: 'Sports', count: 2 },
-          ]}
-          selectedGroup="Sports"
-          onSelect={onSelect}
-          onClose={jest.fn()}
-        />,
-      );
-    });
-
-    const preferredItems = tree.root
-      .findAllByType('FocusableItem')
-      .filter((item: any) => typeof item.props.hasTVPreferredFocus === 'boolean');
-
-    expect(preferredItems.map((item: any) => item.props.hasTVPreferredFocus)).toEqual([true, false, false]);
-    expect(mockFocusItem).toHaveBeenCalledTimes(1);
-    mockFocusItem.mock.calls[0][0].onPress();
+    expect(groupItems(tree).map((item) => item.props.hasTVPreferredFocus)).toEqual([true, false, false]);
+    expect(mockFocusRequest).toHaveBeenCalledTimes(1);
+    groupItems(tree)[0].props.onPress();
     expect(onSelect).toHaveBeenCalledWith('All');
+  });
 
-    await act(async () => tree.unmount());
+  it('clears preferred focus after entering the list so Down can leave the first item', async () => {
+    await act(() => { tree = renderer.create(renderRail()); });
+    await act(() => { groupItems(tree)[0].props.onFocus?.(); });
+
+    expect(groupItems(tree).map((item) => item.props.hasTVPreferredFocus)).toEqual([false, false, false]);
+    expect(mockFocusRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not request the first item again when the groups update while browsing', async () => {
+    const onSelect = jest.fn();
+    await act(() => { tree = renderer.create(renderRail(onSelect)); });
+    await act(() => { groupItems(tree)[0].props.onFocus?.(); });
+    await act(() => { tree.update(renderRail(onSelect, groups.map((group) => ({ ...group, count: group.count + 1 })))); });
+
+    expect(groupItems(tree).every((item) => !item.props.hasTVPreferredFocus)).toBe(true);
+    expect(mockFocusRequest).toHaveBeenCalledTimes(1);
+    groupItems(tree)[1].props.onPress();
+    expect(onSelect).toHaveBeenCalledWith('News');
+  });
+
+  it('starts at the first group again after closing and reopening the rail', async () => {
+    await act(() => { tree = renderer.create(renderRail()); });
+    await act(() => { groupItems(tree)[0].props.onFocus?.(); });
+    await act(() => tree.unmount());
+    await act(() => { tree = renderer.create(renderRail()); });
+
+    expect(groupItems(tree).map((item) => item.props.hasTVPreferredFocus)).toEqual([true, false, false]);
+    expect(mockFocusRequest).toHaveBeenCalledTimes(2);
   });
 });

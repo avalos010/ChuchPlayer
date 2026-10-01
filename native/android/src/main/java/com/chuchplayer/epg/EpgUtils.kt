@@ -15,6 +15,11 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPInputStream
 
 private const val TAG = "EpgUtils"
+private val nonAlphaNumeric = Regex("[^a-z0-9]")
+private val xmltvTimezone = Regex("([+-]\\d{4}|Z)$")
+private val xmltvCalendar = object : ThreadLocal<Calendar>() {
+    override fun initialValue(): Calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+}
 const val HOURS_BEFORE = 12L
 const val HOURS_AFTER = 36L
 const val BATCH_SIZE = 2000
@@ -36,7 +41,7 @@ fun normalizeKeys(value: String): List<String> {
     val trimmed = value.trim()
     if (trimmed.isEmpty()) return emptyList()
     val lower = trimmed.lowercase()
-    val alphaNum = lower.replace(Regex("[^a-z0-9]"), "")
+    val alphaNum = lower.replace(nonAlphaNumeric, "")
     val noSpaces = lower.replace(" ", "")
     val noDashes = lower.replace("-", "")
     val noUnder = lower.replace("_", "")
@@ -336,8 +341,7 @@ class ProgramBuilder(
         if (dateStr.isEmpty()) return null
         return try {
             val cleaned = dateStr.trim().replace(" ", "")
-            val tzRegex = Regex("([+-]\\d{4}|Z)$")
-            val tzMatch = tzRegex.find(cleaned)
+            val tzMatch = xmltvTimezone.find(cleaned)
             val dateOnly = if (tzMatch != null) cleaned.dropLast(tzMatch.value.length) else cleaned
             if (dateOnly.length < 14) return null
 
@@ -348,22 +352,17 @@ class ProgramBuilder(
             val minute = dateOnly.substring(10, 12).toInt()
             val second = dateOnly.substring(12, 14).toInt()
 
-            val tz = when {
-                tzMatch == null -> TimeZone.getTimeZone("UTC")
-                tzMatch.value == "Z" -> TimeZone.getTimeZone("UTC")
-                else -> {
-                    val s = tzMatch.value
-                    val sign = if (s[0] == '+') 1 else -1
-                    val h = s.substring(1, 3).toInt()
-                    val m = s.substring(3, 5).toInt()
-                    TimeZone.getTimeZone("GMT%s%02d:%02d".format(if (sign > 0) "+" else "-", h, m))
-                }
-            }
+            val offset = tzMatch?.value?.takeUnless { it == "Z" }?.let { zone ->
+                val sign = if (zone[0] == '+') 1 else -1
+                val hours = zone.substring(1, 3).toInt()
+                val minutes = zone.substring(3, 5).toInt()
+                sign * (hours * 60L + minutes) * 60_000L
+            } ?: 0L
 
-            Calendar.getInstance(tz).apply {
+            xmltvCalendar.get()!!.apply {
+                clear()
                 set(year, month, day, hour, minute, second)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
+            }.timeInMillis - offset
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse date: $dateStr", e)
             null

@@ -17,6 +17,7 @@ export type MetadataRow = {
   playlistId: string;
   lastUpdated: number;
   sourceSignature?: string | null;
+  hasPrograms?: boolean;
 };
 
 const getNativeModule = () => {
@@ -57,6 +58,7 @@ export const getPlaylistMetadata = async (
       playlistId: meta.playlistId,
       lastUpdated: meta.lastUpdated,
       sourceSignature: meta.sourceSignature || null,
+      hasPrograms: meta.hasPrograms,
     };
   } catch {
     return null;

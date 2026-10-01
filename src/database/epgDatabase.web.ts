@@ -14,6 +14,7 @@ export type MetadataRow = {
   playlistId: string;
   lastUpdated: number;
   sourceSignature?: string | null;
+  hasPrograms?: boolean;
 };
 
 // ─── IndexedDB setup ─────────────────────────────────────────────────────────

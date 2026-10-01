@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import {
-  View, Text, StyleSheet, Platform, Animated,
+  View, Text, StyleSheet, Animated, ViewStyle,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { ResizeMode } from 'expo-av';
@@ -14,10 +14,6 @@ import { isTvLikePlatform } from '../../utils/platform';
 import { formatClockTime } from '../../utils/time';
 import { useThemeStore } from '../../store/useThemeStore';
 import { Theme } from '../../theme/themes';
-
-const KeyEvent = Platform.OS === 'android'
-  ? (require('react-native-keyevent').default ?? require('react-native-keyevent'))
-  : null;
 
 interface ChannelInfoBarProps {
   channel: Channel | null;
@@ -58,8 +54,6 @@ interface CtrlProps {
   icon: React.ComponentProps<typeof MCI>['name'];
   label: string;
   onPress: () => void;
-  onFocus: () => void;
-  onBlur: () => void;
   active?: boolean;
   hasTVPreferredFocus?: boolean;
 }
@@ -68,25 +62,21 @@ const Ctrl: React.FC<CtrlProps> = ({
   icon,
   label,
   onPress,
-  onFocus,
-  onBlur,
   active,
   hasTVPreferredFocus,
 }) => {
   const theme = useThemeStore((st) => st.theme);
   const s = useMemo(() => createStyles(theme), [theme]);
-  const focusedStyle = useMemo(() => ({
+  const focusedStyle = useMemo<ViewStyle>(() => ({
     backgroundColor: theme.cardActive,
     borderColor: theme.accent,
     borderWidth: 2,
-    transform: [] as any[],
+    transform: [],
     elevation: 8,
   }), [theme]);
   return (
     <FocusableItem
       onPress={onPress}
-      onFocus={onFocus}
-      onBlur={onBlur}
       hasTVPreferredFocus={hasTVPreferredFocus}
       style={[s.btn, active && s.btnActive]}
       focusedStyle={focusedStyle}
@@ -136,51 +126,55 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
   const hideTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
   const [progress, setProgress] = React.useState(0);
-  const [focused, setFocused]   = React.useState(false);
   const [imgErr, setImgErr]     = React.useState(false);
-  const [focusedControlIndex, setFocusedControlIndex] = React.useState(0);
-  const vodOffset = (hasVod ? 1 : 0) + (hasSeries ? 1 : 0);
-  const multiIndex = 3 + vodOffset;
-  const guideIndex = multiIndex + (onMultiScreen ? 1 : 0);
-  const controlCount = guideIndex + 4;
 
   React.useEffect(() => { setImgErr(false); }, [channel?.id]);
 
   const cancelHide = useCallback(() => {
-    if (hideTimer.current) clearTimeout(hideTimer.current);
+    if (hideTimer.current !== null) clearTimeout(hideTimer.current);
+    hideTimer.current = null;
   }, []);
 
-  const scheduleHide = useCallback(() => {
-    cancelHide();
-    if (timeoutSeconds === 0 || focused) return;
-    hideTimer.current = setTimeout(() => {
-      animationRef.current?.stop();
-      animationRef.current = Animated.parallel([
-        Animated.timing(slideAnim,   { toValue: 300, duration: 300, useNativeDriver: true }),
-        Animated.timing(opacityAnim, { toValue: 0,   duration: 300, useNativeDriver: true }),
-      ]);
-      animationRef.current.start(() => {
-        animationRef.current = null;
-        setShowInfoBar(false);
-      });
-    }, timeoutSeconds * 1000);
-  }, [focused, timeoutSeconds, cancelHide, slideAnim, opacityAnim, setShowInfoBar]);
+  const stopAnimation = useCallback(() => {
+    const animation = animationRef.current;
+    animationRef.current = null;
+    animation?.stop();
+  }, []);
 
   useEffect(() => {
-    if (!showInfoBar) { cancelHide(); animationRef.current?.stop(); return; }
-    animationRef.current?.stop();
-    animationRef.current = Animated.parallel([
+    cancelHide();
+    stopAnimation();
+    if (!showInfoBar) return;
+
+    const entrance = Animated.parallel([
       Animated.spring(slideAnim,   { toValue: 0, tension: 55, friction: 11, useNativeDriver: true }),
       Animated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]);
-    animationRef.current.start(() => { animationRef.current = null; });
-    scheduleHide();
-    return () => { cancelHide(); animationRef.current?.stop(); };
-  }, [showInfoBar]); // eslint-disable-line react-hooks/exhaustive-deps
+    animationRef.current = entrance;
+    entrance.start(() => {
+      if (animationRef.current === entrance) animationRef.current = null;
+    });
 
-  useEffect(() => {
-    if (!focused) scheduleHide(); else cancelHide();
-  }, [focused]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!showControls && timeoutSeconds > 0) {
+      hideTimer.current = setTimeout(() => {
+        hideTimer.current = null;
+        if (useUIStore.getState().showControls) return;
+        stopAnimation();
+        const exit = Animated.parallel([
+          Animated.timing(slideAnim, { toValue: 300, duration: 300, useNativeDriver: true }),
+          Animated.timing(opacityAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+        ]);
+        animationRef.current = exit;
+        exit.start(({ finished }) => {
+          if (animationRef.current !== exit) return;
+          animationRef.current = null;
+          if (finished && !useUIStore.getState().showControls) setShowInfoBar(false);
+        });
+      }, timeoutSeconds * 1000);
+    }
+
+    return () => { cancelHide(); stopAnimation(); };
+  }, [showInfoBar, showControls, channel?.id, timeoutSeconds, slideAnim, opacityAnim, cancelHide, stopAnimation, setShowInfoBar]);
 
   useEffect(() => {
     if (!currentProgram) { setProgress(0); return; }
@@ -195,29 +189,6 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
     return () => clearInterval(id);
   }, [currentProgram]);
 
-  useEffect(() => {
-    if (showControls) setFocusedControlIndex(0);
-  }, [showControls]);
-
-  useEffect(() => {
-    if (!showControls || !KeyEvent) return;
-
-    KeyEvent.onKeyDownListener((event: { keyCode: number }) => {
-      if (event.keyCode !== 21 && event.keyCode !== 22) return;
-      const delta = event.keyCode === 21 ? -1 : 1;
-      setFocusedControlIndex((currentIndex) => (
-        currentIndex + delta + controlCount
-      ) % controlCount);
-    });
-
-    return () => KeyEvent.removeKeyDownListener();
-  }, [showControls, controlCount]);
-
-  const onFocus = useCallback((index: number) => {
-    setFocusedControlIndex(index);
-    setFocused(true);
-  }, []);
-  const onBlur  = useCallback(() => setFocused(false), []);
   const closeControls = useCallback(() => setShowInfoBar(false), [setShowInfoBar]);
 
   if (!showInfoBar || !channel) return null;
@@ -303,7 +274,7 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
         {/* ── Progress bar ─────────────────────────────────────────────── */}
         <View style={s.progressWrap} pointerEvents="none">
           <View style={s.progressBg}>
-            <View style={[s.progressFg, { width: `${pct}%` as any }]} />
+            <View style={[s.progressFg, { width: `${pct}%` }]} />
           </View>
         </View>
 
@@ -316,29 +287,21 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                 icon={isPlaying ? 'pause' : 'play'}
                 label={isPlaying ? 'Pause' : 'Play'}
                 onPress={onTogglePlayback}
-                onFocus={() => onFocus(0)}
-                onBlur={onBlur}
                 active={isPlaying}
-                hasTVPreferredFocus={focusedControlIndex === 0}
+                hasTVPreferredFocus
               />
 
               <Ctrl
                 icon="aspect-ratio"
                 label={aspectLabel(resizeMode)}
                 onPress={cycleResizeMode}
-                onFocus={() => onFocus(1)}
-                onBlur={onBlur}
-                hasTVPreferredFocus={focusedControlIndex === 1}
               />
 
               <Ctrl
                 icon={isFavorite ? 'star' : 'star-outline'}
                 label="Favorite"
                 onPress={onToggleFavorite}
-                onFocus={() => onFocus(2)}
-                onBlur={onBlur}
                 active={isFavorite}
-                hasTVPreferredFocus={focusedControlIndex === 2}
               />
 
               {hasVod ? (
@@ -349,9 +312,6 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                     setShowInfoBar(false);
                     navigation?.replace('VodCatalog');
                   }}
-                  onFocus={() => onFocus(3)}
-                  onBlur={onBlur}
-                  hasTVPreferredFocus={focusedControlIndex === 3}
                 />
               ) : null}
 
@@ -363,9 +323,6 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                     setShowInfoBar(false);
                     navigation?.replace('VodCatalog', { catalog: 'series' });
                   }}
-                  onFocus={() => onFocus(hasVod ? 4 : 3)}
-                  onBlur={onBlur}
-                  hasTVPreferredFocus={focusedControlIndex === (hasVod ? 4 : 3)}
                 />
               ) : null}
 
@@ -374,9 +331,6 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                   icon="picture-in-picture-top-right"
                   label="Multi"
                   onPress={onMultiScreen}
-                  onFocus={() => onFocus(multiIndex)}
-                  onBlur={onBlur}
-                  hasTVPreferredFocus={focusedControlIndex === multiIndex}
                 />
               )}
 
@@ -387,18 +341,12 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                   setShowInfoBar(false);
                   useUIStore.getState().setShowEPGGrid(true);
                 }}
-                onFocus={() => onFocus(guideIndex)}
-                onBlur={onBlur}
-                hasTVPreferredFocus={focusedControlIndex === guideIndex}
               />
 
               <Ctrl
                 icon="sleep"
                 label="Sleep"
                 onPress={onSleepTimer}
-                onFocus={() => onFocus(guideIndex + 1)}
-                onBlur={onBlur}
-                hasTVPreferredFocus={focusedControlIndex === guideIndex + 1}
               />
 
               <Ctrl
@@ -408,18 +356,12 @@ const ChannelInfoBar: React.FC<ChannelInfoBarProps> = ({
                   setShowInfoBar(false);
                   setTimeout(() => navigation?.navigate('Settings', { focusTarget: 'interface' }), 80);
                 }}
-                onFocus={() => onFocus(guideIndex + 2)}
-                onBlur={onBlur}
-                hasTVPreferredFocus={focusedControlIndex === guideIndex + 2}
               />
 
               <Ctrl
                 icon="close-circle-outline"
                 label="Close"
                 onPress={closeControls}
-                onFocus={() => onFocus(guideIndex + 3)}
-                onBlur={onBlur}
-                hasTVPreferredFocus={focusedControlIndex === guideIndex + 3}
               />
             </View>
           </>

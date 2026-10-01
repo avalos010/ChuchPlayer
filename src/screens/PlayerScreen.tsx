@@ -45,10 +45,7 @@ import PlayerDpadZones from './player/PlayerDpadZones';
 import PlayerVideoStage from './player/PlayerVideoStage';
 import PlayerMultiScreenStage from './player/PlayerMultiScreenStage';
 import { hasPlayerModalOverlay } from './player/usePlayerModalOverlay';
-
-const KeyEvent = Platform.OS === 'android'
-  ? (require('react-native-keyevent').default ?? require('react-native-keyevent'))
-  : null;
+import type { FocusableItemHandle } from '../components/FocusableItem';
 
 interface PlayerScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Player'>;
@@ -61,7 +58,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({ navigation, route }) => {
   // Refs
   const videoRef = useRef<PlayerVideoHandle>(null);
   const mainViewRef = useRef<View>(null);
-  const centerZoneRef = useRef<any>(null);
+  const centerZoneRef = useRef<FocusableItemHandle>(null);
 
   // Player store state
   const channel = usePlayerStore((state) => state.channel);
@@ -338,7 +335,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
 
   useEffect(() => {
     if (
-      !KeyEvent ||
+      Platform.OS !== 'android' ||
       !hasChannel ||
       showEPG ||
       showEPGGrid ||
@@ -353,12 +350,14 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
       isMultiScreenMode
     ) return undefined;
 
-    KeyEvent.onKeyDownListener((event: { keyCode: number }) => {
+    const subscription = DeviceEventEmitter.addListener('onKeyDown', (event: { keyCode: number }) => {
+      const ui = useUIStore.getState();
+      if (!navigation.isFocused() || ui.showControls || hasPlayerModalOverlay({ ...ui, showInfoBar: false }) || useMultiScreenStore.getState().isMultiScreenMode) return;
       if (event.keyCode === 19) handleUpDpad(exitPIP);
       else if (event.keyCode === 20) handleDownDpad(exitPIP);
       else if (event.keyCode === 23 || event.keyCode === 66) handleCenterPress();
     });
-    return () => KeyEvent.removeKeyDownListener();
+    return () => subscription.remove();
   }, [
     hasChannel,
     showEPG,
@@ -376,6 +375,7 @@ const { pipPreviewWidth, pipPreviewHeight } = useMemo(() => {
     handleDownDpad,
     handleCenterPress,
     exitPIP,
+    navigation,
   ]);
 
   // If in multi-screen mode, show multi-screen view

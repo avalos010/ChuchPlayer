@@ -76,7 +76,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
 
   // Update current time position every 5 min — only while grid is visible
   useEffect(() => {
-    if (!showEPGGrid) return;
+    if (!showEPGGrid || USE_NATIVE_GRID) return;
     const update = () => {
       const now = new Date();
       setTimePos(12 * SLOT_W + (now.getMinutes() / 60) * SLOT_W);
@@ -179,7 +179,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   }, [channels, selectedGroup]);
 
   const loadEpgFor = useCallback((ids: string[]) => {
-    if (!ids.length || !prefetchProgramsForChannels) return;
+    if (USE_NATIVE_GRID || !ids.length || !prefetchProgramsForChannels) return;
     const toLoad = ids.filter(id => !loadedIdsRef.current.has(id));
     if (toLoad.length) {
       prefetchProgramsForChannels(toLoad);
@@ -193,7 +193,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   filteredChannelsRef.current = filteredChannels;
 
   const channelData = useMemo<ChannelRowData[]>(() =>
-    filteredChannels.map(ch => ({
+    USE_NATIVE_GRID ? [] : filteredChannels.map(ch => ({
       channel: ch,
       isCurrent: ch.id === channel?.id,
       programs: loadedIdsRef.current.has(ch.id) && getProgramsForChannel
@@ -206,9 +206,9 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   // O(1) map from channel ID to index for fast row lookups (vs O(n) findIndex)
   const channelIndexMap = useMemo(() => {
     const m = new Map<string, number>();
-    channelData.forEach((row, i) => m.set(row.channel.id, i));
+    if (!USE_NATIVE_GRID) filteredChannels.forEach((item, i) => m.set(item.id, i));
     return m;
-  }, [channelData]);
+  }, [filteredChannels]);
 
   const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: any[] }) => {
     const visIds: string[] = viewableItems.map((i: any) => i.item.channel.id);
@@ -228,6 +228,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   channelDataRef.current = channelData;
 
   useEffect(() => {
+    if (USE_NATIVE_GRID) return;
     loadedIdsRef.current.clear();
     setEpgVersion(v => v + 1);
   }, [selectedGroup]);
@@ -243,6 +244,7 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   // channel, or the group filter changes. Lazy-load updates to `channelData`
   // must NOT re-trigger this, or the list constantly jumps back to the top.
   useEffect(() => {
+    if (USE_NATIVE_GRID) return;
     if (!showEPGGrid) { setFocusedId(null); setInitFocusId(null); return; }
     const data = channelDataRef.current;
     const fid = channel?.id ?? data[0]?.channel.id ?? null;
@@ -430,7 +432,9 @@ const EPGGridView: React.FC<EPGGridViewProps> = ({
   // Only show the blocking overlay when we genuinely have nothing to display.
   // Once at least one channel has program data, fall back to a small badge so
   // the user can interact with the grid while background ingestion continues.
-  const hasAnyData = loadedIdsRef.current.size > 0;
+  const hasAnyData = USE_NATIVE_GRID
+    ? focusedInfo?.hasGuideData === true
+    : loadedIdsRef.current.size > 0;
 
   return <EpgGridLayout
     channel={channel}

@@ -10,6 +10,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.withLock
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -85,7 +86,6 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
                     Log.d(TAG, "Channel index built: ${channelIndex.size} entries")
 
                     val body = fetchWithRetry(resolvedEpgUrl)
-                        ?: throw IllegalStateException("Failed to fetch EPG after retries")
 
                     var totalWritten = 0
                     body.use {
@@ -238,6 +238,12 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
                             putString("playlistId", meta.playlistId)
                             putDouble("lastUpdated", meta.lastUpdated.time.toDouble())
                             putString("sourceSignature", meta.sourceSignature ?: "")
+                            val now = System.currentTimeMillis()
+                            putBoolean("hasPrograms", realm.where(ProgramRealm::class.java)
+                                .equalTo("playlistId", playlistId)
+                                .greaterThan("end", java.util.Date(now))
+                                .lessThan("start", java.util.Date(now + HOURS_AFTER * 3_600_000L))
+                                .findFirst() != null)
                         })
                     }
                 } finally {
@@ -254,7 +260,7 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
 
     private suspend fun fetchWithRetry(
         url: String
-    ): okhttp3.ResponseBody? {
+    ): okhttp3.ResponseBody {
         val client = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
@@ -265,29 +271,38 @@ class EpgIngestionModule(reactContext: ReactApplicationContext) :
             .header("Accept", "application/xml, text/xml, */*")
             .build()
 
+        var lastFailure: IOException? = null
         repeat(4) { attempt ->
-            try {
-                val response = client.newCall(request).execute()
-                if (response.code == 429) {
-                    response.close()
-                    val wait = (response.header("Retry-After")?.toLongOrNull() ?: (1L shl attempt)) * 1000L
-                    Log.w(TAG, "429 rate-limited, waiting ${wait}ms (attempt ${attempt + 1})")
-                    delay(wait)
-                    return@repeat
-                }
-                if (!response.isSuccessful) {
-                    response.close()
-                    Log.e(TAG, "HTTP ${response.code} for $url")
-                    return null
-                }
-                return response.body ?: run { Log.e(TAG, "Null body for $url"); null }
-            } catch (e: Exception) {
+            val response = try {
+                client.newCall(request).execute()
+            } catch (e: IOException) {
+                lastFailure = e
                 val backoff = (1L shl attempt) * 1000L
-                Log.w(TAG, "Request failed (attempt ${attempt + 1}), retrying in ${backoff}ms", e)
+                Log.w(TAG, "Guide request failed (attempt ${attempt + 1})")
                 delay(backoff)
+                return@repeat
             }
+            if (response.code == 429) {
+                lastFailure = IOException("HTTP 429")
+                val wait = (response.header("Retry-After")?.toLongOrNull() ?: (1L shl attempt)) * 1000L
+                response.close()
+                Log.w(TAG, "429 rate-limited, waiting ${wait}ms (attempt ${attempt + 1})")
+                delay(wait)
+                return@repeat
+            }
+            if (!response.isSuccessful) {
+                val code = response.code
+                response.close()
+                throw IOException("HTTP $code")
+            }
+            val body = response.body
+            if (body == null) {
+                response.close()
+                throw IOException("The guide response was empty")
+            }
+            return body
         }
-        return null
+        throw lastFailure ?: IOException("Failed to fetch guide after retries")
     }
 
     private fun writeBatch(batch: List<ProgramData>): Int = writeProgramsToRealm(batch)

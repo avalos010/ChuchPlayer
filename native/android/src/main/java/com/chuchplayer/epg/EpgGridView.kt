@@ -15,6 +15,10 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactContext
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -34,6 +38,10 @@ class EpgGridView(context: Context) : View(context) {
         const val EVENT_CHANNEL_FOCUS  = "EPG_CHANNEL_FOCUS"
         const val EVENT_OPEN_GROUPS    = "EPG_OPEN_GROUPS"
         private const val WIN_CATCHUP_H = 72  // how far back users can scroll (3 days)
+        private const val QUERY_BATCH_SIZE = 8
+        private const val PREFETCH_AHEAD = 24
+        private const val PREFETCH_BEHIND = 12
+        private const val PREFETCH_BLOCK = 8
     }
 
     private val dp = context.resources.displayMetrics.density
@@ -57,10 +65,17 @@ class EpgGridView(context: Context) : View(context) {
 
     // ── State ─────────────────────────────────────────────────────────────────
     private var channels    = emptyList<EpgChannel>()
-    private var programs    = emptyMap<String, List<EpgProgram>>()
+    private val programs = LruCache<String, CachedPrograms>(96)
     private var guideLoading = false
-    private var requestedIds = emptySet<String>()
+    private var hasGuideData = false
+    private var requestedIds = emptyList<String>()
     private var queryGeneration = 0
+    private var dataRevision = 0
+    private var queryJob: Job? = null
+    private val queryMutex = Mutex()
+    private var lastVisibleRow = 0
+    private var lastFocusedRow = 0
+    private var scrollDirection = 1
     private var currentId: String? = null
     private var playlistId: String? = null
     private var focusedRow  = 0
@@ -78,6 +93,8 @@ class EpgGridView(context: Context) : View(context) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
     private val logoLoading = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val logoFailures = LruCache<String, Long>(128)
+    private val logoRequests = Semaphore(3)
     private val http = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
@@ -165,8 +182,11 @@ class EpgGridView(context: Context) : View(context) {
     }
 
     private val blockRf   = RectF()
+    private val progressRf = RectF()
+    private val logoRf = RectF()
     private val sdfTime   = SimpleDateFormat("h:mm a", Locale.getDefault())
     private val sdfDate   = SimpleDateFormat("EEE, MMM d  h:mm a", Locale.getDefault())
+    private val timeLabels = LruCache<Long, String>(512)
     private val playPath  = Path()
 
     init {
@@ -257,8 +277,12 @@ class EpgGridView(context: Context) : View(context) {
 
     fun setPlaylistId(id: String) {
         if (playlistId != id) {
-            programs = emptyMap()
-            requestedIds = emptySet()
+            queryJob?.cancel()
+            queryJob = null
+            queryGeneration++
+            programs.evictAll()
+            hasGuideData = false
+            requestedIds = emptyList()
         }
         playlistId = id
         maybeLoad()
@@ -280,12 +304,20 @@ class EpgGridView(context: Context) : View(context) {
             }
         } catch (e: Exception) { Log.e(TAG, "parse channels", e) }
         channels = list
-        programs = emptyMap()
-        requestedIds = emptySet()
+        queryJob?.cancel()
+        queryJob = null
+        queryGeneration++
+        programs.evictAll()
+        hasGuideData = false
+        requestedIds = emptyList()
         val idx = channels.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
         focusedRow = idx
         ensureVisible(idx)
+        lastFocusedRow = idx
+        lastVisibleRow = (epgOffsetY / ROW_H).toInt()
+        scrollDirection = 1
         maybeLoad()
+        fireFocus()
         invalidate()
     }
 
@@ -305,45 +337,87 @@ class EpgGridView(context: Context) : View(context) {
     // ── Realm load ────────────────────────────────────────────────────────────
 
     fun maybeLoad(force: Boolean = false) {
-        val pid = playlistId ?: return
+        if (force) dataRevision++
+        if (playlistId == null) return
         if (channels.isEmpty()) return
         val visibleRows = max(1, (height - HDR_H) / ROW_H + 1)
-        val first = max(0, (epgOffsetY / ROW_H).toInt() - 4)
-        val last = min(channels.lastIndex, max(focusedRow + 4, first + visibleRows + 8))
-        val focusedId = channels[focusedRow].id
-        val ids = listOf(focusedId) + channels.subList(first, last + 1)
-            .map { it.id }
-            .filter { it != focusedId }
-        val idsSet = ids.toSet()
-        if (!force && idsSet == requestedIds) return
-        requestedIds = idsSet
-        val generation = ++queryGeneration
-        scope.launch {
+        val firstVisible = (epgOffsetY / ROW_H).toInt().coerceIn(0, channels.lastIndex)
+        val lastVisible = min(channels.lastIndex, firstVisible + visibleRows)
+        scrollDirection = when {
+            firstVisible > lastVisibleRow || focusedRow > lastFocusedRow -> 1
+            firstVisible < lastVisibleRow || focusedRow < lastFocusedRow -> -1
+            else -> scrollDirection
+        }
+        lastVisibleRow = firstVisible
+        lastFocusedRow = focusedRow
+
+        val before = if (scrollDirection < 0) PREFETCH_AHEAD else PREFETCH_BEHIND
+        val after = if (scrollDirection > 0) PREFETCH_AHEAD else PREFETCH_BEHIND
+        val first = max(0, firstVisible - before) / PREFETCH_BLOCK * PREFETCH_BLOCK
+        val last = min(channels.lastIndex, (lastVisible + after + PREFETCH_BLOCK) / PREFETCH_BLOCK * PREFETCH_BLOCK - 1)
+        val ids = linkedSetOf(channels[focusedRow].id)
+        val visibleRange = if (scrollDirection > 0) firstVisible..lastVisible else lastVisible downTo firstVisible
+        visibleRange.forEach { ids.add(channels[it].id) }
+        if (scrollDirection > 0) {
+            for (row in lastVisible + 1..last) ids.add(channels[row].id)
+            for (row in firstVisible - 1 downTo first) ids.add(channels[row].id)
+        } else {
+            for (row in firstVisible - 1 downTo first) ids.add(channels[row].id)
+            for (row in lastVisible + 1..last) ids.add(channels[row].id)
+        }
+        requestedIds = ids.toList()
+        loadNextBatch()
+    }
+
+    private fun loadNextBatch() {
+        val pid = playlistId ?: return
+        // Let each batch finish so repeated D-pad presses cannot starve visible rows.
+        if (queryJob != null) return
+        val revision = dataRevision
+        val queryIds = requestedIds.filter { programs.get(it)?.revision != revision }.take(QUERY_BATCH_SIZE)
+        if (queryIds.isEmpty()) return
+        val generation = queryGeneration
+        queryJob = scope.launch {
             try {
-                val realm = openRealm()
-                val now   = System.currentTimeMillis()
-                val lower = Date(now - WIN_CATCHUP_H * 3_600_000L)
-                val upper = Date(now + HOURS_AFTER  * 3_600_000L)
-                val result = mutableMapOf<String, List<EpgProgram>>()
-                try {
-                    for (cid in ids) {
+                val result = queryMutex.withLock {
+                    ensureActive()
+                    val realm = openRealm()
+                    val now = System.currentTimeMillis()
+                    val lower = Date(now - WIN_CATCHUP_H * 3_600_000L)
+                    val upper = Date(now + HOURS_AFTER * 3_600_000L)
+                    val grouped = queryIds.associateWith { mutableListOf<EpgProgram>() }
+                    try {
                         val rows = realm.where(ProgramRealm::class.java)
                             .equalTo("playlistId", pid)
-                            .equalTo("channelId", cid)
+                            .`in`("channelId", queryIds.toTypedArray())
                             .greaterThan("end", lower)
                             .lessThan("start", upper)
                             .findAll()
-                        result[cid] = rows.map { p ->
-                            EpgProgram(p.id, p.title, p.description ?: "", p.start.time, p.end.time)
+                        rows.forEach { p ->
+                            ensureActive()
+                            grouped[p.channelId]?.add(EpgProgram(p.id, p.title, p.description ?: "", p.start.time, p.end.time))
                         }
-                    }
-                } finally { realm.close() }
+                    } finally { realm.close() }
+                    grouped
+                }
+                ensureActive()
                 mainHandler.post {
                     if (generation != queryGeneration) return@post
-                    programs = programs + result
+                    queryJob = null
+                    result.forEach { (id, rows) -> programs.put(id, CachedPrograms(revision, rows)) }
+                    hasGuideData = programs.snapshot().values.any { it.rows.isNotEmpty() }
+                    fireFocus()
                     invalidate()
+                    loadNextBatch()
                 }
-            } catch (e: Exception) { Log.e(TAG, "realm load", e) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "realm load", e)
+                mainHandler.post {
+                    if (generation == queryGeneration) queryJob = null
+                }
+            }
         }
     }
 
@@ -353,15 +427,16 @@ class EpgGridView(context: Context) : View(context) {
         val vw  = width.toFloat()
         val vh  = height.toFloat()
         val now = System.currentTimeMillis()
+        val firstRow = max(0, (epgOffsetY / ROW_H).toInt())
+        val lastRow = min(channels.lastIndex, ((epgOffsetY + vh - HDR_H) / ROW_H).toInt())
 
         canvas.drawRect(0f, 0f, vw, vh, pBg)
 
         // ── Rows (clipped below header) ──────────────────────────────────────
         canvas.save()
         canvas.clipRect(0f, HDR_H.toFloat(), vw, vh)
-        for (i in channels.indices) {
+        for (i in firstRow..lastRow) {
             val ry = HDR_H + i * ROW_H - epgOffsetY
-            if (ry + ROW_H < HDR_H || ry > vh) continue
             drawRow(canvas, i, ry, now, vw)
         }
         // Current-time vertical line
@@ -398,9 +473,8 @@ class EpgGridView(context: Context) : View(context) {
         // Redraw channel cells on top of the left column
         canvas.save()
         canvas.clipRect(0f, HDR_H.toFloat(), CH_COL.toFloat(), vh)
-        for (i in channels.indices) {
+        for (i in firstRow..lastRow) {
             val ry = HDR_H + i * ROW_H - epgOffsetY
-            if (ry + ROW_H < HDR_H || ry > vh) continue
             drawChannelCell(canvas, i, ry, now)
         }
         canvas.restore()
@@ -424,7 +498,8 @@ class EpgGridView(context: Context) : View(context) {
         canvas.drawText(dateStr, PAD.toFloat(), dateY, tDate)
 
         // Draw time labels every 30 min
-        val firstSlot = (windowStartMs / halfMs) * halfMs
+        val visibleStart = windowStartMs + (epgOffsetX / SLOT_W * hourMs).toLong()
+        val firstSlot = (visibleStart / halfMs) * halfMs
         var ms = firstSlot - halfMs
         while (true) {
             val slotStart = ms
@@ -439,7 +514,7 @@ class EpgGridView(context: Context) : View(context) {
 
             canvas.drawLine(x, tickTop, x, HDR_H.toFloat(), if (isHour) pSep else pHalfSep)
             canvas.drawText(
-                sdfTime.format(Date(slotStart)),
+                timeLabel(slotStart),
                 x + PAD * 0.5f,
                 HDR_H / 2f + tTime.textSize / 3,
                 if (isNowSlot) tTimeNow else tTime
@@ -476,17 +551,29 @@ class EpgGridView(context: Context) : View(context) {
     // ── Logo fetching ─────────────────────────────────────────────────────────
 
     private fun fetchLogo(url: String) {
-        if (logoLoading.contains(url) || logoCache.get(url) != null) return
-        logoLoading.add(url)
+        if (logoCache.get(url) != null) return
+        val failedAt = logoFailures.get(url)
+        if (failedAt != null && System.currentTimeMillis() - failedAt < 60_000L) return
+        if (!logoLoading.add(url)) return
         scope.launch {
+            var loaded = false
             try {
-                val req = Request.Builder().url(url).build()
-                val bytes = http.newCall(req).execute().use { it.body?.bytes() } ?: return@launch
-                val raw = decodeLogoBitmap(bytes, (LOGO_R * 2f).toInt()) ?: return@launch
-                logoCache.put(url, raw)
-                mainHandler.post { invalidate() }
+                logoRequests.withPermit {
+                    ensureActive()
+                    val req = Request.Builder().url(url).build()
+                    val bytes = http.newCall(req).execute().use {
+                        if (it.isSuccessful) it.body?.bytes() else null
+                    } ?: return@withPermit
+                    val raw = decodeLogoBitmap(bytes, (LOGO_R * 2f).toInt()) ?: return@withPermit
+                    logoCache.put(url, raw)
+                    loaded = true
+                    mainHandler.post { invalidate() }
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
             } finally {
+                if (!loaded) logoFailures.put(url, System.currentTimeMillis())
                 logoLoading.remove(url)
             }
         }
@@ -502,7 +589,7 @@ class EpgGridView(context: Context) : View(context) {
 
         // Channel number
         canvas.drawText(
-            ch.number.toString(),
+            ch.numberLabel,
             CH_NUM / 2f,
             cy + (if (isFocused) tChNumFoc else tChNum).textSize * 0.38f,
             if (isFocused) tChNumFoc else tChNum
@@ -522,11 +609,11 @@ class EpgGridView(context: Context) : View(context) {
             logoClipPath.addCircle(cx, cy, r, Path.Direction.CW)
             canvas.save()
             canvas.clipPath(logoClipPath)
-            canvas.drawBitmap(logoBitmap, null, RectF(left, top, right, bottom), logoPaint)
+            logoRf.set(left, top, right, bottom)
+            canvas.drawBitmap(logoBitmap, null, logoRf, logoPaint)
             canvas.restore()
         } else {
-            val initials = ch.name.take(2).uppercase()
-            canvas.drawText(initials, cx, cy + tInit.textSize * 0.37f, tInit)
+            canvas.drawText(ch.initials, cx, cy + tInit.textSize * 0.37f, tInit)
         }
 
         // Play triangle for currently-playing channel
@@ -547,7 +634,7 @@ class EpgGridView(context: Context) : View(context) {
         val nameW = (CH_NAME - PAD).toFloat()
         val nameP = if (isFocused) tChNameFoc else tChName
 
-        val nowProg = programs[ch.id]?.find { it.startMs <= now && it.endMs > now }
+        val nowProg = programs[ch.id]?.rows?.find { it.startMs <= now && it.endMs > now }
         val nameY = if (nowProg != null) cy - nameP.textSize * 0.2f else cy + nameP.textSize * 0.38f
         drawEllipsis(canvas, ch.name, nx, nameY, nameW, nameP)
 
@@ -570,7 +657,7 @@ class EpgGridView(context: Context) : View(context) {
     private fun drawProgramBlocks(
         canvas: Canvas, ch: EpgChannel, ry: Float, now: Long, isFocused: Boolean, vw: Float
     ) {
-        val progs = programs[ch.id]
+        val progs = programs[ch.id]?.rows
         if (progs.isNullOrEmpty()) {
             canvas.drawText(if (guideLoading) "Loading guide…" else "No guide data",
                 CH_COL + PAD.toFloat(),
@@ -615,7 +702,8 @@ class EpgGridView(context: Context) : View(context) {
             if (isNow && prog.endMs > prog.startMs) {
                 val frac = ((now - prog.startMs).toFloat() / (prog.endMs - prog.startMs)).coerceIn(0f, 1f)
                 val px   = min(blockRf.left + blockRf.width() * frac, blockRf.right)
-                canvas.drawRoundRect(RectF(blockRf.left, blockRf.top, px, blockRf.bottom), BLOCK_R, BLOCK_R, pProgress)
+                progressRf.set(blockRf.left, blockRf.top, px, blockRf.bottom)
+                canvas.drawRoundRect(progressRf, BLOCK_R, BLOCK_R, pProgress)
             }
 
             val tx     = blockRf.left + PAD * 0.6f
@@ -627,7 +715,7 @@ class EpgGridView(context: Context) : View(context) {
 
             val ty2 = ty1 + timeP.textSize + 2f * dp
             if (ty2 + timeP.textSize < blockRf.bottom) {
-                val timeStr = "${sdfTime.format(Date(prog.startMs))} – ${sdfTime.format(Date(prog.endMs))}"
+                val timeStr = "${timeLabel(prog.startMs)} – ${timeLabel(prog.endMs)}"
                 drawEllipsis(canvas, timeStr, tx, ty2, bw, timeP)
             }
         }
@@ -637,10 +725,13 @@ class EpgGridView(context: Context) : View(context) {
         if (maxW <= 0 || text.isEmpty()) return
         if (p.measureText(text) <= maxW) { canvas.drawText(text, x, y, p); return }
         val ellW = p.measureText("…")
-        var n = text.length
-        while (n > 0 && p.measureText(text, 0, n) + ellW > maxW) n--
+        if (ellW > maxW) return
+        val n = p.breakText(text, true, maxW - ellW, null)
         canvas.drawText(text.substring(0, n) + "…", x, y, p)
     }
+
+    private fun timeLabel(timestamp: Long): String =
+        timeLabels.get(timestamp) ?: sdfTime.format(Date(timestamp)).also { timeLabels.put(timestamp, it) }
 
     // ── Scroll ────────────────────────────────────────────────────────────────
 
@@ -734,7 +825,7 @@ class EpgGridView(context: Context) : View(context) {
 
         // If cursor is in the past and this channel has catchup, fire a catchup event
         if (cursorMs < now - 60_000L && ch.catchupAvailable) {
-            val prog = programs[ch.id]?.find { it.startMs <= cursorMs && it.endMs > cursorMs }
+            val prog = programs[ch.id]?.rows?.find { it.startMs <= cursorMs && it.endMs > cursorMs }
             if (prog != null) {
                 rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
                     .emit(EVENT_CATCHUP_SELECT, Arguments.createMap().apply {
@@ -760,12 +851,13 @@ class EpgGridView(context: Context) : View(context) {
         val ch  = channels.getOrNull(focusedRow) ?: return
         val rc  = context as? ReactContext ?: return
         val now = System.currentTimeMillis()
-        val prog = programs[ch.id]?.find { it.startMs <= now && it.endMs > now }
+        val prog = programs[ch.id]?.rows?.find { it.startMs <= now && it.endMs > now }
         rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit(EVENT_CHANNEL_FOCUS, Arguments.createMap().apply {
                 putString("channelId", ch.id)
                 putString("channelName", ch.name)
                 putInt("channelNumber", ch.number)
+                putBoolean("hasGuideData", hasGuideData)
                 if (prog != null) {
                     putString("programTitle", prog.title)
                     putString("programDesc",  prog.desc)
@@ -784,8 +876,8 @@ class EpgGridView(context: Context) : View(context) {
             windowStartMs + ((touchX - CH_COL + epgOffsetX) / SLOT_W * 3_600_000f).toLong()
         else
             cursorMs
-        val prog = programs[ch.id]?.find { it.startMs <= lookupMs && it.endMs > lookupMs }
-            ?: programs[ch.id]?.find { it.startMs <= now && it.endMs > now }
+        val prog = programs[ch.id]?.rows?.find { it.startMs <= lookupMs && it.endMs > lookupMs }
+            ?: programs[ch.id]?.rows?.find { it.startMs <= now && it.endMs > now }
             ?: return
         val isPast = prog.endMs < now
         rc.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
@@ -825,13 +917,27 @@ class EpgGridView(context: Context) : View(context) {
         maybeLoad()
     }
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (channels.isNotEmpty()) {
+            ensureVisible(focusedRow)
+            maybeLoad()
+        }
+    }
+
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        queryGeneration++
+        queryJob = null
         scope.cancel()
     }
 
     // ── Data classes ──────────────────────────────────────────────────────────
 
-    data class EpgChannel(val id: String, val name: String, val logo: String?, val number: Int, val catchupAvailable: Boolean = false)
+    data class EpgChannel(val id: String, val name: String, val logo: String?, val number: Int, val catchupAvailable: Boolean = false) {
+        val initials = name.take(2).uppercase()
+        val numberLabel = number.toString()
+    }
+    private data class CachedPrograms(val revision: Int, val rows: List<EpgProgram>)
     data class EpgProgram(val id: String, val title: String, val desc: String, val startMs: Long, val endMs: Long)
 }

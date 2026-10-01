@@ -15,6 +15,7 @@ export interface FocusedInfo {
   programDesc?: string;
   programStart?: number;
   programEnd?: number;
+  hasGuideData?: boolean;
 }
 
 export const INFO_H = TV ? 108 : 84;

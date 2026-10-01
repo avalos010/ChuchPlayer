@@ -26,9 +26,6 @@ import {
   getActiveEpgUrls,
 } from "./epgManagement/signatures";
 
-const EPG_INGESTION_ERROR_MESSAGE =
-  "Some guide sources are unavailable or unreadable. Listings may be missing or out of date, but your channels can still play. Check the EPG URL in playlist settings or try again.";
-
 const EPG_LOAD_ERROR_MESSAGE =
   "The TV guide couldn't be loaded. Your channels can still play. Try refreshing, or check the EPG source in playlist settings.";
 
@@ -47,6 +44,8 @@ export const useEPGManagement = () => {
     error: null,
   });
   const [epgLastUpdated, setEpgLastUpdated] = useState<number>(0);
+  const [refreshGeneration, setRefreshGeneration] = useState(0);
+  const skipCacheRef = useRef(false);
   const loadedSignatureRef = useRef<string | null>(null);
   const loadedChannelsRef = useRef<Set<string>>(new Set());
   const pendingChannelLoadsRef = useRef<Set<string>>(new Set());
@@ -219,6 +218,8 @@ export const useEPGManagement = () => {
     }
 
     const playlistId = playlist.id;
+    const skipCache = skipCacheRef.current;
+    skipCacheRef.current = false;
     let cancelled = false;
 
     const loadEpg = async () => {
@@ -230,7 +231,7 @@ export const useEPGManagement = () => {
       // AsyncStorage survives cold boots — if the last ingest was recent and
       // used the same signature, load from Realm and skip the network round-trip.
       try {
-        const stored = await AsyncStorage.getItem(EPG_LAST_INGEST_KEY);
+        const stored = skipCache ? null : await AsyncStorage.getItem(EPG_LAST_INGEST_KEY);
         if (stored) {
           const { sig, ts } = JSON.parse(stored) as { sig: string; ts: number };
           if (sig === datasetSignature && Date.now() - ts < STARTUP_SKIP_INTERVAL_MS) {
@@ -269,13 +270,13 @@ export const useEPGManagement = () => {
           const hasCachedPrograms = await loadProgramsForChannels(initialChannelIds, { force: true });
           if (cancelled) return;
 
-          if (hasCachedPrograms) {
+          if (hasCachedPrograms || existingMetadata.hasPrograms) {
             loadedSignatureRef.current = datasetSignature;
             setEpgLastUpdated(existingMetadata.lastUpdated);
             setEpgStatus({ loading: false, error: null });
 
             const timeSinceLastUpdate = Date.now() - existingMetadata.lastUpdated;
-            if (timeSinceLastUpdate < DEFAULT_REFRESH_INTERVAL_MS) {
+            if (!skipCache && timeSinceLastUpdate < DEFAULT_REFRESH_INTERVAL_MS) {
               console.log("[EPG] Cache fresh, skipping re-ingest");
               AsyncStorage.setItem(
                 EPG_LAST_INGEST_KEY,
@@ -298,10 +299,11 @@ export const useEPGManagement = () => {
           setEpgStatus({ loading: true, error: null });
         }
 
+        setEpgStatus({ loading: true, error: null });
         const cutoff = Date.now() - PRUNE_LOWER_BOUND_HOURS * 60 * 60 * 1000;
         await pruneOldPrograms(playlistId, cutoff);
         const urlsToIngest = activeEpgUrlsRef.current;
-        console.log("[EPG] Active EPG URLs:", urlsToIngest);
+        console.log("[EPG] Loading guide sources:", urlsToIngest.length);
 
         const ingestErrors = await ingestEpgData({
           playlistId,
@@ -319,7 +321,8 @@ export const useEPGManagement = () => {
         const timestamp = Date.now();
 
         // Metadata is written by Kotlin on native; on web we write it ourselves
-        if (!isNativeIngestionAvailable()) {
+        const hasSuccessfulSource = errors.length < urlsToIngest.length;
+        if (!isNativeIngestionAvailable() && hasSuccessfulSource) {
           await setPlaylistMetadata(playlistId, timestamp, datasetSignature);
         }
 
@@ -342,14 +345,16 @@ export const useEPGManagement = () => {
         setEpgLastUpdated(timestamp);
 
         // Persist so the next cold boot can skip the network ingest
-        AsyncStorage.setItem(
-          EPG_LAST_INGEST_KEY,
-          JSON.stringify({ sig: datasetSignature, ts: timestamp }),
-        ).catch(() => {/* non-fatal */});
+        if (hasSuccessfulSource) {
+          AsyncStorage.setItem(
+            EPG_LAST_INGEST_KEY,
+            JSON.stringify({ sig: datasetSignature, ts: timestamp }),
+          ).catch(() => {/* non-fatal */});
+        }
 
         const errorMessage =
           errors.length > 0 && errors.length === urlsToIngest.length
-            ? EPG_INGESTION_ERROR_MESSAGE
+            ? errors[0]
             : null;
 
         setEpgStatus({ loading: false, error: errorMessage });
@@ -387,7 +392,7 @@ export const useEPGManagement = () => {
     // object gets a new reference (even with identical URLs). That would cancel
     // in-flight ingestion and restart the loading spinner in a loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datasetSignature, refreshVisiblePrograms]);
+  }, [datasetSignature, refreshVisiblePrograms, refreshGeneration]);
 
   const getProgramsForChannel = useCallback(
     (channelId: string): EPGProgram[] => {
@@ -436,6 +441,8 @@ export const useEPGManagement = () => {
     pendingChannelLoadsRef.current.clear();
     setProgramsByChannel({});
     setEpgStatus({ loading: false, error: null });
+    skipCacheRef.current = true;
+    setRefreshGeneration((generation) => generation + 1);
   }, []);
 
   return {
