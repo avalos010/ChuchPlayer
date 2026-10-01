@@ -14,8 +14,8 @@ interface MultiScreenState {
   screens: MultiScreen[];
   isMultiScreenMode: boolean;
   maxScreens: number;
-  layout: 'grid' | 'split'; // grid = 2x2, split = side-by-side
-  featuredScreenId: string | null;   // when set, this screen is large, others stacked
+  layout: 'grid' | 'split';
+  featuredScreenId: string | null;
   fullscreenScreenId: string | null; // when set, only this screen is shown full-bleed
 
   // Actions

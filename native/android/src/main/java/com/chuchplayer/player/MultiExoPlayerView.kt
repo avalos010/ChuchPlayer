@@ -31,6 +31,7 @@ class MultiExoPlayerView(context: Context) : FrameLayout(context) {
     }
 
     init {
+        descendantFocusability = FOCUS_BLOCK_DESCENDANTS
         addView(playerView)
     }
 

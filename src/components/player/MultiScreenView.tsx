@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, ActivityIndicator, StyleSheet, Modal, ScrollView, TextInput, Platform,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { Channel } from '../../types';
 import { useMultiScreenStore, type MultiScreen } from '../../store/useMultiScreenStore';
@@ -17,15 +18,17 @@ const HEADER_HIDE_DELAY_MS = 4500;
 interface MultiScreenPlayerProps {
   screen: MultiScreen;
   onOpenMenu: (screenId: string) => void;
-  onTileFocus: () => void;
+  onTileFocus: (tile: FocusableItemHandle) => void;
   theme: Theme;
   preferredFocus?: boolean;
+  nextFocusUp?: number;
 }
 
-const MultiScreenPlayer = React.memo(({ screen, onOpenMenu, onTileFocus, theme, preferredFocus }: MultiScreenPlayerProps) => {
+const MultiScreenPlayer = React.memo(({ screen, onOpenMenu, onTileFocus, theme, preferredFocus, nextFocusUp }: MultiScreenPlayerProps) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const setFocusedScreen = useMultiScreenStore((state) => state.setFocusedScreen);
+  const tileRef = useRef<FocusableItemHandle>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -38,16 +41,18 @@ const MultiScreenPlayer = React.memo(({ screen, onOpenMenu, onTileFocus, theme, 
   }, [screen.id, setFocusedScreen, onOpenMenu]);
   const handleFocus = useCallback(() => {
     setFocusedScreen(screen.id);
-    onTileFocus();
+    if (tileRef.current) onTileFocus(tileRef.current);
   }, [screen.id, setFocusedScreen, onTileFocus]);
 
   const isFocused = screen.isFocused;
 
   return (
     <FocusableItem
+      ref={tileRef}
       onPress={handlePress}
       onFocus={handleFocus}
       hasTVPreferredFocus={preferredFocus}
+      nextFocusUp={nextFocusUp}
       contentStyle={msp.content}
       style={[
         msp.tile,
@@ -101,11 +106,12 @@ const msp = StyleSheet.create({
 interface MultiScreenViewProps {
   channels: Channel[];
   onOpenControls: () => void;
+  controlsVisible: boolean;
 }
 
 type PickerTarget = { kind: 'add' } | { kind: 'replace'; screenId: string };
 
-const MultiScreenView: React.FC<MultiScreenViewProps> = ({ channels, onOpenControls }) => {
+const MultiScreenView: React.FC<MultiScreenViewProps> = ({ channels, onOpenControls, controlsVisible }) => {
   const theme = useThemeStore((s) => s.theme);
   const st = useMemo(() => createStyles(theme), [theme]);
   const focusedStyle = useMemo(() => ({ borderColor: theme.focused, borderWidth: 2, transform: [] as any[] }), [theme]);
@@ -115,12 +121,22 @@ const MultiScreenView: React.FC<MultiScreenViewProps> = ({ channels, onOpenContr
     addScreen, removeScreen, setLayout, setFeaturedScreen, setFullscreenScreen,
     setScreenChannel, clearAllScreens, maxScreens,
   } = useMultiScreenStore();
+  const hasHeaderAdd = !fullscreenScreenId && screens.length < maxScreens && channels.length > screens.length;
 
   const [menuScreenId, setMenuScreenId] = useState<string | null>(null);
   const [pickerTarget, setPickerTarget] = useState<PickerTarget | null>(null);
   const [channelQuery, setChannelQuery] = useState('');
   const [headerVisible, setHeaderVisible] = useState(true);
+  const [headerTargets, setHeaderTargets] = useState<{
+    first?: number; add?: number; manage?: number; exit?: number;
+  }>({});
+  const [tileFocusTarget, setTileFocusTarget] = useState<number | undefined>();
+  const [bottomSize, setBottomSize] = useState({ width: 0, height: 0 });
   const headerFirstRef = useRef<FocusableItemHandle>(null);
+  const headerAddRef = useRef<FocusableItemHandle>(null);
+  const headerManageRef = useRef<FocusableItemHandle>(null);
+  const headerExitRef = useRef<FocusableItemHandle>(null);
+  const controlsWereVisibleRef = useRef(controlsVisible);
   const headerHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerFocusedRef = useRef(false);
   const focusHeaderOnRevealRef = useRef(false);
@@ -152,33 +168,54 @@ const MultiScreenView: React.FC<MultiScreenViewProps> = ({ channels, onOpenContr
     scheduleHeaderHide();
   }, [scheduleHeaderHide]);
 
-  const handleTileFocus = useCallback(() => {
+  const handleTileFocus = useCallback((tile: FocusableItemHandle) => {
+    setTileFocusTarget(tile.getNativeNode() ?? undefined);
     headerFocusedRef.current = false;
     scheduleHeaderHide();
   }, [scheduleHeaderHide]);
 
-  useEffect(() => {
-    if (!KeyEvent || !isMultiScreenMode) return undefined;
-    KeyEvent.onKeyDownListener((event: { keyCode: number }) => {
-      if (
-        !headerVisible &&
-        !menuScreenId &&
-        !pickerTarget &&
-        (event.keyCode === 19 || event.keyCode === 82)
-      ) {
-        focusHeaderOnRevealRef.current = true;
-        setHeaderVisible(true);
-      }
+  const revealHeader = useCallback(() => {
+    clearHeaderHide();
+    if (headerVisible) headerFirstRef.current?.focus();
+    else {
+      focusHeaderOnRevealRef.current = true;
+      setHeaderVisible(true);
+    }
+  }, [clearHeaderHide, headerVisible]);
+
+  const handleHeaderLayout = useCallback(() => {
+    setHeaderTargets({
+      first: headerFirstRef.current?.getNativeNode() ?? undefined,
+      add: headerAddRef.current?.getNativeNode() ?? undefined,
+      manage: headerManageRef.current?.getNativeNode() ?? undefined,
+      exit: headerExitRef.current?.getNativeNode() ?? undefined,
     });
-    return () => KeyEvent.removeKeyDownListener();
-  }, [isMultiScreenMode, headerVisible, menuScreenId, pickerTarget]);
+    if (focusHeaderOnRevealRef.current) {
+      focusHeaderOnRevealRef.current = false;
+      headerFirstRef.current?.focus();
+    }
+  }, []);
+
+  const handleBottomLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setBottomSize((current) => current.width === width && current.height === height
+      ? current : { width, height });
+  }, []);
 
   useEffect(() => {
-    if (!headerVisible || !focusHeaderOnRevealRef.current) return undefined;
-    focusHeaderOnRevealRef.current = false;
-    const frame = requestAnimationFrame(() => headerFirstRef.current?.focus());
-    return () => cancelAnimationFrame(frame);
-  }, [headerVisible]);
+    if (!KeyEvent || !isMultiScreenMode || controlsVisible || menuScreenId || pickerTarget) return undefined;
+    KeyEvent.onKeyDownListener((event: { keyCode: number }) => {
+      if ((!headerVisible && event.keyCode === 19) || event.keyCode === 82) revealHeader();
+    });
+    return () => KeyEvent.removeKeyDownListener();
+  }, [isMultiScreenMode, headerVisible, controlsVisible, menuScreenId, pickerTarget, revealHeader]);
+
+  useEffect(() => {
+    const wasVisible = controlsWereVisibleRef.current;
+    controlsWereVisibleRef.current = controlsVisible;
+    if (controlsVisible) clearHeaderHide();
+    else if (wasVisible) revealHeader();
+  }, [controlsVisible, clearHeaderHide, revealHeader]);
 
   const pickerChannels = useMemo(() => {
     if (!pickerTarget) return [];
@@ -212,30 +249,34 @@ const MultiScreenView: React.FC<MultiScreenViewProps> = ({ channels, onOpenContr
   const menuScreen = screens.find((s) => s.id === menuScreenId) ?? null;
   const fullscreenScreen = fullscreenScreenId ? screens.find((s) => s.id === fullscreenScreenId) : null;
   const canAddScreen = screens.length < maxScreens && channels.length > screens.length;
+  const headerUpTarget = headerVisible ? headerTargets.first : undefined;
 
   // ── Layout selection ────────────────────────────────────────────────────────
   let body: React.ReactNode;
   if (fullscreenScreen) {
     body = (
       <View style={st.fullWrap}>
-        <MultiScreenPlayer screen={fullscreenScreen} onOpenMenu={setMenuScreenId} onTileFocus={handleTileFocus} theme={theme} preferredFocus />
+        <MultiScreenPlayer screen={fullscreenScreen} onOpenMenu={setMenuScreenId} onTileFocus={handleTileFocus} theme={theme} preferredFocus nextFocusUp={headerUpTarget} />
       </View>
     );
   } else if (layout === 'split' || featuredScreenId) {
     const featured = screens.find((s) => s.id === featuredScreenId) ?? screens[0];
     const rest = screens.filter((s) => s.id !== featured.id);
+    const tileWidth = rest.length > 0
+      ? Math.min(bottomSize.height * 16 / 9, (bottomSize.width - 6 * (rest.length - 1)) / rest.length)
+      : 0;
     body = (
       <View style={st.featuredWrap}>
         <View style={st.featuredMain}>
-          <MultiScreenPlayer screen={featured} onOpenMenu={setMenuScreenId} onTileFocus={handleTileFocus} theme={theme} preferredFocus />
+          <MultiScreenPlayer screen={featured} onOpenMenu={setMenuScreenId} onTileFocus={handleTileFocus} theme={theme} preferredFocus nextFocusUp={headerUpTarget} />
         </View>
-        <View style={st.featuredSide}>
+        {rest.length > 0 && <View style={st.featuredBottom} onLayout={handleBottomLayout}>
           {rest.map((screen) => (
-            <View key={screen.id} style={st.featuredSideItem}>
+            <View key={screen.id} style={[st.featuredBottomItem, { width: Math.max(0, tileWidth) }]}>
               <MultiScreenPlayer screen={screen} onOpenMenu={setMenuScreenId} onTileFocus={handleTileFocus} theme={theme} />
             </View>
           ))}
-        </View>
+        </View>}
       </View>
     );
   } else if (screens.length === 2) {
@@ -243,7 +284,7 @@ const MultiScreenView: React.FC<MultiScreenViewProps> = ({ channels, onOpenContr
       <View style={st.rowWrap}>
         {screens.map((screen, index) => (
           <View key={screen.id} style={st.rowItem}>
-            <MultiScreenPlayer screen={screen} onOpenMenu={setMenuScreenId} onTileFocus={handleTileFocus} theme={theme} preferredFocus={index === 0} />
+            <MultiScreenPlayer screen={screen} onOpenMenu={setMenuScreenId} onTileFocus={handleTileFocus} theme={theme} preferredFocus={index === 0} nextFocusUp={headerUpTarget} />
           </View>
         ))}
       </View>
@@ -253,7 +294,7 @@ const MultiScreenView: React.FC<MultiScreenViewProps> = ({ channels, onOpenContr
       <View style={st.gridWrap}>
         {screens.map((screen, index) => (
           <View key={screen.id} style={st.gridItem}>
-            <MultiScreenPlayer screen={screen} onOpenMenu={setMenuScreenId} onTileFocus={handleTileFocus} theme={theme} preferredFocus={index === 0} />
+            <MultiScreenPlayer screen={screen} onOpenMenu={setMenuScreenId} onTileFocus={handleTileFocus} theme={theme} preferredFocus={index === 0} nextFocusUp={index < 2 ? headerUpTarget : undefined} />
           </View>
         ))}
         {canAddScreen && (
@@ -270,21 +311,24 @@ const MultiScreenView: React.FC<MultiScreenViewProps> = ({ channels, onOpenContr
     <View style={st.root}>
       {body}
 
-      {headerVisible && <View style={st.topBar}>
+      {headerVisible && <View style={st.topBar} onLayout={handleHeaderLayout}>
         <View style={st.topTitle}>
           <Text style={st.titleTxt}>MULTI VIEW</Text>
           <Text style={st.hintTxt}>
-            {screens.length} channels · OK for tile options · Back to {fullscreenScreen ? 'grid' : 'exit'}
+            {screens.length} channels · Up/Menu for controls · OK for tile options
           </Text>
         </View>
         <View style={st.topActions}>
           {fullscreenScreen ? (
-            <FocusableItem ref={headerFirstRef} onPress={() => setFullscreenScreen(null)} onFocus={handleHeaderFocus} onBlur={handleHeaderBlur} style={st.topBtn} focusedStyle={focusedStyle}>
+            <FocusableItem ref={headerFirstRef} nextFocusLeft={headerTargets.first} nextFocusRight={headerTargets.manage} nextFocusDown={tileFocusTarget} onPress={() => setFullscreenScreen(null)} onFocus={handleHeaderFocus} onBlur={handleHeaderBlur} style={st.topBtn} focusedStyle={focusedStyle}>
               <Text style={st.topBtnTxt}>Back to grid</Text>
             </FocusableItem>
           ) : (
             <FocusableItem
               ref={headerFirstRef}
+              nextFocusLeft={headerTargets.first}
+              nextFocusRight={hasHeaderAdd ? headerTargets.add : headerTargets.manage}
+              nextFocusDown={tileFocusTarget}
               onPress={() => setLayout(layout === 'grid' ? 'split' : 'grid')}
               onFocus={handleHeaderFocus}
               onBlur={handleHeaderBlur}
@@ -294,15 +338,15 @@ const MultiScreenView: React.FC<MultiScreenViewProps> = ({ channels, onOpenContr
               <Text style={st.topBtnTxt}>{layout === 'grid' ? 'Grid' : 'Split'} layout</Text>
             </FocusableItem>
           )}
-          {!fullscreenScreen && canAddScreen && (
-            <FocusableItem onPress={() => openPicker({ kind: 'add' })} onFocus={handleHeaderFocus} onBlur={handleHeaderBlur} style={st.topBtn} focusedStyle={focusedStyle}>
+          {hasHeaderAdd && (
+            <FocusableItem ref={headerAddRef} nextFocusLeft={headerTargets.first} nextFocusRight={headerTargets.manage} nextFocusDown={tileFocusTarget} onPress={() => openPicker({ kind: 'add' })} onFocus={handleHeaderFocus} onBlur={handleHeaderBlur} style={st.topBtn} focusedStyle={focusedStyle}>
               <Text style={st.topBtnTxt}>+ Add channel</Text>
             </FocusableItem>
           )}
-          <FocusableItem onPress={onOpenControls} onFocus={handleHeaderFocus} onBlur={handleHeaderBlur} style={st.topBtn} focusedStyle={focusedStyle}>
+          <FocusableItem ref={headerManageRef} nextFocusLeft={hasHeaderAdd ? headerTargets.add : headerTargets.first} nextFocusRight={headerTargets.exit} nextFocusDown={tileFocusTarget} onPress={onOpenControls} onFocus={handleHeaderFocus} onBlur={handleHeaderBlur} style={st.topBtn} focusedStyle={focusedStyle}>
             <Text style={st.topBtnTxt}>Manage</Text>
           </FocusableItem>
-          <FocusableItem onPress={clearAllScreens} onFocus={handleHeaderFocus} onBlur={handleHeaderBlur} style={st.topBtnDanger} focusedStyle={focusedStyle}>
+          <FocusableItem ref={headerExitRef} nextFocusLeft={headerTargets.manage} nextFocusRight={headerTargets.exit} nextFocusDown={tileFocusTarget} onPress={clearAllScreens} onFocus={handleHeaderFocus} onBlur={handleHeaderBlur} style={st.topBtnDanger} focusedStyle={focusedStyle}>
             <Text style={st.topBtnDangerTxt}>Exit multi view</Text>
           </FocusableItem>
         </View>
@@ -438,10 +482,10 @@ const createStyles = (theme: Theme) => StyleSheet.create({
   addPlus: { fontSize: 30, fontWeight: '300' },
   addTxt: { fontSize: 12, marginTop: 4, fontWeight: '600' },
 
-  featuredWrap: { flex: 1, flexDirection: 'row', padding: 6, gap: 6 },
+  featuredWrap: { flex: 1, flexDirection: 'column', padding: 6, gap: 6 },
   featuredMain: { flex: 2 },
-  featuredSide: { flex: 1, gap: 6 },
-  featuredSideItem: { flex: 1 },
+  featuredBottom: { flex: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', alignItems: 'center' },
+  featuredBottomItem: { aspectRatio: 16 / 9 },
 
   fullWrap: { flex: 1, padding: 6 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 16 },

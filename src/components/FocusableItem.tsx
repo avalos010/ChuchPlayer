@@ -4,7 +4,6 @@ import {
   StyleProp,
   View,
   ViewStyle,
-  UIManager,
   findNodeHandle,
   Platform,
 } from 'react-native';
@@ -48,9 +47,21 @@ const FocusableItem = forwardRef<FocusableItemHandle, FocusableItemProps>(({
   nextFocusRight,
 }, ref) => {
   const [isFocused, setIsFocused] = useState(false);
+  const [focusRequest, setFocusRequest] = useState({
+    preferred: hasTVPreferredFocus,
+    pending: hasTVPreferredFocus,
+  });
   const pressableRef = useRef<any>(null);
 
+  if (focusRequest.preferred !== hasTVPreferredFocus) {
+    setFocusRequest({ preferred: hasTVPreferredFocus, pending: hasTVPreferredFocus });
+  }
+
   const handleFocus = useCallback(() => {
+    if (Platform.OS === 'android') {
+      pressableRef.current?.setNativeProps({ hasTVPreferredFocus: false });
+    }
+    setFocusRequest((request) => request.pending ? { ...request, pending: false } : request);
     setIsFocused(true);
     onFocus?.();
   }, [onFocus]);
@@ -216,16 +227,9 @@ const FocusableItem = forwardRef<FocusableItemHandle, FocusableItemProps>(({
   useImperativeHandle(ref, () => ({
     getNativeNode: () => findNodeHandle(pressableRef.current),
     focus: () => {
-      const node = findNodeHandle(pressableRef.current);
-      if (!node) return;
-
-      if ((Platform.isTV || Platform.OS === 'android') && UIManager.getViewManagerConfig) {
-        const viewConfig = UIManager.getViewManagerConfig('RCTView');
-        const commandId = viewConfig?.Commands?.requestTVFocus;
-        if (typeof commandId === 'number' || typeof commandId === 'string') {
-          UIManager.dispatchViewManagerCommand(node, commandId as any, []);
-          return;
-        }
+      if (Platform.OS === 'android') {
+        pressableRef.current?.setNativeProps({ hasTVPreferredFocus: true });
+        return;
       }
 
       pressableRef.current?.focus?.();
@@ -241,7 +245,7 @@ const FocusableItem = forwardRef<FocusableItemHandle, FocusableItemProps>(({
       onBlur={handleBlur}
       style={styleArray}
       focusable={true}
-      hasTVPreferredFocus={hasTVPreferredFocus}
+      hasTVPreferredFocus={focusRequest.pending}
       {...tvFocusProps}
     >
       <View pointerEvents="none" style={contentStyle}>{children}</View>

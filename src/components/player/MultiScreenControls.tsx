@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { View, Text, Modal, ScrollView, StyleSheet } from 'react-native';
-import FocusableItem from '../FocusableItem';
+import FocusableItem, { type FocusableItemHandle } from '../FocusableItem';
 import { Channel } from '../../types';
 import { useMultiScreenStore } from '../../store/useMultiScreenStore';
 import { usePlayerStore } from '../../store/usePlayerStore';
@@ -38,12 +38,12 @@ const MultiScreenControlsInner: React.FC<Omit<MultiScreenControlsProps, 'isVisib
     setLayout,
     layout,
     clearAllScreens,
-    toggleMultiScreenMode,
     isMultiScreenMode,
     maxScreens,
   } = useMultiScreenStore();
 
   const [count, setCount] = useState(2);
+  const layoutFocusRef = useRef<FocusableItemHandle>(null);
 
   const availableChannels = useMemo(
     () => channels.filter((ch) => !screens.some((sc) => sc.channel.id === ch.id)),
@@ -82,8 +82,9 @@ const MultiScreenControlsInner: React.FC<Omit<MultiScreenControlsProps, 'isVisib
       <Text style={s.sectionLabel}>LAYOUT</Text>
       <View style={s.row}>
         <FocusableItem
+          ref={layoutFocusRef}
           onPress={() => setLayout('grid')}
-          hasTVPreferredFocus={!isMultiScreenMode}
+          hasTVPreferredFocus
           style={[s.chip, layout === 'grid' && s.chipActive]}
           focusedStyle={focusedStyle}
         >
@@ -101,78 +102,80 @@ const MultiScreenControlsInner: React.FC<Omit<MultiScreenControlsProps, 'isVisib
   );
 
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible transparent animationType="fade" onRequestClose={onClose} onShow={() => layoutFocusRef.current?.focus()}>
       <View style={s.backdrop}>
         <View style={s.card}>
           <Text style={s.title}>Multi-Screen</Text>
 
-          {!isMultiScreenMode ? (
-            <>
-              <Text style={s.subtitle}>
-                Watch several channels at once. Pick a layout and how many screens to open.
-              </Text>
+          <ScrollView style={s.body} contentContainerStyle={s.bodyContent} focusable={false} keyboardShouldPersistTaps="handled">
+            {!isMultiScreenMode ? (
+              <>
+                <Text style={s.subtitle}>
+                  Watch several channels at once. Pick a layout and how many screens to open.
+                </Text>
 
-              {LayoutRow}
+                {LayoutRow}
 
-              <View style={s.section}>
-                <Text style={s.sectionLabel}>SCREENS</Text>
-                <View style={s.row}>
-                  {countOptions.map((n) => (
-                    <FocusableItem
-                      key={n}
-                      onPress={() => setCount(n)}
-                      style={[s.chip, s.countChip, count === n && s.chipActive]}
-                      focusedStyle={focusedStyle}
-                    >
-                      <Text style={[s.chipTxt, count === n && s.chipTxtActive]}>{n}</Text>
-                    </FocusableItem>
-                  ))}
-                </View>
-              </View>
-
-              <FocusableItem onPress={startMultiScreen} style={[s.btn, s.btnPrimary]} focusedStyle={focusedStyle}>
-                <Text style={s.btnPrimaryTxt}>Start {count}-Screen {layout === 'grid' ? 'Grid' : 'Split'}</Text>
-              </FocusableItem>
-            </>
-          ) : (
-            <>
-              {LayoutRow}
-
-              <View style={s.section}>
-                <Text style={s.sectionLabel}>ACTIVE ({screens.length}/{maxScreens})</Text>
-                {screens.map((screen) => (
-                  <View key={screen.id} style={s.activeRow}>
-                    <Text style={s.activeName} numberOfLines={1}>{screen.channel.name}</Text>
-                    <FocusableItem onPress={() => removeScreen(screen.id)} style={s.removeBtn} focusedStyle={focusedStyle}>
-                      <Text style={s.removeTxt}>Remove</Text>
-                    </FocusableItem>
-                  </View>
-                ))}
-              </View>
-
-              {screens.length < maxScreens && availableChannels.length > 0 && (
                 <View style={s.section}>
-                  <Text style={s.sectionLabel}>ADD CHANNEL</Text>
-                  <ScrollView style={s.addList} keyboardShouldPersistTaps="handled">
-                    {availableChannels.slice(0, 50).map((item) => (
+                  <Text style={s.sectionLabel}>SCREENS</Text>
+                  <View style={s.row}>
+                    {countOptions.map((n) => (
                       <FocusableItem
-                        key={item.id}
-                        onPress={() => handleAddScreen(item)}
-                        style={s.addRow}
+                        key={n}
+                        onPress={() => setCount(n)}
+                        style={[s.chip, s.countChip, count === n && s.chipActive]}
                         focusedStyle={focusedStyle}
                       >
-                        <Text style={s.addName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={[s.chipTxt, count === n && s.chipTxtActive]}>{n}</Text>
                       </FocusableItem>
                     ))}
-                  </ScrollView>
+                  </View>
                 </View>
-              )}
 
-              <FocusableItem onPress={handleExit} style={[s.btn, s.btnDanger]} focusedStyle={focusedStyle}>
-                <Text style={s.btnDangerTxt}>Exit Multi-Screen</Text>
-              </FocusableItem>
-            </>
-          )}
+                <FocusableItem onPress={startMultiScreen} style={[s.btn, s.btnPrimary]} focusedStyle={focusedStyle}>
+                  <Text style={s.btnPrimaryTxt}>Start {count}-Screen {layout === 'grid' ? 'Grid' : 'Split'}</Text>
+                </FocusableItem>
+              </>
+            ) : (
+              <>
+                {LayoutRow}
+
+                <View style={s.section}>
+                  <Text style={s.sectionLabel}>ACTIVE ({screens.length}/{maxScreens})</Text>
+                  {screens.map((screen) => (
+                    <View key={screen.id} style={s.activeRow}>
+                      <Text style={s.activeName} numberOfLines={1}>{screen.channel.name}</Text>
+                      <FocusableItem onPress={() => removeScreen(screen.id)} style={s.removeBtn} focusedStyle={focusedStyle}>
+                        <Text style={s.removeTxt}>Remove</Text>
+                      </FocusableItem>
+                    </View>
+                  ))}
+                </View>
+
+                {screens.length < maxScreens && availableChannels.length > 0 && (
+                  <View style={s.section}>
+                    <Text style={s.sectionLabel}>ADD CHANNEL</Text>
+                    <ScrollView style={s.addList} focusable={false} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                      {availableChannels.slice(0, 50).map((item) => (
+                        <FocusableItem
+                          key={item.id}
+                          onPress={() => handleAddScreen(item)}
+                          style={s.addRow}
+                          focusedStyle={focusedStyle}
+                        >
+                          <Text style={s.addName} numberOfLines={1}>{item.name}</Text>
+                        </FocusableItem>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                <FocusableItem onPress={handleExit} style={[s.btn, s.btnDanger]} focusedStyle={focusedStyle}>
+                  <Text style={s.btnDangerTxt}>Exit Multi-Screen</Text>
+                </FocusableItem>
+              </>
+            )}
+          </ScrollView>
 
           <FocusableItem onPress={onClose} style={[s.btn, s.btnGhost]} focusedStyle={focusedStyle}>
             <Text style={s.btnGhostTxt}>Close</Text>
@@ -204,12 +207,20 @@ const createStyles = (theme: Theme) => StyleSheet.create({
   card: {
     width: '90%',
     maxWidth: 620,
+    maxHeight: '100%',
     backgroundColor: theme.surface,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: theme.border,
     padding: TV ? 28 : 20,
     gap: TV ? 18 : 14,
+  },
+  body: {
+    flexShrink: 1,
+  },
+  bodyContent: {
+    gap: TV ? 18 : 14,
+    padding: 4,
   },
   title: {
     color: theme.text,

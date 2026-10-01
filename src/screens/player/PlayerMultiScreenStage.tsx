@@ -32,7 +32,7 @@ const PlayerMultiScreenStage: React.FC<PlayerMultiScreenStageProps> = ({
           : undefined
       }
     >
-      <MultiScreenView channels={channels} onOpenControls={onOpenControls} />
+      <MultiScreenView channels={channels} onOpenControls={onOpenControls} controlsVisible={showControls} />
       <MultiScreenControls
         channels={channels}
         isVisible={showControls}
