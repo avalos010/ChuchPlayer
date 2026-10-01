@@ -1,18 +1,22 @@
 import React from 'react';
-import { ActivityIndicator, Alert, Switch, Text, View } from 'react-native';
-import FocusableItem from '../../components/FocusableItem';
+import { ActivityIndicator, Alert, Switch, Text, View, ViewStyle } from 'react-native';
+import { MaterialCommunityIcons as MCI } from '@expo/vector-icons';
+import FocusableItem, { FocusableItemHandle } from '../../components/FocusableItem';
 import { Settings, SettingsFocusTarget } from '../../types';
+import { Theme } from '../../theme/themes';
 import { showSuccess } from '../../utils/toast';
 import { Card, Divider, RowBetween, SectionTitle, SettingRow } from './SettingsPrimitives';
+import { SettingsStyles } from './styles';
 
 interface SettingsAdvancedSectionsProps {
-  styles: any;
+  styles: SettingsStyles;
+  theme: Theme;
   settings: Settings;
-  updateSetting: (key: keyof Settings, value: any) => void;
+  updateSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => Promise<void>;
   loading: boolean;
-  infoBarTimeoutRef: React.RefObject<any>;
-  epgRefreshRef: React.RefObject<any>;
-  helpRemoteRef: React.RefObject<any>;
+  infoBarTimeoutRef: React.RefObject<FocusableItemHandle | null>;
+  epgRefreshRef: React.RefObject<FocusableItemHandle | null>;
+  helpRemoteRef: React.RefObject<FocusableItemHandle | null>;
   shouldPreferFocus: (target: SettingsFocusTarget) => boolean;
   setSectionOffset: (key: SettingsFocusTarget | 'top', y: number) => void;
   setSleepTimer: (minutes: number) => void;
@@ -21,12 +25,12 @@ interface SettingsAdvancedSectionsProps {
   manualRefreshing: boolean;
   onManualRefresh: () => void;
   setPinModalVisible: (visible: boolean) => void;
-  focusedStyle: any;
-  rowFocusedStyle: any;
+  focusedStyle: ViewStyle;
+  rowFocusedStyle: ViewStyle;
 }
 
 export function SettingsAdvancedSections(props: SettingsAdvancedSectionsProps) {
-  const { styles, settings, updateSetting, loading, infoBarTimeoutRef, epgRefreshRef, helpRemoteRef, shouldPreferFocus, setSectionOffset, setSleepTimer, hasPlayer, navigateToPlayer, manualRefreshing, onManualRefresh, setPinModalVisible, focusedStyle, rowFocusedStyle } = props;
+  const { styles, theme, settings, updateSetting, loading, infoBarTimeoutRef, epgRefreshRef, helpRemoteRef, shouldPreferFocus, setSectionOffset, setSleepTimer, hasPlayer, navigateToPlayer, manualRefreshing, onManualRefresh, setPinModalVisible, focusedStyle, rowFocusedStyle } = props;
   const infoBarOptions = [{ label: '3s', value: 3 }, { label: '6s', value: 6 }, { label: '10s', value: 10 }, { label: 'Never', value: 0 }];
   return <>
         <Divider styles={styles} />
@@ -66,8 +70,8 @@ export function SettingsAdvancedSections(props: SettingsAdvancedSectionsProps) {
               <Switch
                 value={settings.showChannelNumbers ?? false}
                 onValueChange={v => updateSetting('showChannelNumbers', v)}
-                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
-                thumbColor={(settings.showChannelNumbers) ? '#0a0a0a' : '#555555'}
+                trackColor={{ false: theme.cardActive, true: theme.accent }}
+                thumbColor={settings.showChannelNumbers ? theme.accentText : theme.textSub}
                 disabled={loading}
               />
             }
@@ -138,8 +142,8 @@ export function SettingsAdvancedSections(props: SettingsAdvancedSectionsProps) {
               <Switch
                 value={settings.multiScreenEnabled}
                 onValueChange={v => updateSetting('multiScreenEnabled', v)}
-                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
-                thumbColor={settings.multiScreenEnabled ? '#0a0a0a' : '#555555'}
+                trackColor={{ false: theme.cardActive, true: theme.accent }}
+                thumbColor={settings.multiScreenEnabled ? theme.accentText : theme.textSub}
                 disabled={loading}
               />
             }
@@ -216,12 +220,13 @@ export function SettingsAdvancedSections(props: SettingsAdvancedSectionsProps) {
         <FocusableItem
           onPress={onManualRefresh}
           style={[styles.refreshBtn, manualRefreshing && styles.refreshBtnDisabled]}
+          contentStyle={styles.refreshContent}
           focusedStyle={focusedStyle}
           disabled={manualRefreshing}
         >
           {manualRefreshing
-            ? <ActivityIndicator size="small" color="#f5f5f5" style={{ marginRight: 10 }} />
-            : null}
+            ? <ActivityIndicator size="small" color={theme.accent} />
+            : <MCI name="refresh" size={22} color={theme.text} />}
           <Text style={styles.refreshBtnTxt}>{manualRefreshing ? 'Refreshing…' : 'Refresh Now'}</Text>
         </FocusableItem>
 
@@ -254,8 +259,8 @@ export function SettingsAdvancedSections(props: SettingsAdvancedSectionsProps) {
                     setTimeout(() => showSuccess('Parental lock disabled.'), 100);
                   }
                 }}
-                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
-                thumbColor={(settings.parentalPinEnabled) ? '#0a0a0a' : '#555555'}
+                trackColor={{ false: theme.cardActive, true: theme.accent }}
+                thumbColor={settings.parentalPinEnabled ? theme.accentText : theme.textSub}
                 disabled={loading}
               />
             }
@@ -285,10 +290,11 @@ export function SettingsAdvancedSections(props: SettingsAdvancedSectionsProps) {
             'M3U Playlists:\n1. Get an M3U URL from your IPTV provider\n2. Tap "Add Playlist"\n3. Choose M3U, enter a name and paste the URL\n\nXtream Codes:\n1. Choose "Xtream Codes"\n2. Enter server URL, username, and password',
           )}
           style={[styles.card, styles.helpBtn]}
+          contentStyle={styles.helpContent}
           focusedStyle={focusedStyle}
         >
           <Text style={styles.helpTitle}>How to Add Playlists</Text>
-          <Text style={styles.helpArrow}>›</Text>
+          <MCI name="chevron-right" size={24} color={theme.accent} />
         </FocusableItem>
 
         <FocusableItem
@@ -299,10 +305,11 @@ export function SettingsAdvancedSections(props: SettingsAdvancedSectionsProps) {
           )}
           hasTVPreferredFocus={shouldPreferFocus('help')}
           style={[styles.card, styles.helpBtn]}
+          contentStyle={styles.helpContent}
           focusedStyle={focusedStyle}
         >
           <Text style={styles.helpTitle}>TV Remote Controls</Text>
-          <Text style={styles.helpArrow}>›</Text>
+          <MCI name="chevron-right" size={24} color={theme.accent} />
         </FocusableItem>
 
         <Divider styles={styles} />
@@ -318,7 +325,7 @@ export function SettingsAdvancedSections(props: SettingsAdvancedSectionsProps) {
           ].map((row, i, arr) => (
             <View key={row.label} style={[
               styles.aboutRow,
-              i < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
+              i < arr.length - 1 && styles.aboutRowSeparator,
             ]}>
               <Text style={styles.aboutLabel}>{row.label}</Text>
               <Text style={styles.aboutValue}>{row.value}</Text>

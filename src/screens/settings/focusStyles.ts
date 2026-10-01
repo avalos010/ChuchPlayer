@@ -1,27 +1,27 @@
-export const BTN_FOCUSED = {
-  backgroundColor: '#eaf5ff',
-  borderColor: '#7dd3fc',
-  borderWidth: 2,
-  transform: [] as any[],
-  elevation: 6,
-  shadowColor: '#38bdf8',
-  shadowOffset: { width: 0, height: 0 },
-  shadowOpacity: 0.26,
-  shadowRadius: 14,
-};
+import { ViewStyle } from 'react-native';
+import { Theme } from '../../theme/themes';
 
-export const DANGER_FOCUSED = {
-  backgroundColor: '#ef4444',
-  borderColor: '#ef4444',
-  borderWidth: 2,
-  transform: [] as any[],
-  elevation: 6,
-};
-
-export const ROW_FOCUSED = {
-  backgroundColor: '#12223a',
-  borderColor: '#7dd3fc',
-  borderWidth: 1.5,
-  transform: [] as any[],
-  elevation: 4,
-};
+export function createFocusStyles(theme: Theme): Record<'button' | 'danger' | 'row', ViewStyle> {
+  return {
+    button: {
+      borderColor: theme.focused,
+      borderWidth: 2,
+      transform: [],
+      elevation: 6,
+    },
+    danger: {
+      backgroundColor: theme.cardActive,
+      borderColor: '#ef4444',
+      borderWidth: 2,
+      transform: [],
+      elevation: 6,
+    },
+    row: {
+      backgroundColor: theme.cardActive,
+      borderColor: theme.focused,
+      borderWidth: 1.5,
+      transform: [],
+      elevation: 4,
+    },
+  };
+}

@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { NativeModules, Platform, ScrollView, Text, View } from 'react-native';
+import { NativeModules, Platform, ScrollView, Text, TextInput, View } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
-import FocusableItem from '../components/FocusableItem';
+import { MaterialCommunityIcons as MCI } from '@expo/vector-icons';
+import FocusableItem, { FocusableItemHandle } from '../components/FocusableItem';
 import { getSettings, saveSettings, getPlaylists, savePlaylist, deletePlaylist } from '../utils/storage';
 import { RootStackParamList, Settings, Playlist, PlaylistSourceType, SettingsFocusTarget } from '../types';
 import { showError, showSuccess } from '../utils/toast';
@@ -19,7 +20,7 @@ import PinModal from './settings/PinModal';
 import { createStyles } from './settings/styles';
 import { SettingsPrimarySections } from './settings/SettingsPrimarySections';
 import { SettingsAdvancedSections } from './settings/SettingsAdvancedSections';
-import { BTN_FOCUSED, DANGER_FOCUSED, ROW_FOCUSED } from './settings/focusStyles';
+import { createFocusStyles } from './settings/focusStyles';
 interface SettingsScreenProps {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Settings'>;
   route: RouteProp<RootStackParamList, 'Settings'>;
@@ -29,6 +30,7 @@ const TV = Platform.OS === 'android';
 const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) => {
   const theme = useThemeStore((state) => state.theme);
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const focusStyles = useMemo(() => createFocusStyles(theme), [theme]);
   const [settings, setSettings] = useState<Settings>({
     autoPlay: true,
     theme: 'dark',
@@ -63,23 +65,24 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
   const [pinConfirm,         setPinConfirm]         = useState('');
   const [landingFocusConsumed, setLandingFocusConsumed] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
-  const backBtnRef = useRef<any>(null);
-  const addPlaylistRef = useRef<any>(null);
-  const infoBarTimeoutRef = useRef<any>(null);
-  const epgRefreshRef = useRef<any>(null);
-  const helpRemoteRef = useRef<any>(null);
+  const backBtnRef = useRef<FocusableItemHandle>(null);
+  const addPlaylistRef = useRef<FocusableItemHandle>(null);
+  const infoBarTimeoutRef = useRef<FocusableItemHandle>(null);
+  const epgRefreshRef = useRef<FocusableItemHandle>(null);
+  const helpRemoteRef = useRef<FocusableItemHandle>(null);
   // Modal TextInput refs for TV D-pad chaining
-  const nameInputRef = useRef<any>(null);
-  const urlInputRef = useRef<any>(null);
-  const xtreamServerRef = useRef<any>(null);
-  const xtreamUsernameRef = useRef<any>(null);
-  const xtreamPasswordRef = useRef<any>(null);
-  const modalSaveBtnRef = useRef<any>(null);
+  const nameInputRef = useRef<TextInput>(null);
+  const urlInputRef = useRef<TextInput>(null);
+  const xtreamServerRef = useRef<TextInput>(null);
+  const xtreamUsernameRef = useRef<TextInput>(null);
+  const xtreamPasswordRef = useRef<TextInput>(null);
+  const modalSaveBtnRef = useRef<FocusableItemHandle>(null);
   const sectionOffsetsRef = useRef<Partial<Record<SettingsFocusTarget | 'top', number>>>({});
   const { themeId, customAccent, customBg, setTheme, setCustom, resetTheme } = useThemeStore();
   const [customAccentInput, setCustomAccentInput] = useState(customAccent);
   const [customBgInput,     setCustomBgInput]     = useState(customBg);
   const hasPlayer = !!usePlayerStore.getState().channel;
+  const showBack = hasPlayer || navigation.canGoBack();
   const focusTarget = route.params?.focusTarget;
   const setSectionOffset = useCallback(
     (key: SettingsFocusTarget | 'top', y: number) => {
@@ -96,8 +99,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
   }, []);
   const focusLandingTarget = useCallback((target?: SettingsFocusTarget) => {
     if (!TV || modalVisible || pinModalVisible) return;
-    const resolvedTarget = target ?? (hasPlayer ? 'back' : 'addPlaylist');
-    const targetMap: Record<SettingsFocusTarget | 'backFallback', { section: SettingsFocusTarget | 'top'; ref: React.RefObject<any> }> = {
+    const resolvedTarget = target ?? (showBack ? 'back' : 'addPlaylist');
+    const targetMap: Record<SettingsFocusTarget | 'backFallback', { section: SettingsFocusTarget | 'top'; ref: React.RefObject<FocusableItemHandle | null> }> = {
       back: { section: 'top', ref: backBtnRef },
       addPlaylist: { section: 'addPlaylist', ref: addPlaylistRef },
       interface: { section: 'interface', ref: infoBarTimeoutRef },
@@ -105,7 +108,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
       help: { section: 'help', ref: helpRemoteRef },
       backFallback: { section: 'addPlaylist', ref: addPlaylistRef },
     };
-    const config = resolvedTarget === 'back' && !hasPlayer
+    const config = resolvedTarget === 'back' && !showBack
       ? targetMap.backFallback
       : targetMap[resolvedTarget];
     setTimeout(() => {
@@ -113,13 +116,13 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
       config.ref.current?.focus?.();
       setLandingFocusConsumed(true);
     }, 220);
-  }, [hasPlayer, modalVisible, pinModalVisible, scrollToSection]);
+  }, [showBack, modalVisible, pinModalVisible, scrollToSection]);
   const shouldPreferFocus = useCallback((target: SettingsFocusTarget) => {
     if (!TV || modalVisible || pinModalVisible || landingFocusConsumed) return false;
-    const resolvedTarget = focusTarget ?? (hasPlayer ? 'back' : 'addPlaylist');
-    if (resolvedTarget === 'back' && !hasPlayer) return target === 'addPlaylist';
+    const resolvedTarget = focusTarget ?? (showBack ? 'back' : 'addPlaylist');
+    if (resolvedTarget === 'back' && !showBack) return target === 'addPlaylist';
     return resolvedTarget === target;
-  }, [focusTarget, hasPlayer, landingFocusConsumed, modalVisible, pinModalVisible]);
+  }, [focusTarget, showBack, landingFocusConsumed, modalVisible, pinModalVisible]);
   const loadPlaylists = useCallback(async () => {
     setLoadingPlaylists(true);
     try {
@@ -365,7 +368,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
     setTimeout(() => showSuccess('Parental PIN set.'), 100);
   };
   // ── Render playlist row ─────────────────────────────────────────────────────
-  const renderPlaylistItem = useCallback(({ item }: { item: Playlist }) => (
+  const renderPlaylistItem = ({ item }: { item: Playlist }) => (
     <View style={styles.playlistRow}>
       <View style={{ flex: 1 }}>
         <Text style={styles.playlistName} numberOfLines={1}>{item.name}</Text>
@@ -378,7 +381,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
             navigation.navigate('VodCatalog');
           }}
           style={styles.editBtn}
-          focusedStyle={BTN_FOCUSED}
+          focusedStyle={focusStyles.button}
         >
           <Text style={styles.editBtnTxt}>VOD</Text>
         </FocusableItem>
@@ -386,19 +389,19 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
       <FocusableItem
         onPress={() => openEditPlaylistModal(item)}
         style={styles.editBtn}
-        focusedStyle={BTN_FOCUSED}
+        focusedStyle={focusStyles.button}
       >
         <Text style={styles.editBtnTxt}>Edit</Text>
       </FocusableItem>
       <FocusableItem
         onPress={() => confirmDeletePlaylist(item)}
         style={styles.deleteBtn}
-        focusedStyle={DANGER_FOCUSED}
+        focusedStyle={focusStyles.danger}
       >
         <Text style={styles.deleteBtnTxt}>Delete</Text>
       </FocusableItem>
     </View>
-  ), [openEditPlaylistModal]);
+  );
   const closeModal = () => {
     setModalVisible(false);
     resetPlaylistForm();
@@ -407,16 +410,70 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
     <View style={styles.root}>
       <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={styles.scroll}>
         <View onLayout={(event) => setSectionOffset('top', event.nativeEvent.layout.y)} />
-        {hasPlayer && <FocusableItem ref={backBtnRef} onPress={() => navigation.navigate('Player', {})} hasTVPreferredFocus={shouldPreferFocus('back')} style={styles.backBtn} focusedStyle={BTN_FOCUSED}><Text style={styles.backBtnTxt}>← Back to Player</Text></FocusableItem>}
         <View style={styles.settingsHero}>
-          <View style={styles.settingsHeroText}><Text style={styles.settingsEyebrow}>CHUCHPLAYER</Text><Text style={styles.settingsTitle}>Settings</Text><Text style={styles.settingsSubtitle}>Manage playlists, playback, guide data, and the player interface.</Text></View>
-          <View style={styles.settingsStats}>
-            <View style={styles.statPill}><Text style={styles.statValue}>{playlists.length}</Text><Text style={styles.statLabel}>Playlists</Text></View>
-            <View style={styles.statPill}><Text style={styles.statValue}>{settings.clockFormat ?? '24h'}</Text><Text style={styles.statLabel}>Clock</Text></View>
+          <View style={styles.settingsHeroText}>
+            <Text style={styles.settingsEyebrow}>CHUCHPLAYER</Text>
+            <Text style={styles.settingsTitle}>Settings</Text>
+            <Text style={styles.settingsSubtitle}>Manage your playlists, playback, and guide.</Text>
           </View>
+          {showBack && (
+            <FocusableItem
+              ref={backBtnRef}
+              onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Player', {})}
+              hasTVPreferredFocus={shouldPreferFocus('back')}
+              style={styles.backBtn}
+              contentStyle={styles.backBtnContent}
+              focusedStyle={focusStyles.button}
+            >
+              <MCI name="arrow-left" size={20} color={theme.text} />
+              <Text style={styles.backBtnTxt}>Back</Text>
+            </FocusableItem>
+          )}
         </View>
-        <SettingsPrimarySections styles={styles} settings={settings} playlists={playlists} loadingPlaylists={loadingPlaylists} renderPlaylistItem={renderPlaylistItem} onAddPlaylist={openCreatePlaylistModal} addPlaylistRef={addPlaylistRef} shouldPreferFocus={shouldPreferFocus} setSectionOffset={setSectionOffset} themeId={themeId} setTheme={setTheme} setCustomAccentInput={setCustomAccentInput} setCustomBgInput={setCustomBgInput} customAccentInput={customAccentInput} customBgInput={customBgInput} setCustom={setCustom} resetTheme={resetTheme} updateSetting={updateSetting} loading={loading} focusedStyle={BTN_FOCUSED} rowFocusedStyle={ROW_FOCUSED} />
-        <SettingsAdvancedSections styles={styles} settings={settings} updateSetting={updateSetting} loading={loading} infoBarTimeoutRef={infoBarTimeoutRef} epgRefreshRef={epgRefreshRef} helpRemoteRef={helpRemoteRef} shouldPreferFocus={shouldPreferFocus} setSectionOffset={setSectionOffset} setSleepTimer={setSleepTimer} hasPlayer={hasPlayer} navigateToPlayer={() => navigation.navigate('Player', {})} manualRefreshing={manualRefreshing} onManualRefresh={handleManualRefresh} setPinModalVisible={setPinModalVisible} focusedStyle={BTN_FOCUSED} rowFocusedStyle={ROW_FOCUSED} />
+        <SettingsPrimarySections
+          styles={styles}
+          theme={theme}
+          settings={settings}
+          playlists={playlists}
+          loadingPlaylists={loadingPlaylists}
+          renderPlaylistItem={renderPlaylistItem}
+          onAddPlaylist={openCreatePlaylistModal}
+          addPlaylistRef={addPlaylistRef}
+          shouldPreferFocus={shouldPreferFocus}
+          setSectionOffset={setSectionOffset}
+          themeId={themeId}
+          setTheme={setTheme}
+          setCustomAccentInput={setCustomAccentInput}
+          setCustomBgInput={setCustomBgInput}
+          customAccentInput={customAccentInput}
+          customBgInput={customBgInput}
+          setCustom={setCustom}
+          resetTheme={resetTheme}
+          updateSetting={updateSetting}
+          loading={loading}
+          focusedStyle={focusStyles.button}
+          rowFocusedStyle={focusStyles.row}
+        />
+        <SettingsAdvancedSections
+          styles={styles}
+          theme={theme}
+          settings={settings}
+          updateSetting={updateSetting}
+          loading={loading}
+          infoBarTimeoutRef={infoBarTimeoutRef}
+          epgRefreshRef={epgRefreshRef}
+          helpRemoteRef={helpRemoteRef}
+          shouldPreferFocus={shouldPreferFocus}
+          setSectionOffset={setSectionOffset}
+          setSleepTimer={setSleepTimer}
+          hasPlayer={hasPlayer}
+          navigateToPlayer={() => navigation.navigate('Player', {})}
+          manualRefreshing={manualRefreshing}
+          onManualRefresh={handleManualRefresh}
+          setPinModalVisible={setPinModalVisible}
+          focusedStyle={focusStyles.button}
+          rowFocusedStyle={focusStyles.row}
+        />
         <View style={{ height: 60 }} />
       </ScrollView>
       <PlaylistModal
@@ -438,7 +495,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
         onClose={closeModal}
         onSave={handleAddPlaylist}
         styles={styles}
-        focusedStyle={BTN_FOCUSED}
+        focusedStyle={focusStyles.button}
         nameInputRef={nameInputRef}
         urlInputRef={urlInputRef}
         xtreamServerRef={xtreamServerRef}
@@ -455,7 +512,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation, route }) =>
         onClose={() => { setPinModalVisible(false); setPinInput(''); setPinConfirm(''); }}
         onSave={handleSavePin}
         styles={styles}
-        focusedStyle={BTN_FOCUSED}
+        focusedStyle={focusStyles.button}
       />
     </View>
   );

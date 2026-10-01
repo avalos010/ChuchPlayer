@@ -1,6 +1,7 @@
 import React from 'react';
-import { Modal, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Modal, Text, TextInput, TouchableOpacity, View, ViewStyle } from 'react-native';
 import FocusableItem from '../../components/FocusableItem';
+import { SettingsStyles } from './styles';
 
 interface PinModalProps {
   visible: boolean;
@@ -10,8 +11,8 @@ interface PinModalProps {
   setPinConfirm: (value: string) => void;
   onClose: () => void;
   onSave: () => void;
-  styles: any;
-  focusedStyle: any;
+  styles: SettingsStyles;
+  focusedStyle: ViewStyle;
 }
 
 const PinModal: React.FC<PinModalProps> = ({

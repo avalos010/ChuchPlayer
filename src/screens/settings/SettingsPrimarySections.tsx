@@ -1,19 +1,22 @@
 import React from 'react';
-import { ActivityIndicator, FlatList, Switch, Text, TextInput, View } from 'react-native';
-import FocusableItem from '../../components/FocusableItem';
+import { ActivityIndicator, FlatList, Switch, Text, TextInput, View, ViewStyle } from 'react-native';
+import { MaterialCommunityIcons as MCI } from '@expo/vector-icons';
+import FocusableItem, { FocusableItemHandle } from '../../components/FocusableItem';
 import { Playlist, Settings, SettingsFocusTarget } from '../../types';
-import { THEME_LIST } from '../../theme/themes';
+import { Theme, THEME_LIST } from '../../theme/themes';
 import { showError, showSuccess } from '../../utils/toast';
 import { Card, Divider, SectionTitle, SettingRow } from './SettingsPrimitives';
+import { SettingsStyles } from './styles';
 
 interface SettingsPrimarySectionsProps {
-  styles: any;
+  styles: SettingsStyles;
+  theme: Theme;
   settings: Settings;
   playlists: Playlist[];
   loadingPlaylists: boolean;
   renderPlaylistItem: ({ item }: { item: Playlist }) => React.ReactElement;
   onAddPlaylist: () => void;
-  addPlaylistRef: React.RefObject<any>;
+  addPlaylistRef: React.RefObject<FocusableItemHandle | null>;
   shouldPreferFocus: (target: SettingsFocusTarget) => boolean;
   setSectionOffset: (key: SettingsFocusTarget | 'top', y: number) => void;
   themeId: string;
@@ -24,21 +27,21 @@ interface SettingsPrimarySectionsProps {
   customBgInput: string;
   setCustom: (bg: string, accent: string) => void;
   resetTheme: () => void;
-  updateSetting: (key: keyof Settings, value: any) => void;
+  updateSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => Promise<void>;
   loading: boolean;
-  focusedStyle: any;
-  rowFocusedStyle: any;
+  focusedStyle: ViewStyle;
+  rowFocusedStyle: ViewStyle;
 }
 
 export function SettingsPrimarySections(props: SettingsPrimarySectionsProps) {
-  const { styles, settings, playlists, loadingPlaylists, renderPlaylistItem, onAddPlaylist, addPlaylistRef, shouldPreferFocus, setSectionOffset, themeId, setTheme, setCustomAccentInput, setCustomBgInput, customAccentInput, customBgInput, setCustom, resetTheme, updateSetting, loading, focusedStyle, rowFocusedStyle } = props;
+  const { styles, theme, settings, playlists, loadingPlaylists, renderPlaylistItem, onAddPlaylist, addPlaylistRef, shouldPreferFocus, setSectionOffset, themeId, setTheme, setCustomAccentInput, setCustomBgInput, customAccentInput, customBgInput, setCustom, resetTheme, updateSetting, loading, focusedStyle, rowFocusedStyle } = props;
   return <>
         {/* ══ PLAYLISTS ═══════════════════════════════════ */}
         <SectionTitle styles={styles} label="Playlists" />
 
         {loadingPlaylists ? (
           <Card styles={styles} style={styles.centered}>
-            <ActivityIndicator size="large" color="#555555" />
+            <ActivityIndicator size="large" color={theme.accent} />
           </Card>
         ) : playlists.length === 0 ? (
           <Card styles={styles}>
@@ -61,9 +64,11 @@ export function SettingsPrimarySections(props: SettingsPrimarySectionsProps) {
             onPress={onAddPlaylist}
             hasTVPreferredFocus={shouldPreferFocus('addPlaylist')}
             style={styles.addBtn}
+            contentStyle={styles.addBtnContent}
             focusedStyle={focusedStyle}
           >
-            <Text style={styles.addBtnTxt}>+ Add Playlist</Text>
+            <MCI name="plus" size={22} color={theme.text} />
+            <Text style={styles.addBtnTxt}>Add Playlist</Text>
           </FocusableItem>
         </View>
 
@@ -86,10 +91,11 @@ export function SettingsPrimarySections(props: SettingsPrimarySectionsProps) {
                   themeId === t.id && styles.swatchBtnActive,
                   { backgroundColor: t.bg, borderColor: themeId === t.id ? t.accent : '#333' },
                 ]}
+                contentStyle={styles.swatchContent}
                 focusedStyle={{ backgroundColor: t.bg, borderColor: t.accent, borderWidth: 2.5, transform: [], elevation: 6 }}
               >
                 <View style={[styles.swatchDot, { backgroundColor: t.accent }]} />
-                <Text style={[styles.swatchLabel, { color: t.accent }]} numberOfLines={1}>{t.name}</Text>
+                <Text style={[styles.swatchLabel, { color: t.text }]} numberOfLines={1}>{t.name}</Text>
               </FocusableItem>
             ))}
           </View>
@@ -180,8 +186,8 @@ export function SettingsPrimarySections(props: SettingsPrimarySectionsProps) {
               <Switch
                 value={settings.autoPlay}
                 onValueChange={v => updateSetting('autoPlay', v)}
-                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
-                thumbColor={settings.autoPlay ? '#0a0a0a' : '#555555'}
+                trackColor={{ false: theme.cardActive, true: theme.accent }}
+                thumbColor={settings.autoPlay ? theme.accentText : theme.textSub}
                 disabled={loading}
               />
             }
@@ -195,8 +201,8 @@ export function SettingsPrimarySections(props: SettingsPrimarySectionsProps) {
               <Switch
                 value={settings.hardwareDecoder ?? true}
                 onValueChange={v => updateSetting('hardwareDecoder', v)}
-                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
-                thumbColor={(settings.hardwareDecoder ?? true) ? '#0a0a0a' : '#555555'}
+                trackColor={{ false: theme.cardActive, true: theme.accent }}
+                thumbColor={(settings.hardwareDecoder ?? true) ? theme.accentText : theme.textSub}
                 disabled={loading}
               />
             }
@@ -210,8 +216,8 @@ export function SettingsPrimarySections(props: SettingsPrimarySectionsProps) {
               <Switch
                 value={settings.autoFrameRate ?? false}
                 onValueChange={value => updateSetting('autoFrameRate', value)}
-                trackColor={{ false: '#2a2a2a', true: '#e5e5e5' }}
-                thumbColor={(settings.autoFrameRate ?? false) ? '#0a0a0a' : '#555555'}
+                trackColor={{ false: theme.cardActive, true: theme.accent }}
+                thumbColor={(settings.autoFrameRate ?? false) ? theme.accentText : theme.textSub}
                 disabled={loading}
               />
             }

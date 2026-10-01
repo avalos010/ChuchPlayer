@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, ActivityIndicator, Platform } from 'react-native';
-import { RootStackParamList } from '../types';
+import { Channel, RootStackParamList } from '../types';
 import { getLastChannel, getPlaylists } from '../utils/storage';
 import { useThemeStore } from '../store/useThemeStore';
 import { usePlayerStore } from '../store/usePlayerStore';
@@ -21,7 +21,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const AppNavigator = () => {
   const theme = useThemeStore((state) => state.theme);
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList | null>(null);
-  const [initialChannel, setInitialChannel] = useState<any>(null);
+  const [initialChannel, setInitialChannel] = useState<Channel | null>(null);
   const navigationTheme = useMemo(() => ({
     ...DefaultTheme,
     dark: theme.bg !== '#f0f0f0',
@@ -133,7 +133,7 @@ const AppNavigator = () => {
         <Stack.Screen
           name="Settings"
           component={SettingsScreen}
-          options={{ title: 'Settings' }}
+          options={{ headerShown: false }}
         />
       </Stack.Navigator>
     </NavigationContainer>

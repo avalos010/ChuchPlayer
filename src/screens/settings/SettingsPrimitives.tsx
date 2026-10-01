@@ -1,18 +1,22 @@
 import React from 'react';
-import { Platform, Text, View } from 'react-native';
+import { Platform, StyleProp, Text, View, ViewStyle } from 'react-native';
 import FocusableItem from '../../components/FocusableItem';
+import { SettingsStyles } from './styles';
 
 const TV = Platform.OS === 'android';
 
 interface SettingsPrimitivesProps {
-  styles: any;
+  styles: SettingsStyles;
 }
 
 export const SectionTitle: React.FC<SettingsPrimitivesProps & { label: string }> = ({ styles, label }) => (
-  <Text style={styles.sectionTitle}>{label}</Text>
+  <View style={styles.sectionHeader}>
+    <Text style={styles.sectionTitle}>{label}</Text>
+    <View style={styles.sectionRule} />
+  </View>
 );
 
-export const Card: React.FC<SettingsPrimitivesProps & { children: React.ReactNode; style?: any }> = ({ styles, children, style }) => (
+export const Card: React.FC<SettingsPrimitivesProps & { children: React.ReactNode; style?: StyleProp<ViewStyle> }> = ({ styles, children, style }) => (
   <View style={[styles.card, style]}>{children}</View>
 );
 
@@ -28,7 +32,7 @@ export const SettingRow: React.FC<SettingsPrimitivesProps & {
   right: React.ReactNode;
   top?: boolean;
   onPress?: () => void;
-  rowFocusedStyle: any;
+  rowFocusedStyle: ViewStyle;
 }> = ({ styles, title, desc, right, top, onPress, rowFocusedStyle }) => {
   const content = <View style={[styles.settingRow, top && !onPress && styles.settingRowTop]}>
     <View style={{ flex: 1 }}><Text style={styles.settingTitle}>{title}</Text>{desc && <Text style={styles.settingDesc}>{desc}</Text>}</View>

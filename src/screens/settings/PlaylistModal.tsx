@@ -9,10 +9,12 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  ViewStyle,
 } from 'react-native';
-import FocusableItem from '../../components/FocusableItem';
+import FocusableItem, { FocusableItemHandle } from '../../components/FocusableItem';
 import { openTvInputDialog } from '../../services/tvInputDialog';
 import { PlaylistSourceType } from '../../types';
+import { SettingsStyles } from './styles';
 
 type PlaylistField = 'name' | 'url' | 'xtreamServer' | 'xtreamUsername' | 'xtreamPassword';
 
@@ -34,14 +36,14 @@ interface PlaylistModalProps {
   addingPlaylist: boolean;
   onClose: () => void;
   onSave: () => void;
-  styles: any;
-  focusedStyle: any;
-  nameInputRef: React.RefObject<any>;
-  urlInputRef: React.RefObject<any>;
-  xtreamServerRef: React.RefObject<any>;
-  xtreamUsernameRef: React.RefObject<any>;
-  xtreamPasswordRef: React.RefObject<any>;
-  modalSaveBtnRef: React.RefObject<any>;
+  styles: SettingsStyles;
+  focusedStyle: ViewStyle;
+  nameInputRef: React.RefObject<TextInput | null>;
+  urlInputRef: React.RefObject<TextInput | null>;
+  xtreamServerRef: React.RefObject<TextInput | null>;
+  xtreamUsernameRef: React.RefObject<TextInput | null>;
+  xtreamPasswordRef: React.RefObject<TextInput | null>;
+  modalSaveBtnRef: React.RefObject<FocusableItemHandle | null>;
 }
 
 const PlaylistModal: React.FC<PlaylistModalProps> = ({
